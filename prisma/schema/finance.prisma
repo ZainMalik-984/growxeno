@@ -1,0 +1,151 @@
+// ---------------------------------------------------------------------------
+// Finance (Phase 7) — specification Sections 48, 56-61
+//
+// What is here:
+//   - ExpenseCategory: configurable expense categories (Section 60 asks for
+//     this explicitly — "must be configurable where useful" — so this is a
+//     real model, seeded with the spec's examples, not a hard-coded enum).
+//   - Expense: a recorded cost, optionally attributed to one Order.
+//   - WorkerPayment: money paid to a worker — internal `User` OR a distinct
+//     `OutsourcedWorker`, exactly one set, same XOR pattern as `OrderItem`.
+//     Deliberately NOT itemized per Order Item: the owner pays a worker a
+//     lump sum periodically for everything completed since the last payment,
+//     confirmed directly (2026-09-17) — so this table has no order/order-item
+//     FK. "What's earned" is derived from `OrderItem.workerCost` instead; see
+//     below.
+//
+// The financial-truth principle (Section 57, Section 61 — "do not create an
+// inconsistent system where a stored balance = one number and transaction
+// records imply another"): there is NO stored balance/outstanding field
+// anywhere in this file. A Worker's earned/paid/outstanding is always
+// computed by aggregating these tables plus `Order`/`OrderItem` at read time
+// (`src/lib/finance/queries.ts`) — exactly "totals derived from transaction
+// history," never a second number that could drift from it.
+//
+// BuyerPayment (money received from a Buyer, Section 59) existed here through
+// Phase 7 and was removed entirely post-Phase-10 (2026-09-27, owner-directed
+// — see crm.prisma's file header for the full Buyer-removal record) along
+// with Buyer itself. Revenue recognition (below) reads `Order.totalAmount`/
+// `deliveredAt` directly; it never depended on BuyerPayment.
+//
+// Money (docs/REQUIREMENTS.md D1): every amount is paired with its own
+// currency column, no conversion. Confirmed directly (2026-09-17): revenue is
+// usually USD, worker cost and expenses are usually PKR — so a single
+// "Order Profit" number is not always meaningful. Reporting shows Revenue /
+// Worker Cost / Expenses as separate figures, grouped by currency, and only
+// computes a subtracted profit when a given order's figures share one
+// currency. Never blend currencies into one total.
+//
+// Rounding (D2, answered 2026-09-17): half-up to 2 decimal places, applied
+// wherever a calculation (not a direct user-entered amount) produces more
+// precision — see `src/lib/finance/money.ts`.
+//
+// Worker earning recognition (D5, answered 2026-09-17): an Order Item earns
+// its `workerCost` once it reaches COMPLETED, OR is CANCELLED with a
+// workerCost the admin has manually adjusted downward to reflect partial
+// work actually done (e.g. an order cancelled mid-progress — the admin edits
+// the item's workerCost to the partial amount owed, per the "edit in place,
+// audit log keeps history" corrections policy, D8). A cancelled item with no
+// work done simply keeps workerCost at 0/null and earns nothing. No separate
+// "quantity"/"partial completion" schema exists for this — the existing
+// editable `workerCost` field, plus the existing note/activity trail, already
+// covers it without new fields.
+//
+// Revenue recognition (D4, answered 2026-09-17): on DELIVERED, not
+// COMPLETED — see `Order.deliveredAt`/`Order.refunded` in orders.prisma.
+// ---------------------------------------------------------------------------
+
+/// Configurable expense categories (specification Section 60). Seeded with
+/// the spec's examples (Software, Advertising, Infrastructure, Salaries,
+/// Office, Miscellaneous); an admin may add, rename or deactivate more.
+model ExpenseCategory {
+  id   String @id @default(uuid()) @db.Uuid
+  name String @unique @db.VarChar(80)
+  slug String @unique @db.VarChar(80)
+
+  /// A category no longer used is deactivated, not deleted, so past expenses
+  /// that reference it keep resolving — same pattern as Category/Service.
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  expenses Expense[]
+
+  @@index([isActive])
+  @@map("expense_categories")
+}
+
+/// A recorded cost (specification Section 60). No "Attachment" field yet —
+/// same gap as Order files (docs/ARCHITECTURE.md §12 point 12): no Supabase
+/// Storage bucket is configured in this project.
+model Expense {
+  id String @id @default(uuid()) @db.Uuid
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("USD") @db.Char(3)
+
+  categoryId String          @map("category_id") @db.Uuid
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// A calendar date, not an instant — see docs/DEVELOPMENT.md's convention.
+  date DateTime @db.Date
+
+  description String? @db.Text
+
+  /// Optional: an expense tied to a specific Order (e.g. an outsourced
+  /// worker's cost, or a one-off cost for fulfilling that order) shows up in
+  /// that order's cost breakdown. Confirmed directly (2026-09-17) that
+  /// revenue and expenses are reported SEPARATELY even when an expense is
+  /// order-linked — never silently netted into one blended "revenue" figure.
+  orderId String? @map("order_id") @db.Uuid
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  paidById String? @map("paid_by_id") @db.Uuid
+  paidBy   User?   @relation("ExpensePaidBy", fields: [paidById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  notes String? @db.Text
+
+  createdById String @map("created_by_id") @db.Uuid
+  createdBy   User   @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([date])
+  @@index([orderId])
+  @@index([categoryId])
+  @@map("expenses")
+}
+
+/// Money paid to a worker (specification Section 58) — a lump sum, not
+/// itemized per Order Item (confirmed directly, 2026-09-17; see the file
+/// header). Exactly one of `workerId` / `outsourcedWorkerId` is set,
+/// enforced in the service layer, same pattern as `OrderItem`.
+model WorkerPayment {
+  id String @id @default(uuid()) @db.Uuid
+
+  workerId String? @map("worker_id") @db.Uuid
+  worker   User?   @relation("WorkerPaymentWorker", fields: [workerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  outsourcedWorkerId String?           @map("outsourced_worker_id") @db.Uuid
+  outsourcedWorker   OutsourcedWorker? @relation(fields: [outsourcedWorkerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("USD") @db.Char(3)
+
+  paymentDate DateTime @map("payment_date") @db.Date
+  reference   String?  @db.VarChar(160)
+  notes       String?  @db.Text
+
+  createdById String @map("created_by_id") @db.Uuid
+  createdBy   User   @relation("WorkerPaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([workerId])
+  @@index([outsourcedWorkerId])
+  @@index([paymentDate])
+  @@map("worker_payments")
+}

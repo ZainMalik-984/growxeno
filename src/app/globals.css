@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Business Manager — design tokens
+
+   Tailwind CSS v4 is configured in CSS, not in a tailwind.config.ts. Tokens
+   declared in @theme become utilities automatically (--color-line -> border-line).
+
+   The visual language is editorial: a single flat canvas, hierarchy from
+   typography and spacing, restrained zinc, and hairline rules. Read
+   docs/DESIGN_SYSTEM.md before adding anything here — in particular the list of
+   patterns that are forbidden (floating card grids on grey, colourful status
+   pills, gradients, glows, heavy dividers).
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Canvas. One unified surface; sections flow directly on it. */
+  --color-canvas: #ffffff;
+  --color-canvas-subtle: #fafafa;
+
+  /* Hairlines. Never heavier than 1px, never dashed or dotted. */
+  --color-line: var(--color-zinc-200);
+  --color-line-soft: var(--color-zinc-100);
+
+  /* Text. Hierarchy comes from these four steps and nothing else. */
+  --color-ink: var(--color-zinc-900);
+  --color-ink-strong: var(--color-zinc-950);
+  /* Both must reach WCAG AA (4.5:1) on white and on canvas-subtle — enforced by the axe audit in
+     tests/e2e/accessibility.spec.ts. zinc-400 was ~2.6:1 and failed on nearly every page. */
+  --color-ink-muted: var(--color-zinc-600);
+  --color-ink-faint: var(--color-zinc-500);
+
+  /* Status. Used as a 4px dot plus a readable label — never as a filled pill.
+     Deliberately desaturated so a table of many rows stays calm. */
+  --color-status-neutral: var(--color-zinc-400);
+  --color-status-active: var(--color-blue-600);
+  --color-status-progress: var(--color-indigo-600);
+  --color-status-review: var(--color-amber-600);
+  --color-status-ready: var(--color-teal-600);
+  --color-status-done: var(--color-emerald-600);
+  --color-status-warning: var(--color-amber-600);
+  --color-status-danger: var(--color-red-600);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  /* Editorial rhythm: the shell reserves a fixed sidebar and a generous gutter. */
+  --spacing-sidebar: 15rem;
+  --spacing-gutter: 2.5rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Numeric columns line up. Applied to tables via .tabular. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+    A single, obvious focus ring everywhere. Visible, not glowing.
+    :focus-visible only, so mouse users do not see rings on click.
+  */
+  :focus-visible {
+    outline: 2px solid var(--color-zinc-900);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-faint);
+  }
+
+  /* Respect the user's motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+    Section heading used across the app. Typography does the work that a card
+    header would otherwise do.
+  */
+  .section-title {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+}

@@ -1,0 +1,22 @@
+# Dependencies allowed to run install scripts. pnpm blocks them by default;
+# these three genuinely need to build/download native artifacts:
+#   @prisma/engines, prisma  -> download the query/schema engines
+#   esbuild                  -> fetches its platform binary (used by tsx/vitest)
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - esbuild
+  - prisma
+
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# Security overrides (Phase 10 dependency audit: `pnpm audit --prod` is clean with these).
+# Both vulnerable packages are reached only through the Prisma CLI (`prisma > mysql2`,
+# `prisma > @prisma/config > deepmerge-ts`), never by the running app, which uses PostgreSQL via
+# @prisma/adapter-pg — but a clean audit is worth more than an explained one. Verified after each
+# override: `prisma validate`, `generate`, `migrate status` and `migrate diff` all still work.
+# Remove these once Prisma ships versions that depend on the fixed releases.
+overrides:
+  mysql2: ">=3.23.1"
+  deepmerge-ts: ">=8.0.0"

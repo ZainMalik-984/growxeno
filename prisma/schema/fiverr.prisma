@@ -1,0 +1,93 @@
+// ---------------------------------------------------------------------------
+// Fiverr accounts and gigs — confirmed directly, 2026-09-27.
+//
+// The business runs multiple Fiverr seller profiles. This models each one as
+// a real record (name, contact, PayPal payout details) so an order can record
+// which profile it landed on, and each account's gigs get manually-entered
+// daily impressions/clicks — the same "manual, never scraped or synced" rule
+// as Daily Statistics (specification Section 51) and the whole Absolute
+// Fiverr Rule (Section 2): this is bookkeeping about Fiverr, not an
+// integration WITH Fiverr. No API, no auth, no scraping, ever.
+//
+// PayPal password handling: encrypted at rest (src/lib/crypto/secret-box.ts,
+// AES-256-GCM) and never selected by a list/search query. Decrypting it for
+// display needs `fiverr_accounts.credentials.view`, a permission distinct
+// from `fiverr_accounts.view` — knowing an account exists is not the same as
+// being allowed to see what would let someone log into its PayPal.
+// ---------------------------------------------------------------------------
+
+model FiverrAccount {
+  id String @id @default(uuid()) @db.Uuid
+
+  name  String  @db.VarChar(160)
+  email String? @db.VarChar(320)
+
+  paypalEmail             String? @map("paypal_email") @db.VarChar(320)
+  /// AES-256-GCM ciphertext (base64: iv + authTag + ciphertext). Decrypted only
+  /// on an explicit "reveal" action gated on `fiverr_accounts.credentials.view`
+  /// — never included in the page payload by default.
+  paypalPasswordEncrypted String? @map("paypal_password_encrypted") @db.Text
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  gigs   FiverrGig[]
+  orders Order[]
+
+  @@index([isActive])
+  @@index([name])
+  // Trigram index for ILIKE '%q%' search (global search, docs/DATABASE.md) —
+  // declared here with ops: raw("gin_trgm_ops") so `migrate dev` never proposes dropping it.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "fiverr_accounts_name_trgm_idx")
+  @@map("fiverr_accounts")
+}
+
+/// A gig listing on one Fiverr account. No Fiverr id/URL is required — this is
+/// a label the business chose, not something fetched from Fiverr.
+model FiverrGig {
+  id String @id @default(uuid()) @db.Uuid
+
+  fiverrAccountId String        @map("fiverr_account_id") @db.Uuid
+  fiverrAccount   FiverrAccount @relation(fields: [fiverrAccountId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  name     String  @db.VarChar(160)
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  dailyStats FiverrGigStat[]
+
+  @@index([fiverrAccountId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "fiverr_gigs_name_trgm_idx")
+  @@map("fiverr_gigs")
+}
+
+/// One manually-entered day of a gig's stats (impressions, clicks) — the two
+/// series graphed together per gig. Same "reject a duplicate day, edit
+/// instead" rule as `DailyStat` (docs/REQUIREMENTS.md D10), for the same
+/// reason: summing or silently overwriting a re-entered day would corrupt the
+/// trend line without anyone noticing.
+model FiverrGigStat {
+  id    String    @id @default(uuid()) @db.Uuid
+  gigId String    @map("gig_id") @db.Uuid
+  gig   FiverrGig @relation(fields: [gigId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// A calendar day, not an instant — see docs/DATABASE.md's convention.
+  statDate DateTime @map("stat_date") @db.Date
+
+  impressions Int @default(0)
+  clicks      Int @default(0)
+
+  createdById String @map("created_by_id") @db.Uuid
+  createdBy   User   @relation("FiverrGigStatCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([gigId, statDate])
+  @@index([gigId, statDate])
+  @@map("fiverr_gig_stats")
+}

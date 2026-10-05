@@ -1,0 +1,58 @@
+// ---------------------------------------------------------------------------
+// Daily statistics (Phase 6) — specification Sections 51-55
+//
+// What is here:
+//   - DailyStat: one manually-entered row per (user, calendar day) —
+//     Orders/Completed/Pending counts and Revenue for that user that day.
+//
+// What is deliberately NOT here, and why:
+//   - Anything computed from `orders`/`order_items`. Section 51 is explicit:
+//     "The system is NOT required to fetch them from external platforms" and
+//     "Do not infer them automatically from Order records." This is a
+//     separate, manually-entered domain model, full stop — an admin's own
+//     count of a user's day, not a query over Orders. It may disagree with
+//     what Orders shows, and that is allowed.
+//
+// One planned decision, now made (docs/REQUIREMENTS.md D10 — duplicate entry
+// for the same user+date): REJECT, via a unique constraint. One row per
+// (user, date); entering a second row for a day already recorded is an edit
+// of the existing row, not a new one, matching this doc's Index policy note
+// (`daily_stats(user_id, stat_date)` unique) written before this file existed.
+// ---------------------------------------------------------------------------
+
+/// A user's manually-entered statistics for one calendar day (specification
+/// Section 51-52). `statDate` is a plain date, not an instant — see
+/// docs/DEVELOPMENT.md's "a calendar date is a PostgreSQL date" convention.
+model DailyStat {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation("DailyStatUser", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  statDate DateTime @map("stat_date") @db.Date
+
+  orders    Int @default(0)
+  completed Int @default(0)
+  pending   Int @default(0)
+
+  /// Money policy (docs/REQUIREMENTS.md D1): paired currency column, no
+  /// conversion. A day's revenue for one user is assumed single-currency —
+  /// if that ever proves wrong, split into per-currency rows rather than
+  /// summing differing currencies into one field.
+  revenue         Decimal @default(0) @db.Decimal(14, 2)
+  revenueCurrency String  @default("USD") @map("revenue_currency") @db.Char(3)
+
+  notes String? @db.Text
+
+  /// Who entered/last edited this row — usually an admin entering it FOR the
+  /// user, not the user themselves. Distinct from `userId`, the subject.
+  createdById String @map("created_by_id") @db.Uuid
+  createdBy   User   @relation("DailyStatEnteredBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, statDate])
+  @@index([statDate])
+  @@map("daily_stats")
+}

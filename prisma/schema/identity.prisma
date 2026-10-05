@@ -1,0 +1,213 @@
+// ---------------------------------------------------------------------------
+// Identity and access control
+//
+// Supabase Auth owns credentials (auth.users). This file owns the application
+// profile and the entire dynamic RBAC system.
+//
+//   User ──M:N── Role ──M:N── Permission
+//        └──────────M:N───────────┘   (direct ALLOW / DENY overrides)
+//
+// Permission resolution order is implemented ONCE, in
+// src/lib/permissions/resolve.ts, and documented in docs/PERMISSIONS.md.
+// There is no role-name branch anywhere in the application.
+// ---------------------------------------------------------------------------
+
+/// Effect of a permission assigned directly to a single user.
+/// DENY always wins over every other grant (see docs/PERMISSIONS.md).
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+/// Application user profile.
+///
+/// Separate from the Supabase Auth identity on purpose: business data, roles
+/// and history belong to the business, not to the credential store.
+///
+/// Soft delete: NOT used. Users are DEACTIVATED (`isActive = false`), never
+/// deleted, because orders, payments and audit rows must keep pointing at a
+/// real person. See specification Section 140.
+model User {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Foreign key to Supabase `auth.users.id`.
+  ///
+  /// Nullable because an operator may create the profile before the person has
+  /// accepted their invitation. A profile with no auth identity CANNOT sign in,
+  /// which is the correct fail-closed behavior.
+  ///
+  /// No database-level FK is declared: Prisma does not manage the `auth` schema
+  /// and we do not want migrations coupled to Supabase internals. Integrity is
+  /// enforced by the user provisioning service. See docs/ARCHITECTURE.md §2.1.
+  authUserId String? @unique @map("auth_user_id") @db.Uuid
+
+  /// Always stored lower-cased. Normalisation happens in the user service so
+  /// that uniqueness is genuinely case-insensitive without a citext extension.
+  email String @unique @db.VarChar(320)
+
+  fullName    String  @map("full_name") @db.VarChar(160)
+  displayName String? @map("display_name") @db.VarChar(80)
+  jobTitle    String? @map("job_title") @db.VarChar(120)
+
+  /// E.164 where possible. Used by the notification system in Phase 8.
+  phone          String? @db.VarChar(32)
+  whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
+
+  avatarUrl String? @map("avatar_url") @db.Text
+
+  /// Deactivation is the deletion mechanism for users. An inactive user
+  /// resolves to ZERO effective permissions regardless of assigned roles.
+  isActive      Boolean   @default(true) @map("is_active")
+  deactivatedAt DateTime? @map("deactivated_at") @db.Timestamptz(6)
+
+  lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdById  String? @map("created_by_id") @db.Uuid
+  createdBy    User?   @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdUsers User[]  @relation("UserCreatedBy")
+
+  roles              UserRole[]
+  directPermissions  UserPermission[] @relation("UserPermissionSubject")
+  grantedPermissions UserPermission[] @relation("UserPermissionGrantedBy")
+  assignedRoles      UserRole[]       @relation("UserRoleAssignedBy")
+  auditLogs          AuditLog[]       @relation("AuditLogActor")
+
+  createdOrders         Order[]         @relation("OrderCreatedBy")
+  assignedOrderItems    OrderItem[]     @relation("OrderItemWorker")
+  createdOrderItemLinks OrderItemLink[] @relation("OrderItemLinkCreatedBy")
+  orderNotes            OrderNote[]     @relation("OrderNoteAuthor")
+  orderActivity         OrderActivity[] @relation("OrderActivityActor")
+
+  dailyStats        DailyStat[] @relation("DailyStatUser")
+  enteredDailyStats DailyStat[] @relation("DailyStatEnteredBy")
+
+  paidExpenses          Expense[]       @relation("ExpensePaidBy")
+  createdExpenses       Expense[]       @relation("ExpenseCreatedBy")
+  workerPayments        WorkerPayment[] @relation("WorkerPaymentWorker")
+  createdWorkerPayments WorkerPayment[] @relation("WorkerPaymentCreatedBy")
+
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  messageLogs             MessageLog[]
+
+  createdFiverrGigStats FiverrGigStat[] @relation("FiverrGigStatCreatedBy")
+
+  @@index([isActive])
+  @@index([fullName])
+  // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
+  // so `migrate dev` no longer proposes dropping them.
+  @@index([fullName(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_full_name_trgm_idx")
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_email_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_phone_trgm_idx")
+  @@map("users")
+}
+
+/// A role is an editable collection of permissions. Roles are ordinary data:
+/// Super Admin is seeded like any other role and receives no special treatment
+/// in code.
+model Role {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique @db.VarChar(80)
+  slug        String  @unique @db.VarChar(80)
+  description String? @db.Text
+
+  /// System roles are seeded and protected from DELETION and from slug changes,
+  /// so the application cannot be left without an administrator. Their
+  /// PERMISSIONS remain fully editable — they are not hard-coded.
+  isSystem Boolean @default(false) @map("is_system")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+/// The permission catalog. Rows are seeded from
+/// src/lib/permissions/catalog.ts, which is the single source of truth for
+/// permission keys. The catalog is designed to grow: adding a key means adding
+/// it to the catalog and re-running the seed.
+model Permission {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Dotted key, e.g. `orders.view`. This is what application code checks.
+  key String @unique @db.VarChar(120)
+
+  name        String  @db.VarChar(160)
+  /// Grouping used by the permission editor UI, e.g. `orders`, `finance`.
+  module      String  @db.VarChar(60)
+  description String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  roles         RolePermission[]
+  userOverrides UserPermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+/// Assignment of a role to a user. A user may hold many roles; effective role
+/// permissions are the UNION of all of them.
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  assignedById String?  @map("assigned_by_id") @db.Uuid
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  role       Role  @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  assignedBy User? @relation("UserRoleAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+/// Permissions granted to a role.
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+/// A permission attached directly to one user, overriding their roles.
+///
+/// `effect = DENY` beats every role grant. `effect = ALLOW` grants a permission
+/// the user's roles do not carry. One row per (user, permission) pair, so a
+/// user cannot simultaneously hold a direct ALLOW and a direct DENY.
+model UserPermission {
+  userId       String           @map("user_id") @db.Uuid
+  permissionId String           @map("permission_id") @db.Uuid
+  effect       PermissionEffect
+
+  /// Why the override exists. Shown in the effective-access view; overrides are
+  /// exceptions and should be explainable.
+  reason String? @db.Text
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById String?  @map("created_by_id") @db.Uuid
+
+  user       User       @relation("UserPermissionSubject", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdBy  User?      @relation("UserPermissionGrantedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@id([userId, permissionId])
+  @@index([permissionId])
+  @@map("user_permissions")
+}

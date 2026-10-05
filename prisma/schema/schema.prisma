@@ -1,0 +1,23 @@
+// ---------------------------------------------------------------------------
+// Business Manager — Prisma schema root
+//
+// This is a MULTI-FILE schema. Prisma reads every *.prisma file in this folder
+// (configured by `schema` in ../../prisma.config.ts). One file per domain group:
+//
+//   schema.prisma    <- you are here: datasource, generator, shared enums
+//   identity.prisma  <- users, roles, permissions and their join tables
+//   audit.prisma     <- audit_logs
+//
+// Later phases add one file per domain group (crm, catalog, orders, finance,
+// statistics, messaging). See docs/DATABASE.md for the full map and for the
+// rule about where to add a new model.
+// ---------------------------------------------------------------------------
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma"
+}

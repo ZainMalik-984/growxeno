@@ -1,0 +1,101 @@
+// ---------------------------------------------------------------------------
+// Catalog (Phase 3) — specification Section 50
+//
+// What is here:
+//   - Category: a grouping of related services (e.g. "Design").
+//   - Service: a sellable service (e.g. "UX Design"), with the price we
+//     charge the client by default.
+//
+// What is deliberately NOT here, and why:
+//   - A per-service "worker cost" — specification Section 24 puts "Worker
+//     cost" on the ORDER ITEM, not the service. What it costs to fulfil a
+//     service (e.g. paying an outsourced worker) is a fact about who is doing
+//     THIS particular piece of work, entered when the Order Item is created
+//     (Phase 4), and is snapshotted there so a later rate change never rewrites
+//     history. It is deliberately not modelled as a property of Service, and
+//     not as a separate "outsourced worker's service catalog" — the owner was
+//     explicit that our own Service and whatever an outsourced worker charges
+//     us are different things, tracked separately, per Order Item.
+//   - Pricing tiers. Removed from the CRM domain entirely at the owner's
+//     direction — see the note at the top of `crm.prisma`. There is no
+//     override layer any more either: Buyer, and with it `BuyerPricing`, was
+//     removed entirely post-Phase-10 (2026-09-27) — `Service.basePrice` is
+//     now purely a reference figure (it stopped feeding an Order Item's
+//     price even earlier, in the D12 order-item redesign).
+//
+// `Service.metricType` (owner-directed order-item redesign, 2026-09-27): a
+// service can optionally be tagged as one of the three growth metrics this
+// business sells against a client's channel (Views / Subscribers / Watch
+// Hours). Nullable — most services are not this kind of sale. See
+// `src/lib/services/metric-type.ts` and `OrderItem` in `orders.prisma`.
+// ---------------------------------------------------------------------------
+
+/// One of the three growth metrics sold against a client's channel
+/// (confirmed directly, 2026-09-27: "like in youtube category there would be
+/// 3 things, views, subscribers, watch hours"). See `Service.metricType`.
+enum ServiceMetricType {
+  VIEWS
+  SUBSCRIBERS
+  WATCH_HOURS
+}
+
+/// A grouping of related services (specification Section 50), e.g. "Design"
+/// containing "UX Design", "UI Design", "Wireframes".
+model Category {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique @db.VarChar(120)
+  slug        String  @unique @db.VarChar(120)
+  description String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  services   Service[]
+  orderItems OrderItem[]
+
+  // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
+  // so `migrate dev` no longer proposes dropping them.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "categories_name_trgm_idx")
+  @@map("categories")
+}
+
+/// A sellable service (specification Section 50).
+model Service {
+  id   String @id @default(uuid()) @db.Uuid
+  name String @db.VarChar(160)
+
+  categoryId String   @map("category_id") @db.Uuid
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  description String? @db.Text
+
+  /// A reference figure only — no override layer reads it any more (see the
+  /// file header). Nullable: a service can exist in the catalog before its
+  /// price is finalised. See the file header for why worker cost is NOT a
+  /// field here.
+  basePrice Decimal? @map("base_price") @db.Decimal(14, 2)
+  currency  String   @default("USD") @db.Char(3)
+
+  /// Which of the three growth metrics this service sells, if any — see the
+  /// file header. Nullable: most services are not this kind of sale, and an
+  /// Order Item against a service with no metric type gets none of the
+  /// structured channel-link/target-count/current-count fields.
+  metricType ServiceMetricType? @map("metric_type")
+
+  /// A service no longer offered is deactivated, not deleted, so past orders
+  /// that reference it keep resolving.
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  orderItems OrderItem[]
+
+  @@index([categoryId])
+  @@index([name])
+  @@index([isActive])
+  // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
+  // so `migrate dev` no longer proposes dropping them.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "services_name_trgm_idx")
+  @@map("services")
+}

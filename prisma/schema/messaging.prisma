@@ -1,0 +1,199 @@
+// ---------------------------------------------------------------------------
+// Messaging / Notifications (Phase 8) — specification Sections 65-74
+//
+// What is here:
+//   - NotificationEvent: the closed event set from Section 65, plus one
+//     documented addition (ORDER_ITEM_STOP_WORK_REQUESTED, already in use
+//     since Phase 7 as a free-text string on NotificationOutbox — folded into
+//     this enum now that one exists, see the migration that adds this file).
+//   - NotificationChannel / MessageStatus: closed sets from Sections 66/71.
+//   - Notification: in-app notifications (Section 67) — a real, working
+//     feature this phase, since it needs no external provider or queue.
+//   - NotificationTemplate: reusable, validated message templates (Section
+//     70) — one per (event, channel).
+//   - NotificationPreference: per-user, per-event, per-channel override
+//     (Section 74). A MISSING row means "use the system default" —
+//     `src/lib/notifications/events.ts`'s DEFAULT_NOTIFICATION_PREFERENCES,
+//     not a second copy of the defaults in the database.
+//   - MessageLog: every outbound message, one row per attempt (Section 71).
+//
+// What is deliberately NOT built this phase, and why (2026-09-18): Section 72
+// mandates Redis + BullMQ for async dispatch. No Redis instance exists in
+// this environment — a local Homebrew install was attempted and aborted
+// after it started compiling LLVM/Rust from source (no bottles exist for
+// this macOS version), and the owner chose to defer the queue rather than
+// spend 30-90+ minutes compiling a toolchain, or wait on a hosted Redis
+// account being created. The real consequence: NotificationOutbox rows are
+// still written (durable intent, same pattern as Phase 4), and in-app
+// notifications are still written synchronously (a database write needs no
+// queue), but nothing dispatches an actual email or WhatsApp message yet —
+// EmailProvider/WhatsAppProvider resolve to an "unconfigured" stub that
+// reports FAILED, never a fabricated success (Section 66's "missing
+// credentials mean unconfigured" rule, same treatment already given to the
+// missing Storage bucket and the unconfigured SMTP templates). Deadline
+// reminders (DEADLINE_24H/6H/TODAY, ORDER_OVERDUE) and PAYMENT_DUE need a
+// recurring scheduled check — also blocked on the same queue/worker
+// decision — so no code fires them yet; wiring them in later is mechanical
+// once a scheduler exists. See docs/NOTIFICATIONS.md for the full account.
+// ---------------------------------------------------------------------------
+
+/// The closed event set (specification Section 65). Emitted only from
+/// service-layer code, never from a component — one notification service,
+/// not notification logic scattered per feature (Section 66's explicit rule).
+enum NotificationEvent {
+  ORDER_CREATED
+  ORDER_ASSIGNED
+  ORDER_PROCESSED
+  ORDER_STARTED
+  ORDER_COMPLETED
+  ORDER_REVISED
+  DEADLINE_24H
+  DEADLINE_6H
+  DEADLINE_TODAY
+  ORDER_OVERDUE
+  PAYMENT_DUE
+  /// Addition beyond Section 65's list (Phase 7, formalized here): a
+  /// customer cancelled an order item an outsourced worker was mid-progress
+  /// on, and they must be told to stop. Outbox-only — an outsourced worker
+  /// has no User row, so this never produces an in-app Notification.
+  ORDER_ITEM_STOP_WORK_REQUESTED
+
+  @@map("notification_event")
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+
+  @@map("notification_channel")
+}
+
+enum MessageStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+
+  @@map("message_status")
+}
+
+/// In-app notification (specification Section 67). Written synchronously in
+/// the same transaction as the business event it describes — this is a
+/// database write, not a provider call, so it does not need the queue.
+model Notification {
+  id String @id @default(uuid()) @db.Uuid
+
+  recipientId String @map("recipient_id") @db.Uuid
+  recipient   User   @relation(fields: [recipientId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  type    NotificationEvent
+  title   String            @db.VarChar(160)
+  message String            @db.Text
+
+  isRead Boolean   @default(false) @map("is_read")
+  readAt DateTime? @map("read_at") @db.Timestamptz(6)
+
+  /// Optional entity reference + action URL (Section 67), e.g. "Order" /
+  /// the order's id / "/orders/{id}" — lets the notification center link
+  /// straight to what changed.
+  entityType String? @map("entity_type") @db.VarChar(40)
+  entityId   String? @map("entity_id") @db.Uuid
+  actionUrl  String? @map("action_url") @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([recipientId, isRead, createdAt])
+  @@map("notifications")
+}
+
+/// A reusable, validated message template (Section 70) — one per
+/// (event, channel), never a string literal scattered through feature code.
+model NotificationTemplate {
+  id String @id @default(uuid()) @db.Uuid
+
+  event   NotificationEvent
+  channel NotificationChannel
+
+  name    String  @db.VarChar(120)
+  /// Email only. Ignored for IN_APP/WHATSAPP.
+  subject String? @db.VarChar(200)
+  body    String  @db.Text
+
+  /// Which {{variable}} placeholders this template actually needs — checked
+  /// against the closed set in src/lib/notifications/events.ts and against
+  /// what is present in `body`/`subject` before saving (Section 70: "prevent
+  /// broken placeholders").
+  requiredVariables String[] @map("required_variables")
+
+  /// WhatsApp only: Meta requires templates to be pre-approved before use.
+  /// Storing the approved name/language is all this application can do —
+  /// approval itself happens on Meta's side (docs/NOTIFICATIONS.md §5).
+  metaTemplateName     String? @map("meta_template_name") @db.VarChar(120)
+  metaTemplateLanguage String? @map("meta_template_language") @db.VarChar(10)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messageLogs MessageLog[]
+
+  @@unique([event, channel])
+  @@map("notification_templates")
+}
+
+/// Per-user override of the system default (Section 74). A row's ABSENCE
+/// means "use the default for this event+channel" — defaults live in code
+/// (src/lib/notifications/events.ts's DEFAULT_NOTIFICATION_PREFERENCES),
+/// never duplicated into the database as a second copy that could drift.
+model NotificationPreference {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId  String              @map("user_id") @db.Uuid
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  event   NotificationEvent
+  channel NotificationChannel
+
+  enabled Boolean
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, event, channel])
+  @@map("notification_preferences")
+}
+
+/// Every outbound message, one row per attempt (Section 71). Recipient is
+/// denormalized (label + contact) alongside the optional User FK because a
+/// real recipient is often NOT a User — an OutsourcedWorker, a Customer, a
+/// plain email/phone — the same "actor may not be a User" pattern as
+/// OrderActivity.actorLabel.
+model MessageLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  recipientId    String? @map("recipient_id") @db.Uuid
+  recipient      User?   @relation(fields: [recipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  recipientLabel String  @map("recipient_label") @db.VarChar(160)
+
+  channel NotificationChannel
+  event   NotificationEvent
+
+  templateId String?               @map("template_id") @db.Uuid
+  template   NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  providerMessageId String? @map("provider_message_id") @db.VarChar(200)
+
+  status MessageStatus @default(QUEUED)
+  error  String?       @db.Text
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(6)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@index([recipientId])
+  @@index([event])
+  @@map("message_logs")
+}

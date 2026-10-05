@@ -1,0 +1,369 @@
+// ---------------------------------------------------------------------------
+// Orders (Phase 4) — specification Sections 21–28, 39–42, 62, 64, 133–134
+//
+// What is here:
+//   - OutsourcedWorker: a third-party worker with no application account — a
+//     cost-tracking contact, not an actor in the system. See the Order Item
+//     "worker" note below.
+//   - Order: the commercial container (§22). `orderNumber` is a plain
+//     autoincrement integer — the specification asks for an internal
+//     id/number, not a formatted scheme, so the simplest reliable option wins.
+//   - OrderItem: the unit of work (§24), independent status from its parent
+//     (§41). `workerCost` is a SNAPSHOT taken when the item is created or
+//     edited — never recomputed later from a worker's current rate, so a
+//     later change never rewrites what an existing order recorded as paid.
+//     Confirmed directly by the owner (docs/REQUIREMENTS.md D3 note).
+//     Owner-directed redesign (confirmed directly, 2026-09-27, D12): an item
+//     has NO price of its own any more — `Order.totalAmount` is the single,
+//     directly-entered price for the whole order. An item whose Service is
+//     tagged with a `ServiceMetricType` (catalog.prisma) additionally carries
+//     `channelLink`/`targetCount`/`currentCount` — the structured shape of
+//     "if subscribers it would take the channel link, number of subscribers
+//     required, current subscribers, and a note" (the existing `description`
+//     field is that note).
+//   - OrderItemLink: normalized URLs for search (§25, §27, §133, §134) —
+//     a table, not a text field.
+//   - OrderNote: internal notes, distinct from activity (§62).
+//   - OrderActivity: the operational feed on an order — distinct from
+//     `audit_logs` (the security record) and from notes. Three different
+//     things (§64, docs/ORDERS.md §9).
+//   - NotificationOutbox: durable notification INTENT written inside Process
+//     Order's transaction, addition to the §21 entity list justified in
+//     docs/ARCHITECTURE.md §8 — no dispatcher drains it until Phase 8, but
+//     Process Order must not fail because a message provider is unreachable.
+//
+// Full design reasoning, the state-machine transition tables, and the search
+// architecture are recorded in docs/ORDERS.md and docs/ARCHITECTURE.md §5–6 —
+// written before this file, per specification Section 159.
+//
+// What is deliberately NOT here: order files (§63). Supabase Storage needs a
+// bucket configured first — no bucket exists in this project yet, the same
+// "missing configuration must not stop independent work, but cannot be
+// silently assumed" reasoning as Phase 1's messaging providers.
+// ---------------------------------------------------------------------------
+
+/// Owner-directed simplification (confirmed directly, 2026-09-27: "currently
+/// there are only two sources for order Fiverr and External"), replacing the
+/// original generic four-value enum (DIRECT/WHOLESALE/MANUAL/OTHER). Existing
+/// rows were backfilled by whether they already had a `fiverrAccountId`.
+enum OrderSource {
+  FIVERR
+  EXTERNAL
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  IN_PROGRESS
+  INTERNAL_REVIEW
+  READY_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+  REVISION
+  CANCELLED
+}
+
+/// Subset of OrderStatus that means anything for a single unit of work
+/// (docs/ORDERS.md §4) — an item is never READY_FOR_DELIVERY or DELIVERED,
+/// PROCESSING is an order-level state.
+enum OrderItemStatus {
+  PENDING
+  IN_PROGRESS
+  INTERNAL_REVIEW
+  REVISION
+  COMPLETED
+  CANCELLED
+}
+
+/// A third-party worker with no application account, no login, no RBAC —
+/// just a name and a cost to track per Order Item. NOT a `User`: modelling an
+/// outsourced worker as one would require an email and an auth identity for
+/// someone who is a cost-tracking record, not an actor in the system.
+model OutsourcedWorker {
+  id             String  @id @default(uuid()) @db.Uuid
+  name           String  @db.VarChar(160)
+  email          String? @db.VarChar(320)
+  phone          String? @db.VarChar(32)
+  whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
+  notes          String? @db.Text
+
+  /// A worker no longer used is deactivated, not deleted, so past order items
+  /// that reference them keep resolving.
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  orderItems OrderItem[]
+  payments   WorkerPayment[]
+
+  @@index([isActive])
+  @@index([name])
+  // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
+  // so `migrate dev` no longer proposes dropping them.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "outsourced_workers_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "outsourced_workers_phone_trgm_idx")
+  @@map("outsourced_workers")
+}
+
+/// The commercial container (specification Section 22).
+model Order {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Plain autoincrement integer — the specification asks for an internal
+  /// id/number, not a formatted scheme. Displayed as "#1042".
+  orderNumber Int @unique @default(autoincrement()) @map("order_number")
+
+  source OrderSource @default(EXTERNAL)
+
+  /// A Fiverr order's Fiverr order id, if wanted, recorded here as plain text
+  /// — never a live Fiverr integration of any kind (no API, auth, sync,
+  /// scraping or webhooks — the Absolute Fiverr Rule, specification Section
+  /// 2, still holds). `source` itself naming "Fiverr" is a deliberate,
+  /// owner-directed exception to Section 22's "do not make them
+  /// Fiverr-specific" for the source field only — see the enum's doc comment.
+  externalReference String? @map("external_reference") @db.VarChar(160)
+
+  customerId String?   @map("customer_id") @db.Uuid
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  /// Which of the business's Fiverr seller profiles this order landed on.
+  /// Required by the service layer when `source = FIVERR`; never asked for,
+  /// and forced to null, when `source = EXTERNAL` (confirmed directly,
+  /// 2026-09-27: "fiverr account should be taken if source is Fiverr").
+  fiverrAccountId String?        @map("fiverr_account_id") @db.Uuid
+  fiverrAccount   FiverrAccount? @relation(fields: [fiverrAccountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  orderDate DateTime  @default(now()) @map("order_date") @db.Timestamptz(6)
+  deadline  DateTime? @db.Timestamptz(6)
+
+  status OrderStatus @default(PENDING)
+
+  /// The whole order's price, entered directly by whoever creates or edits
+  /// the order (owner-directed redesign, confirmed directly 2026-09-27: "order
+  /// price should be taken for the whole order not for each item") — NOT
+  /// derived from its items, which carry no price of their own any more. See
+  /// the file header and docs/REQUIREMENTS.md D12.
+  totalAmount Decimal @default(0) @map("total_amount") @db.Decimal(14, 2)
+  /// See docs/REQUIREMENTS.md D1: amounts in different currencies must never
+  /// be summed into one total.
+  currency    String  @default("USD") @db.Char(3)
+
+  notes String? @db.Text
+
+  /// Set when the order transitions to DELIVERED — revenue recognition point
+  /// (docs/REQUIREMENTS.md D4, answered 2026-09-17), and needed for
+  /// period-based revenue reporting since `orderDate` is the creation date,
+  /// not when it was actually delivered.
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+
+  /// Whole-order, boolean, no partial refund (D4 follow-up, answered
+  /// 2026-09-17) — a refunded order keeps its real status (Delivered/
+  /// Completed); this just excludes it from recognized revenue. Who/when is
+  /// covered by the audit log on the edit, not a duplicate field here.
+  refunded Boolean @default(false)
+
+  createdById String @map("created_by_id") @db.Uuid
+  createdBy   User   @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items         OrderItem[]
+  internalNotes OrderNote[]
+  expenses      Expense[]
+  activity      OrderActivity[]
+
+  @@index([status])
+  @@index([deadline])
+  @@index([customerId])
+  @@index([createdAt])
+  @@index([source])
+  @@index([fiverrAccountId])
+  // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
+  // so `migrate dev` no longer proposes dropping them.
+  @@index([externalReference(ops: raw("gin_trgm_ops"))], type: Gin, map: "orders_external_reference_trgm_idx")
+  @@map("orders")
+}
+
+/// The unit of work (specification Section 24). Status is independent of the
+/// parent Order (Section 41) — nothing here is bulk-written by a parent
+/// status change.
+model OrderItem {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  serviceId String  @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Snapshotted from `service.categoryId` at creation, so a later
+  /// re-categorisation of the service does not rewrite what this item was
+  /// filed under at the time.
+  categoryId String   @map("category_id") @db.Uuid
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Exactly one of `workerId` / `outsourcedWorkerId` is set — enforced in
+  /// the service layer, not the database (a `CHECK` spanning two nullable FKs
+  /// adds little here and Postgres has no portable "exactly one of" constraint
+  /// short of a trigger). See the OutsourcedWorker doc comment for why these
+  /// are two different relations rather than one polymorphic one.
+  workerId String? @map("worker_id") @db.Uuid
+  worker   User?   @relation("OrderItemWorker", fields: [workerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  outsourcedWorkerId String?           @map("outsourced_worker_id") @db.Uuid
+  outsourcedWorker   OutsourcedWorker? @relation(fields: [outsourcedWorkerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  /// Doubles as the free-text "note" the owner described alongside the
+  /// structured metric fields below.
+  description String?   @db.Text
+  deadline    DateTime? @db.Timestamptz(6)
+
+  /// The client's channel, only meaningful when `service.metricType` is set
+  /// — see the file header. Plain text, validated http(s)-only at the
+  /// service layer (never fetched by the server, same rule as
+  /// `OrderItemLink.url`) and rendered as a link the same safe way.
+  channelLink  String? @map("channel_link") @db.Text
+  /// How many of the metric are wanted (e.g. "1000 subscribers"). Required by
+  /// the service layer whenever `service.metricType` is set.
+  targetCount  Int?    @map("target_count")
+  /// Where the channel stands right now for this metric. Optional — not
+  /// always known at creation, and tracked/updated as the item progresses.
+  currentCount Int?    @map("current_count")
+
+  /// Paid to whoever performs the work. Nullable: not resolved for internal
+  /// staff paid a salary rather than per item. Snapshotted — see the file header.
+  workerCost         Decimal? @map("worker_cost") @db.Decimal(14, 2)
+  workerCostCurrency String   @default("USD") @map("worker_cost_currency") @db.Char(3)
+
+  status OrderItemStatus @default(PENDING)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Stamped when the item reaches COMPLETED or CANCELLED (the two "earned" states,
+  /// docs/REQUIREMENTS.md D5); cleared if a completed item is flagged back to REVISION.
+  /// Reports and Finance range on this instead of `updatedAt`, which moves on any edit.
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  links OrderItemLink[]
+
+  @@index([orderId])
+  @@index([workerId, status])
+  @@index([outsourcedWorkerId])
+  @@index([serviceId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([status, finishedAt])
+  @@map("order_items")
+}
+
+/// A normalized URL attached to an Order Item (specification Sections 25, 27,
+/// 133, 134) — a table, not a text field, because finding an order by a URL
+/// substring or domain needs an index a notes blob cannot offer.
+model OrderItemLink {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderItemId String    @map("order_item_id") @db.Uuid
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// Exactly what the user typed, preserved verbatim. The server never
+  /// fetches this URL.
+  url String @db.Text
+
+  /// Matching key: lower-cased scheme/host, default port and one trailing
+  /// slash dropped. Path case and the query string are preserved — both are
+  /// frequently meaningful. See docs/ORDERS.md §7.
+  normalizedUrl String @map("normalized_url") @db.Text
+  domain        String @db.VarChar(255)
+  path          String @db.Text
+
+  /// e.g. "Reference", "Delivery", "Repository" — free text, not a controlled list.
+  label String? @db.VarChar(80)
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdBy   User?    @relation("OrderItemLinkCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([orderItemId])
+  @@index([domain])
+  // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
+  // so `migrate dev` no longer proposes dropping them.
+  @@index([normalizedUrl(ops: raw("gin_trgm_ops"))], type: Gin, map: "order_item_links_normalized_url_trgm_idx")
+  @@map("order_item_links")
+}
+
+/// Internal notes (specification Section 62) — distinct from `OrderActivity`.
+model OrderNote {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  body String @db.Text
+
+  authorId String @map("author_id") @db.Uuid
+  author   User   @relation("OrderNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orderId])
+  @@map("order_notes")
+}
+
+/// The operational feed on an order (specification Section 64) — distinct
+/// from `audit_logs` (the security/compliance record) and from `OrderNote`.
+model OrderActivity {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  actorId String? @map("actor_id") @db.Uuid
+  actor   User?   @relation("OrderActivityActor", fields: [actorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  /// Denormalised snapshot so the feed stays readable after a rename, and so
+  /// an outsourced-worker actor (no `User` row at all) can still be named.
+  actorLabel String? @map("actor_label") @db.VarChar(160)
+
+  /// Machine-readable, e.g. "order.status_changed".
+  action  String @db.VarChar(80)
+  /// Human-readable, e.g. "Ahmed changed the item status from In Progress to
+  /// Internal Review."
+  summary String @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orderId, createdAt])
+  @@map("order_activity")
+}
+
+/// Durable notification INTENT (specification Section 21 addition, justified
+/// in docs/ARCHITECTURE.md §8). Written inside Process Order's transaction so
+/// an unreachable email/WhatsApp provider never fails the order change itself.
+/// No dispatcher drains this yet — that is Phase 8. Writing it now, rather
+/// than skipping it until Phase 8, means Process Order's transaction shape
+/// does not change when the dispatcher is added.
+model NotificationOutbox {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// What a future dispatcher will branch on. Was a free-text VarChar until
+  /// Phase 8 formalized NotificationEvent as a real enum (messaging.prisma);
+  /// the two values already written here ("order.processed",
+  /// "order_item.stop_work_requested") were remapped by hand in the
+  /// migration that added this column type — see docs/DEVELOPMENT.md.
+  eventType NotificationEvent @map("event_type")
+  /// Whatever the eventual dispatch needs — order id, recipient, rendered
+  /// template variables, etc.
+  payload   Json              @db.JsonB
+
+  /// Intent-processing status ("has this row been drained yet"), distinct
+  /// from MessageLog.status (per-channel delivery status, Section 71) — not
+  /// worth conflating into one enum.
+  status String    @default("PENDING") @db.VarChar(20)
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
+  error  String?   @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@map("notification_outbox")
+}
