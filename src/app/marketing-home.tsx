@@ -158,8 +158,8 @@ function Reveal({ children, className, delay = 0 }: { children: ReactNode; class
 function Logo({ dark }: { dark?: boolean }) {
   return (
     <span className={cn("flex items-center gap-2 text-[15px] font-semibold tracking-tight", dark ? "text-white" : "text-neutral-900")}>
-      <span className="flex size-7 items-center justify-center rounded-lg bg-orange-700 text-[13px] font-bold text-white">W</span>
-      Wide n Well
+      <span className="flex size-7 items-center justify-center rounded-lg bg-orange-700 text-[13px] font-bold text-white">G</span>
+      Grow Xeno
     </span>
   );
 }
@@ -263,7 +263,7 @@ export function MarketingHome() {
             <span className="bg-gradient-to-r from-orange-600 to-rose-500 bg-clip-text text-transparent">brand</span>
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-neutral-500">
-            Wide n Well handles monetization, AdSense, social growth, and web &amp; store builds — verified before
+            Grow Xeno handles monetization, AdSense, social growth, and web &amp; store builds — verified before
             it&apos;s called delivered, and supported after it is.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -348,7 +348,7 @@ export function MarketingHome() {
       <section id="why-us" className="border-t border-neutral-100 bg-neutral-50/70 py-24 sm:py-32">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
           <Reveal className="mx-auto max-w-2xl text-center">
-            <p className={EYEBROW}>Why Wide n Well</p>
+            <p className={EYEBROW}>Why Grow Xeno</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
               Scams are common in this space. Accountability isn&apos;t.
             </h2>
@@ -437,11 +437,11 @@ export function MarketingHome() {
 
             <div className="mx-auto mt-10 grid max-w-xl gap-4 sm:grid-cols-2">
               <a
-                href="mailto:hello@widenwell.com"
+                href="mailto:hello@growxeno.com"
                 className="flex flex-col items-center gap-2 rounded-xl bg-white/5 px-5 py-6 text-white transition-colors hover:bg-white/10"
               >
                 <Mail className="size-5 text-orange-400" />
-                <span className="text-sm font-medium">hello@widenwell.com</span>
+                <span className="text-sm font-medium">hello@growxeno.com</span>
               </a>
               <span className="flex flex-col items-center gap-2 rounded-xl bg-white/5 px-5 py-6 text-white">
                 <MapPin className="size-5 text-orange-400" />
@@ -463,7 +463,7 @@ export function MarketingHome() {
               </a>
             ))}
           </nav>
-          <p className="text-xs text-neutral-500">© {new Date().getFullYear()} Wide n Well</p>
+          <p className="text-xs text-neutral-500">© {new Date().getFullYear()} Grow Xeno</p>
         </div>
       </footer>
     </div>

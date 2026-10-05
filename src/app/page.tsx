@@ -21,12 +21,12 @@ import { MarketingHome } from "./marketing-home";
  *
  * `title: { absolute: ... }` bypasses the root layout's
  * `"%s · Business Manager"` template on purpose — this page is the public
- * "Wide n Well" brand, not an internal Business Manager screen, and
+ * "Grow Xeno" brand, not an internal Business Manager screen, and
  * `robots` overrides the root layout's site-wide `noindex` (correct for an
  * internal tool, wrong for the one page meant to be found by customers).
  */
 export const metadata: Metadata = {
-  title: { absolute: "Wide n Well — Digital Growth, Delivered Honestly" },
+  title: { absolute: "Grow Xeno — Digital Growth, Delivered Honestly" },
   description:
     "YouTube & TikTok monetization, Google AdSense, social media marketing, website design and Shopify growth — verified before it's called delivered.",
   robots: { index: true, follow: true },
