@@ -47,7 +47,11 @@ test.describe("unauthenticated access", () => {
     await page.goto("/");
     await expect(page).not.toHaveURL(/\/login/);
     await expect(page.getByRole("heading", { name: /Real growth for your/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+    // Ported verbatim from growxeno-project (confirmed directly, 2026-10-05):
+    // the source design has no link back into the internal app, so there is
+    // no "Sign in" link to assert here anymore — check a CTA that is actually
+    // part of the ported page instead.
+    await expect(page.getByRole("link", { name: "Book a meeting" }).first()).toBeVisible();
   });
 
   test("no protected content leaks into the redirected response body", async ({ page }) => {

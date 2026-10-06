@@ -113,3 +113,130 @@
     color: var(--color-ink-faint);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Grow Xeno — public home page theme tokens
+
+   Ported directly from growxeno-project/src/styles.css, confirmed verbatim
+   (2026-10-05): "exactly same design and structure and UI and UX nothing
+   changed just convert this in our home page." This is the ONE page in the
+   app that intentionally does not use the tokens above.
+
+   @theme registrations are necessarily global in Tailwind v4 — there is no
+   scoped @theme — but a registration only creates a utility class (bg-primary,
+   text-navy, rounded-lg, ...); it does not itself set a page-wide value. The
+   actual VALUES are declared under .gx below, not :root, so bg-primary /
+   text-navy / rounded-lg etc. only resolve to something inside the Grow Xeno
+   page. Every one of these names was checked against the rest of the app
+   before adding them here (`grep -rl` for each) and none are used outside
+   this page, so this is inert elsewhere, not a behaviour change.
+
+   --font-sans / --font-mono are deliberately NOT re-registered — this file
+   already owns those two names, above, for the internal tool. Grow Xeno's
+   Geist typeface is applied directly as a font-family on .gx instead (see
+   src/app/marketing-home.tsx), loaded via the same Google Fonts stylesheet
+   growxeno-project itself links (src/app/page.tsx) — not next/font/google,
+   which does not package Geist in this Next.js version.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-navy-foreground: var(--navy-foreground);
+  --color-navy-muted: var(--navy-muted);
+  --color-navy-line: var(--navy-line);
+  --color-success: var(--success);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+.gx {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.2 0.02 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.02 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.02 250);
+  --surface: oklch(0.975 0.004 240);
+  --primary: oklch(0.47 0.1 162);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.006 240);
+  --secondary-foreground: oklch(0.2 0.02 250);
+  --muted: oklch(0.955 0.006 240);
+  --muted-foreground: oklch(0.5 0.02 250);
+  --accent: oklch(0.95 0.03 162);
+  --accent-foreground: oklch(0.36 0.08 162);
+  --success: oklch(0.55 0.12 160);
+  --destructive: oklch(0.58 0.2 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.91 0.006 250);
+  --input: oklch(0.87 0.008 250);
+  --ring: oklch(0.47 0.1 162);
+  --navy: oklch(0.2 0.025 250);
+  --navy-2: oklch(0.25 0.025 250);
+  --navy-foreground: oklch(0.97 0.004 250);
+  --navy-muted: oklch(0.72 0.015 250);
+  --navy-line: oklch(1 0 0 / 0.1);
+  --shadow-panel: 0 1px 2px oklch(0.2 0.02 250 / 0.06), 0 12px 32px -12px oklch(0.2 0.02 250 / 0.18);
+
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.gx h1,
+.gx h2,
+.gx h3 {
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+@utility shadow-panel {
+  box-shadow: var(--shadow-panel);
+}
+
+@utility kicker {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+@keyframes gx-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-fade-up {
+  animation: gx-fade-up 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
