@@ -31,11 +31,16 @@ export function CustomerPicker({
   initial,
   onChange,
   canCreate,
+  inputClassName,
+  invalid,
 }: {
   id: string;
   initial: SelectedCustomer | null;
   onChange: (customer: SelectedCustomer | null) => void;
   canCreate: boolean;
+  /** Optional extra classes so a host form can match its own field styling. Behaviour is unchanged. */
+  inputClassName?: string;
+  invalid?: boolean;
 }) {
   const [query, setQuery] = useState(initial?.name ?? "");
   const [selected, setSelected] = useState<SelectedCustomer | null>(initial ?? null);
@@ -147,6 +152,9 @@ export function CustomerPicker({
           }}
           placeholder="Start typing a name…"
           autoComplete="off"
+          className={inputClassName}
+          aria-invalid={invalid || undefined}
+          aria-autocomplete="list"
         />
         {selected ? (
           <Button type="button" variant="ghost" size="sm" onClick={clear}>
@@ -156,7 +164,7 @@ export function CustomerPicker({
       </div>
 
       {showDropdown ? (
-        <div role="listbox" className="absolute z-40 mt-1 w-full border border-line bg-canvas shadow-sm">
+        <div role="listbox" className="absolute z-40 mt-1 w-full overflow-hidden rounded-[8px] border border-line bg-canvas shadow-lg shadow-zinc-900/10">
           {status === "loading" ? (
             <p className="px-3 py-3 text-[13px] text-ink-faint">Searching…</p>
           ) : status === "error" ? (

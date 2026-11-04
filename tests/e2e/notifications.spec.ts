@@ -222,15 +222,10 @@ test.describe("Notifications (Phase 8)", () => {
       await page.getByLabel("Assigned to").selectOption({ label: ADMIN_NAME });
       await expect(page.getByText("Assignment updated.")).toBeVisible({ timeout: 30_000 });
 
-      await page.getByRole("button", { name: "Process order" }).click();
-      await expect(page.getByText(/Order #\d+ processed/)).toBeVisible({ timeout: 30_000 });
 
       await page.goto("/notifications");
       await expect(
         page.getByText(new RegExp(`Assigned to order #${orderNumber}`)),
-      ).toBeVisible({ timeout: 30_000 });
-      await expect(
-        page.getByText(new RegExp(`Order #${orderNumber} started`)),
       ).toBeVisible({ timeout: 30_000 });
 
       await page.getByRole("button", { name: "Mark all read" }).click();

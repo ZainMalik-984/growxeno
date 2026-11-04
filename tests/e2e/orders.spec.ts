@@ -108,7 +108,13 @@ async function runOrderLifecycle(page: import("@playwright/test").Page, stamp: n
   await expect(itemRow).toBeVisible({ timeout: 30_000 });
 
   // --- Assign the outsourced worker ---
-  await page.getByLabel("Assigned to").selectOption({ label: `${workerName} (outsourced)` });
+  // Assigning opens a dedicated modal now (2026-10-15 redesign): click the
+  // item's assignee control, pick the worker from the picker list, then
+  // "Save assignment" — see order-items-panel.tsx's AssignWorkerModal.
+  await itemRow.getByRole("button", { name: "Assign worker" }).click();
+  const assignDialog = page.locator("dialog[open]");
+  await assignDialog.getByRole("button", { name: workerName, exact: false }).click();
+  await assignDialog.getByRole("button", { name: "Save assignment" }).click();
   await expect(page.getByText("Assignment updated.")).toBeVisible({ timeout: 30_000 });
 
   // --- Add a link to the item ---
@@ -120,49 +126,30 @@ async function runOrderLifecycle(page: import("@playwright/test").Page, stamp: n
     timeout: 30_000,
   });
 
-  // --- Process the order (PENDING -> PROCESSING, item PENDING -> IN_PROGRESS) ---
-  await page.getByRole("button", { name: "Process order" }).click();
-  await expect(page.getByText("Order processed.")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Processing", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
-
-  // --- Move the item to Internal Review, then Completed ---
-  await page.getByLabel("Move to").selectOption({ label: "Internal Review" });
+  // --- Statuses follow the items on their own (owner-directed rework,
+  // 2026-11-03): assigning every item made the order Assigned; accepting
+  // makes the item (and order) Processing; Done makes the order Completed.
+  // Only Delivered and Finalized are set by hand. ---
+  await expect(page.getByText("Assigned", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await itemRow.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByText("Item status updated.")).toBeVisible({ timeout: 30_000 });
-  await page.getByLabel("Move to").selectOption({ label: "Completed" });
+  await expect(itemRow.getByText("Processing", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await itemRow.getByRole("button", { name: "Mark done" }).click();
   await expect(page.getByText("Item status updated.")).toBeVisible({ timeout: 30_000 });
 
-  // --- Move the order forward: IN_PROGRESS was reached via Process; now
-  // Internal Review -> Ready for Delivery -> Delivered -> Completed ---
-  await page.getByRole("button", { name: "In Progress" }).click();
-  const inProgressDialog = page.locator("dialog[open]");
-  await inProgressDialog.getByRole("button", { name: "Confirm" }).click();
+  await page.getByRole("button", { name: "Mark delivered" }).click();
+  await page.locator("dialog[open]").getByRole("button", { name: "Confirm" }).click();
   await expect(page.getByText("Status updated.", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: "Internal Review" }).click();
-  const reviewDialog = page.locator("dialog[open]");
-  await reviewDialog.getByRole("button", { name: "Confirm" }).click();
-  await expect(page.getByText("Status updated.", { exact: true })).toBeVisible({ timeout: 30_000 });
-
-  await page.getByRole("button", { name: "Ready for Delivery" }).click();
-  const readyDialog = page.locator("dialog[open]");
-  await readyDialog.getByRole("button", { name: "Confirm" }).click();
-  await expect(page.getByText("Status updated.", { exact: true })).toBeVisible({ timeout: 30_000 });
-
-  await page.getByRole("button", { name: "Delivered" }).click();
-  const deliveredDialog = page.locator("dialog[open]");
-  await deliveredDialog.getByRole("button", { name: "Confirm" }).click();
-  await expect(page.getByText("Status updated.", { exact: true })).toBeVisible({ timeout: 30_000 });
-
-  await page.getByRole("button", { name: "Completed" }).click();
-  const completedDialog = page.locator("dialog[open]");
-  await completedDialog.getByRole("button", { name: "Confirm" }).click();
+  await page.getByRole("button", { name: "Finalize" }).click();
+  await page.locator("dialog[open]").getByRole("button", { name: "Confirm" }).click();
   await expect(page.getByText("Status updated.", { exact: true })).toBeVisible({ timeout: 30_000 });
 
   // --- Add a note, and confirm the activity feed recorded the journey ---
   // Notes live behind the floating "Notes" button, not inline on the page
   // (confirmed directly, 2026-10-01) — open it before reaching for the form.
   await page.getByRole("button", { name: /^Notes/ }).click();
-  // The four rapid status confirmations above each trigger a router.refresh();
+  // The rapid status confirmations above each trigger a router.refresh();
   // if one of those RSC refreshes lands right as we fill the note textarea, the
   // form (a Client Component) can remount and reset its local state back to
   // empty, leaving "Add note" disabled with nothing left to re-fill it. Retry
@@ -175,7 +162,7 @@ async function runOrderLifecycle(page: import("@playwright/test").Page, stamp: n
   await page.getByRole("button", { name: "Add note" }).click();
   await expect(page.getByText("Note added.")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("E2E lifecycle test note")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/Order #\d+ processed/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Order #\d+ is now Completed/)).toBeVisible({ timeout: 15_000 });
 
   // --- Confirm it is findable through the order-item link filter ---
   await page.goto("/orders?link=example.com");

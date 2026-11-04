@@ -148,7 +148,7 @@ function ExpenseDialog({
             id="expense-category"
             value={form.categoryId}
             onChange={(e) => setForm((c) => ({ ...c, categoryId: e.target.value }))}
-            className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
+            className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           >
             <option value="">Choose a category…</option>
             {categories.map((c) => (
@@ -168,7 +168,7 @@ function ExpenseDialog({
             id="expense-paid-by"
             value={form.paidById}
             onChange={(e) => setForm((c) => ({ ...c, paidById: e.target.value }))}
-            className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
+            className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           >
             <option value="">Not specified</option>
             {users.map((u) => (

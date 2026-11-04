@@ -46,7 +46,7 @@ export function Modal({
       onClose={onClose}
       aria-labelledby={labelledBy}
       className={
-        className ?? "m-auto w-full max-w-md border border-line bg-canvas p-6 text-ink backdrop:bg-zinc-950/20"
+        className ?? "m-auto w-full max-w-md rounded-[14px] border border-zinc-200/80 bg-white p-6 text-ink shadow-[0_24px_64px_-16px_rgba(16,24,40,0.35)] backdrop:bg-zinc-950/30 backdrop:backdrop-blur-[2px]"
       }
     >
       {children}

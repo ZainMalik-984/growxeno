@@ -29,7 +29,7 @@ export default async function ForbiddenPage({ searchParams }: PageProps<"/forbid
       {permission ? (
         <p className="mt-4 text-[13px] text-ink-muted">
           Required permission:{" "}
-          <code className="rounded-[3px] bg-canvas-subtle px-1.5 py-0.5 font-mono text-xs text-ink">
+          <code className="rounded-[6px] bg-canvas-subtle px-1.5 py-0.5 font-mono text-xs text-ink">
             {permission}
           </code>
         </p>

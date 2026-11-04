@@ -666,8 +666,11 @@ export async function createUser(
       select: { id: true },
     });
 
-    for (const roleId of input.roleIds) {
-      await tx.userRole.create({ data: { userId: profile.id, roleId, assignedById: actor.user.id } });
+    if (input.roleIds.length > 0) {
+      // One round trip for every role grant instead of one per role.
+      await tx.userRole.createMany({
+        data: input.roleIds.map((roleId) => ({ userId: profile.id, roleId, assignedById: actor.user.id })),
+      });
     }
 
     await recordAudit(tx, {

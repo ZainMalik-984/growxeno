@@ -1,61 +1,48 @@
 import type { OrderItemStatus, OrderStatus } from "@/generated/prisma/client";
 
 /**
- * The Order and Order Item state machines (specification Sections 39–41),
- * documented in full in docs/ORDERS.md §4.
+ * Order and Order Item statuses (owner-directed rework, 2026-11-03),
+ * documented in docs/ORDERS.md §4.
  *
  * Intentionally PURE: no database, no request context, no `server-only`
- * import — same reasoning as `src/lib/permissions/resolve.ts`. This is the
- * ONLY place that decides whether a transition is legal; the service layer
- * calls it and does nothing else to make that decision.
+ * import. This is the ONLY place that decides whether a status change is
+ * legal and what an order's calculated status is; the service layer calls it
+ * and does nothing else to make that decision.
+ *
+ * Items:  PENDING → (worker accepts) PROCESSING → (worker) DONE
+ *         DONE → (admin) REFILL → (worker) DONE;  any → (admin) CANCELLED
+ * Orders: PENDING / ASSIGNED / PROCESSING / PARTIALLY_COMPLETED / COMPLETED
+ *         are calculated from the items (`deriveOrderStatus`) — nobody sets
+ *         them. An admin then moves COMPLETED → DELIVERED → FINALIZED, and
+ *         can mark any open order Refunded / Cancelled.
  */
 
-export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
-  PENDING: ["PROCESSING", "CANCELLED"],
-  PROCESSING: ["IN_PROGRESS", "CANCELLED"],
-  IN_PROGRESS: ["INTERNAL_REVIEW", "REVISION", "CANCELLED"],
-  INTERNAL_REVIEW: ["READY_FOR_DELIVERY", "REVISION", "CANCELLED"],
-  READY_FOR_DELIVERY: ["DELIVERED", "REVISION", "CANCELLED"],
-  DELIVERED: ["COMPLETED", "REVISION"],
-  REVISION: ["IN_PROGRESS", "CANCELLED"],
-  COMPLETED: [],
-  CANCELLED: [],
-};
+// ---------------------------------------------------------------------------
+// Items
+// ---------------------------------------------------------------------------
 
-export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean {
-  return ORDER_TRANSITIONS[from].includes(to);
-}
-
-/**
- * Full transition set for an actor with broad scope (`orders.view.all` —
- * an admin/manager, not just the assigned worker). A worker acting on their
- * own item is further restricted by `WORKER_ITEM_TRANSITIONS` below.
- */
+/** What someone who manages every order (`orders.view.all`) may do to an item. */
 export const ITEM_TRANSITIONS: Record<OrderItemStatus, readonly OrderItemStatus[]> = {
-  PENDING: ["IN_PROGRESS", "CANCELLED"],
-  IN_PROGRESS: ["INTERNAL_REVIEW", "REVISION", "CANCELLED"],
-  INTERNAL_REVIEW: ["COMPLETED", "REVISION", "CANCELLED"],
-  REVISION: ["IN_PROGRESS", "CANCELLED"],
-  // COMPLETED -> REVISION: flagging a completed item for redo after the fact
-  // (specification-adjacent, confirmed directly 2026-09-17 — e.g. delivered
-  // subscribers later unsubscribed). Admin-only: WORKER_ITEM_TRANSITIONS
-  // below does not carry this, so a worker can never reopen their own
-  // completed work themselves.
-  COMPLETED: ["REVISION"],
+  // PENDING -> PROCESSING is "accept"; an admin may do it on the worker's
+  // behalf, and only once a worker is assigned (checked in the service).
+  PENDING: ["PROCESSING", "CANCELLED"],
+  PROCESSING: ["DONE", "CANCELLED"],
+  // Owner's choice, 2026-11-03: only an admin sends a done item to Refill.
+  DONE: ["REFILL", "CANCELLED"],
+  REFILL: ["DONE", "CANCELLED"],
   CANCELLED: [],
 };
 
 /**
- * What a worker may do to THEIR OWN item without broader scope (docs/ORDERS.md
- * §4): move it forward, but never mark it delivered/completed or cancel it —
- * those are review/administrative actions.
+ * What the assigned worker may do to their OWN item: accept it (straight into
+ * Processing — no separate Start, owner request 2026-11-03), mark it done,
+ * and mark a refill done. Never cancel, never reopen.
  */
 export const WORKER_ITEM_TRANSITIONS: Record<OrderItemStatus, readonly OrderItemStatus[]> = {
-  PENDING: ["IN_PROGRESS"],
-  IN_PROGRESS: ["INTERNAL_REVIEW"],
-  INTERNAL_REVIEW: [],
-  REVISION: ["IN_PROGRESS"],
-  COMPLETED: [],
+  PENDING: ["PROCESSING"],
+  PROCESSING: ["DONE"],
+  DONE: [],
+  REFILL: ["DONE"],
   CANCELLED: [],
 };
 
@@ -68,36 +55,88 @@ export function canTransitionItem(
   return table[from].includes(to);
 }
 
+export const ORDER_ITEM_STATUS_LABELS: Record<OrderItemStatus, string> = {
+  PENDING: "Pending",
+  PROCESSING: "Processing",
+  DONE: "Done",
+  REFILL: "Refill",
+  CANCELLED: "Cancelled",
+};
+
+/** Statuses in which an item still needs work. */
+export const OPEN_ITEM_STATUSES: readonly OrderItemStatus[] = ["PENDING", "PROCESSING", "REFILL"];
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+/** Calculated from the items; never set by hand. */
+export const CALCULATED_ORDER_STATUSES: readonly OrderStatus[] = [
+  "PENDING",
+  "ASSIGNED",
+  "PROCESSING",
+  "PARTIALLY_COMPLETED",
+  "COMPLETED",
+];
+
+/** Set by an admin; once there, the order no longer follows its items. */
+export const MANUAL_ORDER_STATUSES: readonly OrderStatus[] = ["DELIVERED", "FINALIZED", "CANCELLED"];
+
+/** The order is closed: delivered, finalized or refunded/cancelled. */
+export const CLOSED_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "FINALIZED", "CANCELLED"];
+
+/** The manual steps an admin may take from each status. */
+export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
+  PENDING: ["CANCELLED"],
+  ASSIGNED: ["CANCELLED"],
+  PROCESSING: ["CANCELLED"],
+  PARTIALLY_COMPLETED: ["CANCELLED"],
+  COMPLETED: ["DELIVERED", "CANCELLED"],
+  DELIVERED: ["FINALIZED", "CANCELLED"],
+  // Refund after finalizing is still possible.
+  FINALIZED: ["CANCELLED"],
+  CANCELLED: [],
+};
+
+export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean {
+  return ORDER_TRANSITIONS[from].includes(to);
+}
+
+export type DerivableItem = { status: OrderItemStatus; assigned: boolean };
+
+/**
+ * The order's status, worked out from its items (owner's rules, 2026-11-03):
+ * - every item done                                  → Completed
+ * - some done, the rest still open                   → Partially Completed
+ * - every item accepted (Processing or Refill)       → Processing
+ * - every item has a worker                          → Assigned
+ * - otherwise (or no items)                          → Pending
+ * Cancelled items are ignored. Once an admin has set Delivered, Finalized or
+ * Refunded / Cancelled, that stays: the order no longer follows its items.
+ */
+export function deriveOrderStatus(current: OrderStatus, items: readonly DerivableItem[]): OrderStatus {
+  if (MANUAL_ORDER_STATUSES.includes(current)) return current;
+  const active = items.filter((item) => item.status !== "CANCELLED");
+  if (active.length === 0) return "PENDING";
+  const done = active.filter((item) => item.status === "DONE").length;
+  if (done === active.length) return "COMPLETED";
+  if (done > 0) return "PARTIALLY_COMPLETED";
+  if (active.every((item) => item.status === "PROCESSING" || item.status === "REFILL")) return "PROCESSING";
+  if (active.every((item) => item.assigned)) return "ASSIGNED";
+  return "PENDING";
+}
+
 /** Human-readable labels, used consistently across list, detail and activity text. */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: "Pending",
+  ASSIGNED: "Assigned",
   PROCESSING: "Processing",
-  IN_PROGRESS: "In Progress",
-  INTERNAL_REVIEW: "Internal Review",
-  READY_FOR_DELIVERY: "Ready for Delivery",
+  PARTIALLY_COMPLETED: "Partially Completed",
+  COMPLETED: "Completed",
   DELIVERED: "Delivered",
-  COMPLETED: "Completed",
-  REVISION: "Revision",
-  CANCELLED: "Cancelled",
+  FINALIZED: "Finalized",
+  CANCELLED: "Refunded / Cancelled",
 };
 
-export const ORDER_ITEM_STATUS_LABELS: Record<OrderItemStatus, string> = {
-  PENDING: "Pending",
-  IN_PROGRESS: "In Progress",
-  INTERNAL_REVIEW: "Internal Review",
-  REVISION: "Revision",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
-
-export const ORDER_STATUS_VALUES = Object.keys(ORDER_TRANSITIONS) as OrderStatus[];
-
-/**
- * Whether every item that counts toward completion is COMPLETED
- * (specification Section 41's "all required items", docs/REQUIREMENTS.md
- * D11 — open; until answered, "required" means every non-cancelled item).
- */
-export function allRequiredItemsComplete(itemStatuses: readonly OrderItemStatus[]): boolean {
-  const required = itemStatuses.filter((status) => status !== "CANCELLED");
-  return required.length > 0 && required.every((status) => status === "COMPLETED");
-}
+/** In display order. */
+export const ORDER_STATUS_VALUES = Object.keys(ORDER_STATUS_LABELS) as OrderStatus[];

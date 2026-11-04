@@ -10,7 +10,6 @@ import {
   createWorkerPayment,
   deleteWorkerPayment,
   setExpenseCategoryActive,
-  setOrderRefunded,
   updateExpense,
   updateWorkerPayment,
 } from "./service";
@@ -162,27 +161,4 @@ export async function deleteWorkerPaymentAction(input: unknown): Promise<ActionR
     revalidatePath("/finance");
   }
   return result.ok ? { ok: true, message: "Payment deleted." } : { ok: false, error: result.error };
-}
-
-// ---------------------------------------------------------------------------
-// Order refund flag
-// ---------------------------------------------------------------------------
-
-export async function setOrderRefundedAction(input: unknown): Promise<ActionResult> {
-  const parsed = z.object({ orderId: uuid, refunded: z.boolean() }).safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Invalid request." };
-
-  // Marking a refund is a revenue-affecting financial correction, not a
-  // workflow status change — gated on finance, not `orders.edit`.
-  const auth = await authorizeAction("finance.revenue.manage");
-  if (!auth.ok) return { ok: false, error: auth.message };
-
-  const result = await setOrderRefunded(auth.actor, parsed.data.orderId, parsed.data.refunded);
-  if (result.ok) {
-    revalidatePath(`/orders/${parsed.data.orderId}`);
-    revalidatePath("/finance");
-  }
-  return result.ok
-    ? { ok: true, message: parsed.data.refunded ? "Order marked as refunded." : "Refund flag cleared." }
-    : { ok: false, error: result.error };
 }

@@ -3,6 +3,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { Actor } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
+import { assignedItemWhere } from "@/lib/orders/assignment";
 import { resolveScope } from "@/lib/permissions/scope";
 import { normalizeSearchTerm, PER_CATEGORY_LIMIT } from "./term";
 
@@ -19,7 +20,7 @@ import { normalizeSearchTerm, PER_CATEGORY_LIMIT } from "./term";
  * a shared cache would have to be permission-aware, and the query is cheap.
  */
 
-export type SearchCategory = "Orders" | "Customers" | "Workers" | "Services" | "Categories";
+export type SearchCategory = "Orders" | "Customers" | "Employees" | "Outsourced Workers" | "Services" | "Categories";
 
 export type SearchHit = {
   id: string;
@@ -35,7 +36,7 @@ const contains = (q: string) => ({ contains: q, mode: "insensitive" as const });
 
 export async function globalSearch(actor: Actor, rawTerm: string): Promise<SearchResults> {
   const q = normalizeSearchTerm(rawTerm);
-  const empty: SearchResults = { Orders: [], Customers: [], Workers: [], Services: [], Categories: [] };
+  const empty: SearchResults = { Orders: [], Customers: [], Employees: [], "Outsourced Workers": [], Services: [], Categories: [] };
   if (!q) return empty;
 
   const can = (key: string) => actor.permissions.has(key);
@@ -44,7 +45,9 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
   const orderNumber = /^#?\d{1,9}$/.test(q) ? Number(q.replace("#", "")) : null;
   const orderScope = resolveScope(actor.permissions, "orders.view");
   const scopeFilter: Prisma.OrderWhereInput =
-    orderScope === "ALL" ? {} : { items: { some: { workerId: actor.user.id } } };
+    orderScope === "ALL"
+      ? {}
+      : { items: { some: assignedItemWhere({ userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId }) } };
 
   const [orders, linkOrders, customers, users, outsourced, services, categories] = await Promise.all([
     can("orders.view")
@@ -77,7 +80,7 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
           take,
         })
       : [],
-    can("workers.view.all")
+    can("employees.view.all")
       ? prisma.user.findMany({
           where: { OR: [{ fullName: contains(q) }, { email: contains(q) }, { phone: contains(q) }] },
           select: { id: true, fullName: true, email: true },
@@ -85,7 +88,7 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
           take,
         })
       : [],
-    can("workers.view.all")
+    can("outsourced_workers.view")
       ? prisma.outsourcedWorker.findMany({
           where: { OR: [{ name: contains(q) }, { phone: contains(q) }] },
           select: { id: true, name: true, phone: true },
@@ -135,16 +138,20 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
     href: `/customers/${c.id}`,
   }));
 
-  hits.Workers = [
-    ...users.map((u) => ({ id: u.id, category: "Workers" as const, title: u.fullName, subtitle: u.email, href: `/workers/${u.id}` })),
-    ...outsourced.map((w) => ({
-      id: w.id,
-      category: "Workers" as const,
-      title: w.name,
-      subtitle: w.phone ? `Outsourced · ${w.phone}` : "Outsourced",
-      href: `/outsourced-workers/${w.id}`,
-    })),
-  ].slice(0, take);
+  hits.Employees = users.map((u) => ({
+    id: u.id,
+    category: "Employees" as const,
+    title: u.fullName,
+    subtitle: u.email,
+    href: `/employees/${u.id}`,
+  }));
+  hits["Outsourced Workers"] = outsourced.map((w) => ({
+    id: w.id,
+    category: "Outsourced Workers" as const,
+    title: w.name,
+    subtitle: w.phone,
+    href: `/outsourced-workers/${w.id}`,
+  }));
 
   hits.Services = services.map((s) => ({ id: s.id, category: "Services", title: s.name, subtitle: s.category.name, href: `/services/${s.id}` }));
   hits.Categories = categories.map((c) => ({ id: c.id, category: "Categories", title: c.name, subtitle: null, href: "/categories" }));

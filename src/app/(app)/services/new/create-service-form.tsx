@@ -55,7 +55,7 @@ export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ 
           value={categoryId}
           onChange={(event) => setCategoryId(event.target.value)}
           disabled={categories.length === 0}
-          className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
+          className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
         >
           {categories.length === 0 ? <option value="">No categories yet</option> : null}
           {categories.map((category) => (
@@ -105,7 +105,7 @@ export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ 
           id="service-metric-type"
           value={metricType}
           onChange={(event) => setMetricType(event.target.value as ServiceMetricType | "")}
-          className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
+          className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
         >
           <option value="">Not a metric service</option>
           {SERVICE_METRIC_TYPES.map((type) => (

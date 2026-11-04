@@ -31,7 +31,7 @@ Realtime) are closed to the browser key by RLS and are audited by `pnpm security
 
 | Route | Method | Who may call it | Returns |
 | --- | --- | --- | --- |
-| `/search?q=` | GET | any signed-in, active user; **each result category is filtered by the permission that governs viewing it** (`orders.view` with its assigned-only scope, `customers.view`, `workers.view.all`, `services.view`, `categories.view`) | JSON `{ results }`, at most 5 hits per category, `Cache-Control: private, no-store`. Term must be 2–80 characters |
+| `/search?q=` | GET | any signed-in, active user; **each result category is filtered by the permission that governs viewing it** (`orders.view` with its assigned-only scope, `customers.view`, `employees.view.all`, `outsourced_workers.view`, `services.view`, `categories.view`) | JSON `{ results }`, at most 5 hits per category, `Cache-Control: private, no-store`. Term must be 2–80 characters |
 | `/daily-stats/export` | GET | `daily_stats.export`, scoped like the list (own rows unless `daily_stats.view.all`) | CSV |
 | `/auth/callback` | GET | anyone holding an emailed one-time link | redirect only — verifies the token, then redirects to a same-site path (`safeRedirectPath` rejects `//host`, `/\host`, control characters). Returns no data |
 
@@ -42,7 +42,7 @@ handler itself.
 
 ## Server Actions
 
-71 actions across 11 files. "Requires" is the permission key checked before any data is touched.
+75 actions across 11 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -108,13 +108,14 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | --- | --- |
 | `createOrderAction` | `orders.create` |
 | `updateOrderAction` | `orders.edit` |
-| `changeOrderStatusAction` | `orders.change_status` |
-| `processOrderAction` | `orders.process` |
+| `changeOrderStatusAction` | `orders.change_status` **and** `orders.view.all` (2026-11-03: workers hold `orders.change_status` only for their own items) |
 | `addOrderItemAction` | `orders.create` |
-| `updateOrderItemAction` | `orders.edit` |
+| `updateOrderItemAction` | `orders.edit` (never changes the item deadline) |
+| `setOrderItemDeadlineAction` | `orders.edit` — sets an item's worker deadline by hand, or `deadline: null` to follow the order again |
 | `removeOrderItemAction` | `orders.edit` |
 | `assignOrderItemWorkerAction` | `orders.assign` |
 | `changeOrderItemStatusAction` | `orders.change_status` |
+| `updateOrderItemProgressAction` | `orders.change_status` — narrowed further in the service to the assigned worker (their own item only) or `orders.view.all` |
 | `cancelOrderItemWithAdjustedCostAction` | `orders.change_status` |
 | `addOrderItemLinkAction` | `orders.edit`, `orders.files.upload` |
 | `removeOrderItemLinkAction` | `orders.edit` |
@@ -142,9 +143,12 @@ The PayPal password is stored AES-256-GCM-encrypted (`src/lib/crypto/secret-box.
 
 | Action | Requires |
 | --- | --- |
-| `createOutsourcedWorkerAction` | `workers.create` |
-| `updateOutsourcedWorkerAction` | `workers.edit` |
-| `setOutsourcedWorkerActiveAction` | `workers.edit` |
+| `createOutsourcedWorkerAction` | `outsourced_workers.create` |
+| `updateOutsourcedWorkerAction` | `outsourced_workers.edit` |
+| `setOutsourcedWorkerActiveAction` | `outsourced_workers.edit` |
+| `setServiceRateAction` | `outsourced_workers.edit` |
+| `clearServiceRateAction` | `outsourced_workers.edit` |
+| `inviteOutsourcedWorkerToLoginAction` | `outsourced_workers.edit` |
 
 ### Daily statistics — `src/lib/daily-stats/actions.ts`
 
@@ -167,10 +171,9 @@ The PayPal password is stored AES-256-GCM-encrypted (`src/lib/crypto/secret-box.
 | `createWorkerPaymentAction` | `finance.worker_payments.manage` |
 | `updateWorkerPaymentAction` | `finance.worker_payments.manage` |
 | `deleteWorkerPaymentAction` | `finance.worker_payments.manage` |
-| `setOrderRefundedAction` | `finance.revenue.manage` |
 
 `createBuyerPaymentAction`/`updateBuyerPaymentAction`/`deleteBuyerPaymentAction` were removed with
-Buyer, post-Phase-10 (2026-09-28). `setOrderRefundedAction` moved off `finance.buyer_payments.manage`
+Buyer, post-Phase-10 (2026-09-28). `setOrderRefundedAction` (removed 2026-11-03: refunds are now the "Refunded / Cancelled" order status) had moved off `finance.buyer_payments.manage`
 onto the new `finance.revenue.manage` (docs/PERMISSIONS.md) at the same time.
 
 ### Notifications, preferences and templates — `src/lib/notifications/actions.ts`
@@ -184,6 +187,12 @@ onto the new `finance.revenue.manage` (docs/PERMISSIONS.md) at the same time.
 | `updateTemplateAction` | `templates.manage` |
 | `setTemplateActiveAction` | `templates.manage` |
 | `deleteTemplateAction` | `templates.manage` |
+
+### Application settings — `src/lib/settings/actions.ts`
+
+| Action | Requires |
+| --- | --- |
+| `saveWorkerDeadlineSettingsAction` | `settings.edit` — saves the worker-deadline gap and rules, then recalculates the automatic deadlines of open orders' items |
 
 ---
 

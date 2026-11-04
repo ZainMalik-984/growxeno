@@ -76,7 +76,7 @@ export function NotificationBell({
         aria-controls="notification-panel"
         aria-label={initialUnreadCount > 0 ? `Notifications, ${initialUnreadCount} unread` : "Notifications"}
         className={cn(
-          "relative flex size-8 items-center justify-center rounded-[3px] text-ink-muted transition-colors",
+          "relative flex size-8 items-center justify-center rounded-[8px] text-ink-muted transition-colors",
           "hover:bg-canvas-subtle hover:text-ink",
         )}
       >

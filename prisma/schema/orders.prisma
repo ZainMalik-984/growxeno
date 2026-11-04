@@ -51,27 +51,38 @@ enum OrderSource {
   EXTERNAL
 }
 
+/// Order statuses (owner-directed rework, 2026-11-03). The first five are
+/// CALCULATED from the order's items and never set by hand
+/// (`deriveOrderStatus`, src/lib/orders/state-machine.ts):
+///   PENDING              not every item has a worker yet
+///   ASSIGNED             every item has a worker, not all have accepted
+///   PROCESSING           every item accepted, none done yet
+///   PARTIALLY_COMPLETED  some items done, the rest still being worked on
+///   COMPLETED            every item done
+/// The last three are set by an admin: DELIVERED (revenue is recognized
+/// here, `deliveredAt`), FINALIZED, and CANCELLED (shown as
+/// "Refunded / Cancelled"; excluded from revenue).
 enum OrderStatus {
   PENDING
+  ASSIGNED
   PROCESSING
-  IN_PROGRESS
-  INTERNAL_REVIEW
-  READY_FOR_DELIVERY
-  DELIVERED
+  PARTIALLY_COMPLETED
   COMPLETED
-  REVISION
+  DELIVERED
+  FINALIZED
   CANCELLED
 }
 
-/// Subset of OrderStatus that means anything for a single unit of work
-/// (docs/ORDERS.md §4) — an item is never READY_FOR_DELIVERY or DELIVERED,
-/// PROCESSING is an order-level state.
+/// Item statuses (owner-directed rework, 2026-11-03): PENDING (no worker, or
+/// assigned and not yet accepted) → PROCESSING (the worker accepted) → DONE
+/// (the worker finished; counts as complete straight away) → REFILL (an
+/// admin reopened a done item, e.g. delivered subscribers dropped; the worker
+/// marks it done again). CANCELLED is an admin action.
 enum OrderItemStatus {
   PENDING
-  IN_PROGRESS
-  INTERNAL_REVIEW
-  REVISION
-  COMPLETED
+  PROCESSING
+  DONE
+  REFILL
   CANCELLED
 }
 
@@ -87,6 +98,21 @@ model OutsourcedWorker {
   whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
   notes          String? @db.Text
 
+  /// Set once this External Worker is onboarded with portal access — owner-
+  /// directed, confirmed directly (2026-10-08): "External or outsourced
+  /// workers should be able to login and have there own dashboard." Null
+  /// otherwise; this record remains usable as a pure cost-tracking contact
+  /// with no login, the original design. Linking reuses the existing
+  /// Supabase Auth + `User`/`Role`/permission machinery (the seeded
+  /// "External Worker" role, see `prisma/seed.ts`) rather than a second,
+  /// bespoke auth system — the SAME login page and session handling as an
+  /// Employee, just a far narrower permission grant. Kept SEPARATE from
+  /// `User` as a record (not merged into it) per "keep the External
+  /// Workers separate from employees" — this FK is the only bridge between
+  /// the two.
+  userId String? @unique @map("user_id") @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
   /// A worker no longer used is deactivated, not deleted, so past order items
   /// that reference them keep resolving.
   isActive Boolean @default(true) @map("is_active")
@@ -96,6 +122,7 @@ model OutsourcedWorker {
 
   orderItems OrderItem[]
   payments   WorkerPayment[]
+  rates      ServiceRate[]
 
   @@index([isActive])
   @@index([name])
@@ -203,46 +230,97 @@ model OrderItem {
   categoryId String   @map("category_id") @db.Uuid
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  /// Exactly one of `workerId` / `outsourcedWorkerId` is set — enforced in
-  /// the service layer, not the database (a `CHECK` spanning two nullable FKs
-  /// adds little here and Postgres has no portable "exactly one of" constraint
-  /// short of a trigger). See the OutsourcedWorker doc comment for why these
-  /// are two different relations rather than one polymorphic one.
+  /// DEPRECATED, 2026-10-08 — kept only so pre-rework rows that really were
+  /// assigned to an internal user keep resolving; never set by any
+  /// assignment path going forward. Owner-directed, confirmed directly:
+  /// "employees wont be assigned a order item its assigned to
+  /// oursourced(external) only." Previously: exactly one of `workerId` /
+  /// `outsourcedWorkerId` was set, enforced in the service layer (a `CHECK`
+  /// spanning two nullable FKs adds little and Postgres has no portable
+  /// "exactly one of" constraint short of a trigger) — see the
+  /// OutsourcedWorker doc comment for why these were two different
+  /// relations rather than one polymorphic one. Now `outsourcedWorkerId`
+  /// is the only live assignment path.
   workerId String? @map("worker_id") @db.Uuid
   worker   User?   @relation("OrderItemWorker", fields: [workerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   outsourcedWorkerId String?           @map("outsourced_worker_id") @db.Uuid
   outsourcedWorker   OutsourcedWorker? @relation(fields: [outsourcedWorkerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
+  /// The Employee who performed the assignment — owner-directed, confirmed
+  /// directly (2026-10-08): "put key assigned_by in order_item." Distinct
+  /// from `workerId`/`outsourcedWorkerId` above (who does the work): an
+  /// Employee is never themselves the assignee (see the file header) —
+  /// this just records which manager assigned this item, for
+  /// accountability. Set whenever an assignment is made; never cleared by
+  /// a later re-assignment (history of who made the LAST assignment, not
+  /// a running log — `OrderActivity` already covers the full history).
+  assignedById String? @map("assigned_by") @db.Uuid
+  assignedBy   User?   @relation("OrderItemAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
   /// Doubles as the free-text "note" the owner described alongside the
   /// structured metric fields below.
   description String?   @db.Text
+  /// The assigned worker's deadline (2026-11-03, owner request). Normally
+  /// derived: the order's deadline minus the gap configured in Settings
+  /// (src/lib/settings/worker-deadline.ts), rewritten whenever the order's
+  /// deadline or those settings change. Stored rather than computed on read so
+  /// every list, count and filter can use it directly.
   deadline    DateTime? @db.Timestamptz(6)
+  /// True once someone sets this item's deadline by hand: it then stops
+  /// following the order deadline and the settings until reset to automatic.
+  deadlineOverridden Boolean @default(false) @map("deadline_overridden")
 
   /// The client's channel, only meaningful when `service.metricType` is set
   /// — see the file header. Plain text, validated http(s)-only at the
   /// service layer (never fetched by the server, same rule as
   /// `OrderItemLink.url`) and rendered as a link the same safe way.
-  channelLink  String? @map("channel_link") @db.Text
+  channelLink   String? @map("channel_link") @db.Text
   /// How many of the metric are wanted (e.g. "1000 subscribers"). Required by
   /// the service layer whenever `service.metricType` is set.
-  targetCount  Int?    @map("target_count")
+  targetCount   Int?    @map("target_count")
   /// Where the channel stands right now for this metric. Optional — not
   /// always known at creation, and tracked/updated as the item progresses.
-  currentCount Int?    @map("current_count")
+  currentCount  Int?    @map("current_count")
+  /// A snapshot of `currentCount` taken ONLY at creation — never touched by
+  /// an edit or a progress update afterward. Owner-directed, confirmed
+  /// directly (2026-10-05): "the progress on orders page should not consider
+  /// the count of item at the time of the order it should show the actual
+  /// work progress" — i.e. 1000 starting + 5000 required = 6000 target, and
+  /// sitting at 1000 (no work done yet) must read as 0%, not as
+  /// 1000/6000 (~17%). `targetCount - startingCount` recovers "how many
+  /// more were asked for"; `currentCount - startingCount` recovers "how
+  /// many have actually been delivered since" — see
+  /// `src/lib/orders/progress.ts`. Null for items created before this
+  /// column existed; `aggregateProgress` treats a null baseline as 0 (the
+  /// pre-existing behaviour, current/target) rather than refusing to show a
+  /// bar for old items.
+  startingCount Int?    @map("starting_count")
 
-  /// Paid to whoever performs the work. Nullable: not resolved for internal
-  /// staff paid a salary rather than per item. Snapshotted — see the file header.
+  /// Paid to the assigned External Worker (`outsourcedWorkerId` above) —
+  /// an Employee is salaried and never has a per-item fee, confirmed
+  /// directly (2026-10-08): "no fee of the internal employees." Computed
+  /// automatically from `ServiceRate` when assigning (rate × the metric's
+  /// required count, or a flat rate for a non-metric service — see
+  /// `ServiceRate` below and `assignOrderItemWorker` in service.ts), but
+  /// always a plain editable value afterward, never locked: "anyone
+  /// putting the item there should be able to change the amount." Null
+  /// when unassigned or when no rate is configured yet. Snapshotted —
+  /// never retroactively recomputed by a later rate change.
   workerCost         Decimal? @map("worker_cost") @db.Decimal(14, 2)
   workerCostCurrency String   @default("USD") @map("worker_cost_currency") @db.Char(3)
 
   status OrderItemStatus @default(PENDING)
 
+  /// When the current worker was assigned (owner request, 2026-11-03: the
+  /// worker sees how long ago they were given the task). Reset on reassignment.
+  assignedAt DateTime? @map("assigned_at") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  /// Stamped when the item reaches COMPLETED or CANCELLED (the two "earned" states,
-  /// docs/REQUIREMENTS.md D5); cleared if a completed item is flagged back to REVISION.
+  /// Stamped when the item reaches DONE or CANCELLED (the two "earned" states,
+  /// docs/REQUIREMENTS.md D5); cleared when a done item is sent to REFILL.
   /// Reports and Finance range on this instead of `updatedAt`, which moves on any edit.
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
 
@@ -251,11 +329,44 @@ model OrderItem {
   @@index([orderId])
   @@index([workerId, status])
   @@index([outsourcedWorkerId])
+  @@index([assignedById])
   @@index([serviceId])
   @@index([categoryId])
   @@index([status])
   @@index([status, finishedAt])
   @@map("order_items")
+}
+
+/// An External Worker's price for one service — owner-directed, confirmed
+/// directly (2026-10-08), worked example: "subscriber service by Zia
+/// charges are 3.5pkr for 1 subscriber... the cost would be 500*3.5=1750."
+/// Looked up by `(serviceId, outsourcedWorkerId)` when assigning an Order
+/// Item, to compute `OrderItem.workerCost` automatically — see
+/// `assignOrderItemWorker` in `src/lib/orders/service.ts`. Deliberately
+/// NOT modelled for internal Employees: "rates would be set to workers
+/// not employees" — an Employee is salaried, never priced per service.
+model ServiceRate {
+  id String @id @default(uuid()) @db.Uuid
+
+  serviceId String  @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  outsourcedWorkerId String           @map("outsourced_worker_id") @db.Uuid
+  outsourcedWorker   OutsourcedWorker @relation(fields: [outsourcedWorkerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// For a metric service (views/subscribers/watch hours): price PER UNIT
+  /// — multiplied by the item's required count (target minus starting —
+  /// never charge for units the channel already had before any work
+  /// started). For a non-metric service: a flat price per item,
+  /// confirmed directly: "it'll be flat rate."
+  rate     Decimal @db.Decimal(14, 2)
+  currency String  @default("PKR") @db.Char(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([serviceId, outsourcedWorkerId])
+  @@map("service_rates")
 }
 
 /// A normalized URL attached to an Order Item (specification Sections 25, 27,

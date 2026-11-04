@@ -2,15 +2,31 @@
 
 import { safeExternalHref } from "@/lib/orders/url-normalize";
 import type { OrderItemStatus } from "@/generated/prisma/client";
+import {
+  CheckCircle2,
+  Hourglass,
+  ChevronRight,
+  Link2,
+  Pencil,
+  PenLine,
+  RotateCcw,
+  UserRound,
+  XCircle,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { DeadlineCountdown, formatDeadlineDate, useNowMinute } from "@/components/ui/deadline";
+import { formatDuration } from "@/lib/time/countdown";
+import { formatPay } from "@/lib/finance/format-pay";
+import { ITEM_STATUS_TONE } from "@/lib/orders/status-tone";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/page";
-import { StatusDot } from "@/components/ui/status-dot";
+import { StatusBadge } from "@/components/ui/status-dot";
 import { CURRENCIES } from "@/lib/finance/money";
 import {
   addOrderItemAction,
@@ -20,35 +36,76 @@ import {
   changeOrderItemStatusAction,
   removeOrderItemAction,
   removeOrderItemLinkAction,
+  setOrderItemDeadlineAction,
   updateOrderItemAction,
+  updateOrderItemProgressAction,
 } from "@/lib/orders/actions";
+import { isAssignedToIdentity } from "@/lib/orders/assignment";
 import type { OrderItemRow } from "@/lib/orders/queries";
+import { computeAssignmentCost } from "@/lib/orders/rate";
 import { canTransitionItem, ORDER_ITEM_STATUS_LABELS } from "@/lib/orders/state-machine";
+import { cn } from "@/lib/utils";
 import { METRIC_CURRENT_LABELS, METRIC_TARGET_LABELS, SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import type { ServicePickerRow } from "@/lib/services/queries";
 
-type WorkerOption = { id: string; label: string };
+/** A rate per service, so the assign modal can auto-fill cost the moment a worker is chosen. */
+type OutsourcedWorkerOption = {
+  id: string;
+  name: string;
+  rates: readonly { serviceId: string; rate: string; currency: string }[];
+};
 
 const ITEM_STATUSES = Object.keys(ORDER_ITEM_STATUS_LABELS) as OrderItemStatus[];
+
+
+/** Rounded, colour-accented field styling shared by this panel's two modals (owner-directed, 2026-10-14/15 — real depth, not the flat default). */
+const FIELD = "rounded-[8px] focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
+const MODAL_SHELL = "m-auto w-full max-w-lg rounded-[16px] border border-zinc-200 bg-white p-0 shadow-xl shadow-zinc-900/10 backdrop:bg-zinc-950/30";
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+/**
+ * The button for moving an item to `to` (owner-directed rework, 2026-11-03):
+ * the worker accepts (straight into Processing — no separate Start), then
+ * marks it done; an admin can send a done item to Refill, after which the
+ * worker marks the refill done.
+ */
+function workflowAction(
+  from: OrderItemStatus,
+  to: OrderItemStatus,
+): { label: string; icon: LucideIcon; variant: "accent" | "secondary" | "dangerGhost" } {
+  if (to === "CANCELLED") return { label: "Cancel item", icon: XCircle, variant: "dangerGhost" };
+  if (to === "PROCESSING") return { label: "Accept", icon: CheckCircle2, variant: "accent" };
+  if (to === "DONE") return { label: from === "REFILL" ? "Refill done" : "Mark done", icon: CheckCircle2, variant: "accent" };
+  if (to === "REFILL") return { label: "Send to refill", icon: RotateCcw, variant: "secondary" };
+  return { label: ORDER_ITEM_STATUS_LABELS[to], icon: ChevronRight, variant: "secondary" };
+}
 
 const EMPTY_ITEM_FORM = {
   serviceId: "",
   description: "",
-  deadline: "",
   channelLink: "",
   targetCount: "",
   currentCount: "",
-  workerCost: "",
-  workerCostCurrency: "PKR",
+  // Only used when adding a new item (confirmed directly, 2026-10-05): "i'll
+  // enter 1000 as starting count, and 5000 as required, it'll automatically
+  // set target to 6000" — `currentCount` doubles as "starting count" here
+  // (it genuinely is the current count at creation time), and this is the
+  // "how many more" half; submitItem sums them into targetCount. Editing an
+  // existing item still sets targetCount directly — see openEdit/submitItem.
+  requiredCount: "",
 };
 
 export function OrderItemsPanel({
   orderId,
   items,
   services,
-  workers,
   outsourcedWorkers,
   currentUserId,
+  currentOutsourcedWorkerId,
   canCreate,
   canEdit,
   canAssign,
@@ -60,9 +117,10 @@ export function OrderItemsPanel({
   orderId: string;
   items: readonly OrderItemRow[];
   services: readonly ServicePickerRow[];
-  workers: readonly { id: string; fullName: string }[];
-  outsourcedWorkers: readonly { id: string; name: string }[];
+  outsourcedWorkers: readonly OutsourcedWorkerOption[];
   currentUserId: string;
+  /** Set when the signed-in actor is an External Worker — see `Actor.outsourcedWorkerId`. */
+  currentOutsourcedWorkerId: string | null;
   canCreate: boolean;
   canEdit: boolean;
   canAssign: boolean;
@@ -80,6 +138,9 @@ export function OrderItemsPanel({
   const [error, setError] = useState<string | undefined>();
   const [expandedLinks, setExpandedLinks] = useState<Set<string>>(new Set());
   const [cancelDialogItem, setCancelDialogItem] = useState<OrderItemRow | null>(null);
+  const [assignDialogItem, setAssignDialogItem] = useState<OrderItemRow | null>(null);
+  const [progressEditId, setProgressEditId] = useState<string | null>(null);
+  const [progressValue, setProgressValue] = useState("");
 
   const serviceById = useMemo(() => new Map(services.map((s) => [s.id, s])), [services]);
   const selectedMetricType = serviceById.get(form.serviceId)?.metricType ?? null;
@@ -100,12 +161,10 @@ export function OrderItemsPanel({
     setForm({
       serviceId: item.service.id,
       description: item.description ?? "",
-      deadline: item.deadline ? item.deadline.toString().slice(0, 16) : "",
       channelLink: item.channelLink ?? "",
       targetCount: item.targetCount != null ? String(item.targetCount) : "",
       currentCount: item.currentCount != null ? String(item.currentCount) : "",
-      workerCost: item.workerCost ?? "",
-      workerCostCurrency: item.workerCostCurrency,
+      requiredCount: "",
     });
     setError(undefined);
     setDialogItemId(item.id);
@@ -113,15 +172,22 @@ export function OrderItemsPanel({
 
   const submitItem = () => {
     startTransition(async () => {
+      const isNew = dialogItemId === "new";
+      const startingCount = form.currentCount !== "" ? Number(form.currentCount) : 0;
       const payload = {
         serviceId: form.serviceId,
         description: form.description || undefined,
-        deadline: form.deadline || null,
         channelLink: selectedMetricType ? form.channelLink || undefined : undefined,
-        targetCount: selectedMetricType && form.targetCount !== "" ? Number(form.targetCount) : undefined,
+        targetCount: selectedMetricType
+          ? isNew
+            ? form.requiredCount !== ""
+              ? startingCount + Number(form.requiredCount)
+              : undefined
+            : form.targetCount !== ""
+              ? Number(form.targetCount)
+              : undefined
+          : undefined,
         currentCount: selectedMetricType && form.currentCount !== "" ? Number(form.currentCount) : undefined,
-        workerCost: form.workerCost || undefined,
-        workerCostCurrency: form.workerCostCurrency,
       };
       const result =
         dialogItemId === "new"
@@ -149,14 +215,9 @@ export function OrderItemsPanel({
     });
   };
 
-  const assign = (itemId: string, value: string) => {
-    const [kind, id] = value ? value.split(":") : [null, null];
+  const changeStatus = (itemId: string, status: OrderItemStatus) => {
     startTransition(async () => {
-      const result = await assignOrderItemWorkerAction({
-        itemId,
-        workerId: kind === "user" ? id : null,
-        outsourcedWorkerId: kind === "outsourced" ? id : null,
-      });
+      const result = await changeOrderItemStatusAction({ itemId, status });
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
@@ -166,11 +227,13 @@ export function OrderItemsPanel({
     });
   };
 
-  const changeStatus = (itemId: string, status: OrderItemStatus) => {
+  const updateProgress = (itemId: string) => {
+    const currentCount = Number(progressValue);
     startTransition(async () => {
-      const result = await changeOrderItemStatusAction({ itemId, status });
+      const result = await updateOrderItemProgressAction({ itemId, currentCount });
       if (result.ok) {
         toast.success(result.message);
+        setProgressEditId(null);
         router.refresh();
       } else {
         toast.error(result.error);
@@ -187,9 +250,6 @@ export function OrderItemsPanel({
     });
   };
 
-  const workerOptions: WorkerOption[] = workers.map((w) => ({ id: `user:${w.id}`, label: w.fullName }));
-  const outsourcedOptions: WorkerOption[] = outsourcedWorkers.map((w) => ({ id: `outsourced:${w.id}`, label: `${w.name} (outsourced)` }));
-
   return (
     <div>
       {items.length === 0 ? (
@@ -198,7 +258,7 @@ export function OrderItemsPanel({
           description="Add the first item to this order."
           action={
             canCreate ? (
-              <Button variant="primary" onClick={openAdd}>
+              <Button variant="accent" className="rounded-[8px]" onClick={openAdd}>
                 + Add item
               </Button>
             ) : undefined
@@ -208,68 +268,120 @@ export function OrderItemsPanel({
         <>
           {canCreate ? (
             <div className="mb-4 flex justify-end">
-              <Button variant="primary" size="sm" onClick={openAdd}>
+              <Button variant="accent" size="sm" className="rounded-[8px]" onClick={openAdd}>
                 + Add item
               </Button>
             </div>
           ) : null}
 
-          {/* One hairline-separated row per item — the same convention as
-              the Notes list on this page and the Activity feed below it, not
-              a bordered card: this design system treats a card around every
-              repeating row as the thing to avoid (docs/DESIGN_SYSTEM.md §1),
-              so "ticket-like" comes from typography and alignment (the
-              service name as the title, a faint mono item number, a quiet
-              meta row underneath), never from a box. Reworked 2026-10-01
-              after the card version read as cluttered. */}
-          <ul>
+          {/* Each item as its own elevated ticket (owner-directed, 2026-10-14:
+              "the design is too flat" — real depth via border + shadow + a
+              colour-coded status pill, not just a hairline-separated row). */}
+          <ul className="space-y-3">
             {items.map((item, index) => {
-              const isSelf = item.worker?.id === currentUserId;
+              const isSelf = isAssignedToIdentity(
+                { workerId: item.worker?.id ?? null, outsourcedWorkerId: item.outsourcedWorker?.id ?? null },
+                { userId: currentUserId, outsourcedWorkerId: currentOutsourcedWorkerId },
+              );
               const asAssignedWorkerOnly = !canViewAll && isSelf;
               const canActorChangeThisItem = canChangeStatus && (canViewAll || isSelf);
               const canAddLinkToThisItem = canEdit || (canUploadOwn && isSelf);
               const nextStatuses = canActorChangeThisItem
-                ? ITEM_STATUSES.filter((s) => canTransitionItem(item.status, s, { asAssignedWorkerOnly }))
+                ? ITEM_STATUSES.filter(
+                    (s) =>
+                      canTransitionItem(item.status, s, { asAssignedWorkerOnly }) &&
+                      // Accepting needs someone to accept it.
+                      !(s === "PROCESSING" && !item.outsourcedWorker && !item.worker),
+                  )
                 : [];
-              const currentAssignmentValue = item.worker
-                ? `user:${item.worker.id}`
-                : item.outsourcedWorker
-                  ? `outsourced:${item.outsourcedWorker.id}`
-                  : "";
+              // Cancel always renders last and visually de-emphasised — every
+              // other action is the forward-moving happy path.
+              const orderedNextStatuses = [...nextStatuses.filter((s) => s !== "CANCELLED"), ...nextStatuses.filter((s) => s === "CANCELLED")];
 
               return (
-                <li key={item.id} className="border-b border-line-soft py-4 first:pt-0">
+                <li
+                  key={item.id}
+                  className="rounded-[16px] border border-zinc-200 bg-white p-5 shadow-md shadow-zinc-900/10 transition-shadow hover:shadow-lg"
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-medium text-ink">
-                        <span className="font-mono text-xs text-ink-faint">#{index + 1}</span>{" "}
-                        {item.service.name} <span className="text-ink-faint">· {item.category.name}</span>
-                      </p>
-                      {item.description ? <p className="mt-0.5 text-[13px] text-ink-muted">{item.description}</p> : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs text-zinc-400">#{index + 1}</span>
+                        <p className="text-[14px] font-semibold text-zinc-900">{item.service.name}</p>
+                        <span className="text-xs text-zinc-400">· {item.category.name}</span>
+                        <StatusBadge tone={ITEM_STATUS_TONE[item.status]} label={ORDER_ITEM_STATUS_LABELS[item.status]} />
+                      </div>
+                      {item.description ? <p className="mt-1 text-[13px] text-zinc-500">{item.description}</p> : null}
                       {item.service.metricType ? (
-                        <p className="mt-1 text-xs text-ink-faint">
-                          {item.currentCount ?? 0} / {item.targetCount ?? 0} {SERVICE_METRIC_TYPE_LABELS[item.service.metricType].toLowerCase()}
-                          {item.channelLink ? (
+                        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-zinc-500">
+                          {progressEditId === item.id ? (
                             <>
-                              {" · "}
-                              <a
-                                href={safeExternalHref(item.channelLink) ?? undefined}
-                                target="_blank"
-                                rel="noreferrer noopener"
-                                className="text-ink-muted hover:text-ink hover:underline"
+                              <Input
+                                type="number"
+                                min={0}
+                                autoFocus
+                                value={progressValue}
+                                onChange={(event) => setProgressValue(event.target.value)}
+                                className="h-6 w-20 rounded-[6px] px-1.5 tabular"
+                              />
+                              <span>/ {item.targetCount ?? 0} {SERVICE_METRIC_TYPE_LABELS[item.service.metricType].toLowerCase()}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateProgress(item.id)}
+                                disabled={pending}
+                                className="font-medium text-indigo-600 hover:underline"
                               >
-                                channel
-                              </a>
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setProgressEditId(null)}
+                                className="text-zinc-400 hover:text-zinc-600 hover:underline"
+                              >
+                                Cancel
+                              </button>
                             </>
-                          ) : null}
+                          ) : (
+                            <>
+                              <span className="tabular font-medium text-zinc-700">
+                                {item.currentCount ?? 0} / {item.targetCount ?? 0} {SERVICE_METRIC_TYPE_LABELS[item.service.metricType].toLowerCase()}
+                              </span>
+                              {canActorChangeThisItem ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setProgressEditId(item.id);
+                                    setProgressValue(String(item.currentCount ?? 0));
+                                  }}
+                                  className="text-zinc-400 hover:text-zinc-600 hover:underline"
+                                >
+                                  Update
+                                </button>
+                              ) : null}
+                              {item.channelLink ? (
+                                <>
+                                  ·{" "}
+                                  <a
+                                    href={safeExternalHref(item.channelLink) ?? undefined}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="text-zinc-500 hover:text-zinc-900 hover:underline"
+                                  >
+                                    channel
+                                  </a>
+                                </>
+                              ) : null}
+                            </>
+                          )}
                         </p>
                       ) : null}
-                      {showCosts && item.workerCost ? (
-                        <p className="mt-1 text-xs text-ink-faint">{item.workerCost} {item.workerCostCurrency} worker cost</p>
-                      ) : null}
+                      <ItemDeadline
+                        item={item}
+                        canEdit={canEdit}
+                        label={canViewAll ? "Worker deadline" : "Deadline"}
+                      />
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <StatusDot tone="active" label={ORDER_ITEM_STATUS_LABELS[item.status]} />
+                    <div className="flex shrink-0 items-center gap-1.5">
                       {canEdit ? (
                         <Button variant="ghost" size="sm" onClick={() => openEdit(item)}>
                           Edit
@@ -283,75 +395,82 @@ export function OrderItemsPanel({
                     </div>
                   </div>
 
-                  <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
-                    {canAssign ? (
-                      <label className="flex items-center gap-2 text-[13px] text-ink-muted">
-                        Assigned to
-                        <Select
-                          value={currentAssignmentValue}
-                          onChange={(event) => assign(item.id, event.target.value)}
-                          disabled={pending}
-                          className="h-7 w-auto"
-                        >
-                          <option value="">Unassigned</option>
-                          {workerOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                          {outsourcedOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </label>
-                    ) : (
-                      <span className="text-[13px] text-ink-muted">
-                        {item.worker?.fullName ?? item.outsourcedWorker?.name ?? (
-                          <span className="text-ink-faint">Unassigned</span>
-                        )}
-                      </span>
-                    )}
-
-                    {nextStatuses.length > 0 ? (
-                      <label className="flex items-center gap-2 text-[13px] text-ink-muted">
-                        Move to
-                        <Select
-                          value=""
-                          onChange={(event) => {
-                            const status = event.target.value as OrderItemStatus;
-                            if (!status) return;
-                            // Cancelling an outsourced-worker item goes through a
-                            // guided flow (adjusted cost + a required note) —
-                            // see docs/ORDERS.md's cancellation-with-partial-work
-                            // note — rather than a bare status flip.
-                            if (status === "CANCELLED" && item.outsourcedWorker) {
-                              setCancelDialogItem(item);
-                            } else {
-                              changeStatus(item.id, status);
-                            }
-                          }}
-                          disabled={pending}
-                          className="h-7 w-auto"
-                        >
-                          <option value="">Choose…</option>
-                          {nextStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {ORDER_ITEM_STATUS_LABELS[status]}
-                            </option>
-                          ))}
-                        </Select>
-                      </label>
-                    ) : null}
-
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3.5">
                     <button
                       type="button"
-                      onClick={() => toggleLinks(item.id)}
-                      className="text-[13px] text-ink-muted hover:text-ink hover:underline"
+                      aria-label="Assign worker"
+                      onClick={() => canAssign && setAssignDialogItem(item)}
+                      disabled={!canAssign}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-[8px] px-1.5 py-1 text-left transition-colors",
+                        canAssign && "hover:bg-zinc-50",
+                      )}
                     >
-                      Links ({item.links.length})
+                      <span
+                        className={cn(
+                          "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                          item.outsourcedWorker ? "bg-indigo-50 text-indigo-700" : "bg-zinc-100 text-zinc-400",
+                        )}
+                      >
+                        {item.outsourcedWorker ? initials(item.outsourcedWorker.name) : <UserRound aria-hidden="true" className="size-3.5" />}
+                      </span>
+                      <span className="text-[13px]">
+                        <span className="font-medium text-zinc-800">
+                          {item.outsourcedWorker?.name ?? item.worker?.fullName ?? "Unassigned"}
+                        </span>
+                        {showCosts && item.workerCost ? (
+                          <span className="text-zinc-400"> · {item.workerCost} {item.workerCostCurrency}</span>
+                        ) : null}
+                        {!showCosts && asAssignedWorkerOnly && item.workerCost ? (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-px text-xs font-semibold tabular-nums text-emerald-800 ring-1 ring-inset ring-emerald-200/70">
+                            You earn {formatPay(item.workerCost, item.workerCostCurrency)}
+                          </span>
+                        ) : null}
+                        {canAssign ? <span className="ml-1 text-indigo-600">Change</span> : null}
+                        {item.assignedAt && (item.outsourcedWorker || item.worker) ? (
+                          <AssignedSince assignedAt={item.assignedAt} finishedAt={item.status === "DONE" ? item.finishedAt : null} />
+                        ) : null}
+                      </span>
                     </button>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {orderedNextStatuses.map((status) => {
+                        const action = workflowAction(item.status, status);
+                        return (
+                          <Button
+                            key={status}
+                            variant={action.variant}
+                            size="sm"
+                            className={action.variant === "accent" || action.variant === "secondary" ? "rounded-[8px]" : undefined}
+                            disabled={pending}
+                            onClick={() => {
+                              // Cancelling an outsourced-worker item goes through a
+                              // guided flow (adjusted cost + a required note) —
+                              // see docs/ORDERS.md's cancellation-with-partial-work
+                              // note — rather than a bare status flip.
+                              if (status === "CANCELLED" && item.outsourcedWorker) {
+                                setCancelDialogItem(item);
+                              } else {
+                                changeStatus(item.id, status);
+                              }
+                            }}
+                          >
+                            <action.icon aria-hidden="true" className="size-3.5" />
+                            {action.label}
+                          </Button>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        aria-label={`Links (${item.links.length})`}
+                        onClick={() => toggleLinks(item.id)}
+                        className="flex items-center gap-1 text-[13px] text-zinc-500 hover:text-zinc-900 hover:underline"
+                      >
+                        <Link2 aria-hidden="true" className="size-3.5" />
+                        {item.links.length}
+                      </button>
+                    </div>
                   </div>
 
                   {expandedLinks.has(item.id) ? (
@@ -364,15 +483,26 @@ export function OrderItemsPanel({
         </>
       )}
 
-      <Modal open={dialogItemId !== null} onClose={closeDialog} labelledBy="order-item-dialog-title">
-        <h2 id="order-item-dialog-title" className="text-[15px] font-medium text-ink-strong">
-          {dialogItemId === "new" ? "Add item" : "Edit item"}
-        </h2>
+      <Modal open={dialogItemId !== null} onClose={closeDialog} labelledBy="order-item-dialog-title" className={MODAL_SHELL}>
+        <div className="flex items-start gap-3 border-b border-zinc-100 px-6 py-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-indigo-50 text-indigo-600">
+            <PenLine aria-hidden="true" className="size-[18px]" />
+          </div>
+          <div>
+            <h2 id="order-item-dialog-title" className="text-[15px] font-semibold text-zinc-900">
+              {dialogItemId === "new" ? "Add item" : "Edit item"}
+            </h2>
+            <p className="mt-0.5 text-[13px] text-zinc-500">
+              {dialogItemId === "new" ? "Add a unit of work to this order." : "Update this item's details."}
+            </p>
+          </div>
+        </div>
 
-        <div className="mt-5 space-y-4">
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-6 py-5">
           <Field label="Service" htmlFor="item-service">
             <Select
               id="item-service"
+              className={FIELD}
               value={form.serviceId}
               onChange={(event) => setForm((c) => ({ ...c, serviceId: event.target.value }))}
               autoFocus
@@ -387,65 +517,83 @@ export function OrderItemsPanel({
           </Field>
 
           {selectedMetricType ? (
-            <>
+            <div className="space-y-3 rounded-[12px] bg-zinc-50 p-4">
               <Field label="Channel link" htmlFor="item-channel-link" hint="The client's channel.">
                 <Input
                   id="item-channel-link"
+                  className={FIELD}
                   type="url"
                   placeholder="https://youtube.com/@channel"
                   value={form.channelLink}
                   onChange={(event) => setForm((c) => ({ ...c, channelLink: event.target.value }))}
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={METRIC_TARGET_LABELS[selectedMetricType]} htmlFor="item-target-count">
-                  <Input
-                    id="item-target-count"
-                    inputMode="numeric"
-                    value={form.targetCount}
-                    onChange={(event) => setForm((c) => ({ ...c, targetCount: event.target.value }))}
-                  />
-                </Field>
-                <Field label={METRIC_CURRENT_LABELS[selectedMetricType]} htmlFor="item-current-count" hint="Optional — defaults to 0.">
-                  <Input
-                    id="item-current-count"
-                    inputMode="numeric"
-                    value={form.currentCount}
-                    onChange={(event) => setForm((c) => ({ ...c, currentCount: event.target.value }))}
-                  />
-                </Field>
-              </div>
-            </>
+              {dialogItemId === "new" ? (
+                // Confirmed directly, 2026-10-05: "a video has 1000 views, and
+                // customer wants 5000 more so i'll enter 1000 as starting
+                // count, and 5000 as required, it'll automatically set target
+                // to 6000" — the absolute target is computed, not typed.
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label={METRIC_CURRENT_LABELS[selectedMetricType]} htmlFor="item-current-count" hint="Where it stands right now. Optional — defaults to 0.">
+                      <Input
+                        id="item-current-count"
+                        className={FIELD}
+                        inputMode="numeric"
+                        value={form.currentCount}
+                        onChange={(event) => setForm((c) => ({ ...c, currentCount: event.target.value }))}
+                      />
+                    </Field>
+                    <Field label={METRIC_TARGET_LABELS[selectedMetricType]} htmlFor="item-required-count" hint="How many more the customer wants.">
+                      <Input
+                        id="item-required-count"
+                        className={FIELD}
+                        inputMode="numeric"
+                        value={form.requiredCount}
+                        onChange={(event) => setForm((c) => ({ ...c, requiredCount: event.target.value }))}
+                      />
+                    </Field>
+                  </div>
+                  {form.requiredCount !== "" ? (
+                    <p className="rounded-[8px] bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                      Target: {(form.currentCount !== "" ? Number(form.currentCount) : 0) + Number(form.requiredCount)}{" "}
+                      {SERVICE_METRIC_TYPE_LABELS[selectedMetricType].toLowerCase()}
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label={METRIC_TARGET_LABELS[selectedMetricType]} htmlFor="item-target-count">
+                    <Input
+                      id="item-target-count"
+                      className={FIELD}
+                      inputMode="numeric"
+                      value={form.targetCount}
+                      onChange={(event) => setForm((c) => ({ ...c, targetCount: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label={METRIC_CURRENT_LABELS[selectedMetricType]} htmlFor="item-current-count" hint="Optional — defaults to 0.">
+                    <Input
+                      id="item-current-count"
+                      className={FIELD}
+                      inputMode="numeric"
+                      value={form.currentCount}
+                      onChange={(event) => setForm((c) => ({ ...c, currentCount: event.target.value }))}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
           ) : null}
 
           <Field label="Note" htmlFor="item-description" hint="Optional.">
-            <Textarea id="item-description" rows={2} value={form.description} onChange={(event) => setForm((c) => ({ ...c, description: event.target.value }))} />
+            <Textarea id="item-description" className={FIELD} rows={2} value={form.description} onChange={(event) => setForm((c) => ({ ...c, description: event.target.value }))} />
           </Field>
 
-          <Field label="Item deadline" htmlFor="item-deadline" hint="Optional — falls back to the order deadline.">
-            <Input id="item-deadline" type="datetime-local" value={form.deadline} onChange={(event) => setForm((c) => ({ ...c, deadline: event.target.value }))} />
-          </Field>
-
-          {/* Not shown when adding a new item (confirmed directly, 2026-09-28):
-              there is usually no worker assigned yet at creation time, so
-              there is nothing real to cost. Set it once someone is assigned,
-              via Edit. */}
-          {dialogItemId !== "new" ? (
-            <div className="grid grid-cols-[1fr_auto] gap-3">
-              <Field label="Worker cost" htmlFor="item-worker-cost" hint="Optional. What it costs to fulfil this item.">
-                <Input id="item-worker-cost" inputMode="decimal" value={form.workerCost} onChange={(event) => setForm((c) => ({ ...c, workerCost: event.target.value }))} />
-              </Field>
-              <Field label="Currency" htmlFor="item-worker-cost-currency">
-                <Select id="item-worker-cost-currency" className="w-20" value={form.workerCostCurrency} onChange={(event) => setForm((c) => ({ ...c, workerCostCurrency: event.target.value }))}>
-                  {CURRENCIES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          ) : null}
+          {/* No worker-cost field here, 2026-10-08 — cost now lives entirely
+              with assignment (the assign modal below), computed from the
+              assigned External Worker's rate and editable right there. One
+              place to set it, not two. */}
 
           {error ? (
             <p role="alert" className="text-[13px] text-red-600">
@@ -454,17 +602,20 @@ export function OrderItemsPanel({
           ) : null}
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
-          <Button variant="secondary" onClick={closeDialog} disabled={pending}>
+        <div className="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4">
+          <Button variant="secondary" className="rounded-[8px]" onClick={closeDialog} disabled={pending}>
             Cancel
           </Button>
           <Button
-            variant="primary"
+            variant="accent"
+            className="rounded-[8px]"
             onClick={submitItem}
             disabled={
               pending ||
               !form.serviceId ||
-              (selectedMetricType != null && (!form.channelLink.trim() || form.targetCount.trim() === ""))
+              (selectedMetricType != null &&
+                (!form.channelLink.trim() ||
+                  (dialogItemId === "new" ? form.requiredCount.trim() === "" : form.targetCount.trim() === "")))
             }
           >
             {pending ? "Saving…" : dialogItemId === "new" ? "Add item" : "Save"}
@@ -472,10 +623,305 @@ export function OrderItemsPanel({
         </div>
       </Modal>
 
+      {assignDialogItem ? (
+        <AssignWorkerModal
+          item={assignDialogItem}
+          workers={outsourcedWorkers}
+          onClose={() => setAssignDialogItem(null)}
+        />
+      ) : null}
+
       {cancelDialogItem ? (
         <CancelWithAdjustmentDialog item={cancelDialogItem} onClose={() => setCancelDialogItem(null)} />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * How long ago the item was assigned, counting up (owner request, 2026-11-03:
+ * "the outsourced worker should see how much time has passed since he's been
+ * assigned"). Once the item is done it freezes into how long it took.
+ */
+function AssignedSince({ assignedAt, finishedAt }: { assignedAt: Date; finishedAt: Date | null }) {
+  const now = useNowMinute();
+  if (now === null) return null;
+  const start = new Date(assignedAt).getTime();
+  const text = finishedAt
+    ? `done ${formatDuration(new Date(finishedAt).getTime() - start)} after assignment`
+    : `assigned ${formatDuration(now - start)} ago`;
+  return (
+    <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500" title={formatDeadlineDate(assignedAt)}>
+      <Hourglass aria-hidden="true" className="size-3" />
+      {text}
+    </span>
+  );
+}
+
+/** `Date` → the value a `datetime-local` input expects, in the viewer's timezone. */
+function toLocalInputValue(value: Date | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+/**
+ * The item's deadline as a countdown, with a small pencil that swaps it for a
+ * date-time picker (owner request, 2026-11-03: "don't give input by default …
+ * show deadline on order item with small edit icon"). For admins this is the
+ * WORKER's deadline: by default the order deadline minus the gap in
+ * Settings → System; once edited here it stays put until reset to automatic.
+ */
+function ItemDeadline({ item, canEdit, label }: { item: OrderItemRow; canEdit: boolean; label: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const finished = item.status === "DONE" || item.status === "CANCELLED";
+
+  if (!item.deadline && !canEdit) return null;
+
+  const save = (deadline: string | null) => {
+    startTransition(async () => {
+      const result = await setOrderItemDeadlineAction({ itemId: item.id, deadline });
+      if (result.ok) {
+        toast.success(result.message);
+        setEditing(false);
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  };
+
+  if (editing) {
+    return (
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-[10px] bg-zinc-50 px-2.5 py-2 ring-1 ring-inset ring-zinc-200/80">
+        <label htmlFor={`item-deadline-${item.id}`} className="text-xs font-medium text-zinc-600">
+          {label}
+        </label>
+        <Input
+          id={`item-deadline-${item.id}`}
+          type="datetime-local"
+          autoFocus
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setEditing(false);
+            if (event.key === "Enter" && value) save(new Date(value).toISOString());
+          }}
+          className="h-8 w-auto rounded-[6px] text-[13px] focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        />
+        <Button
+          variant="accent"
+          size="sm"
+          className="rounded-[6px]"
+          disabled={pending || !value}
+          onClick={() => save(new Date(value).toISOString())}
+        >
+          {pending ? "Saving…" : "Save"}
+        </Button>
+        <Button variant="ghost" size="sm" className="rounded-[6px]" disabled={pending} onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+        {item.deadlineOverridden ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => save(null)}
+            className="text-xs font-medium text-indigo-600 hover:underline disabled:opacity-50"
+          >
+            Use automatic
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+      <span>{label}</span>
+      {item.deadline ? (
+        <DeadlineCountdown deadline={item.deadline} finished={finished} />
+      ) : (
+        <span className="text-zinc-400">Not set — set the order deadline first</span>
+      )}
+      {canEdit && item.deadline ? (
+        <span
+          className={cn(
+            "rounded-full px-1.5 py-px text-[10px] font-medium uppercase tracking-wide ring-1 ring-inset",
+            item.deadlineOverridden ? "bg-indigo-50 text-indigo-700 ring-indigo-200/70" : "bg-zinc-50 text-zinc-500 ring-zinc-200",
+          )}
+          title={item.deadlineOverridden ? "Set by hand on this item" : "Follows the order deadline and the gap in Settings"}
+        >
+          {item.deadlineOverridden ? "Manual" : "Auto"}
+        </span>
+      ) : null}
+      {canEdit ? (
+        <button
+          type="button"
+          aria-label={`Edit ${label.toLowerCase()}`}
+          title="Edit deadline"
+          onClick={() => {
+            setValue(toLocalInputValue(item.deadline));
+            setEditing(true);
+          }}
+          className="grid size-6 place-items-center rounded-[6px] text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+        >
+          <Pencil aria-hidden="true" className="size-3.5" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Assigning a worker and setting their cost, as its own focused modal — a
+ * complete redesign (owner-directed, confirmed directly 2026-10-15: "the
+ * design is too flat redesign the whole page from scratch... dont use the
+ * existing structure at all") replacing the old inline dropdown-plus-input
+ * row. Worker rows read like a picker, not a bare `<select>`: an avatar
+ * initial, their rate for this service if one exists, and a clear selected
+ * state. Cost still auto-fills the instant a worker is picked and stays a
+ * normal editable field — "anyone putting the item there should be able to
+ * change the amount for it" (2026-10-08) — the redesign changes how this is
+ * presented, not that underlying rule.
+ */
+function AssignWorkerModal({
+  item,
+  workers,
+  onClose,
+}: {
+  item: OrderItemRow;
+  workers: readonly OutsourcedWorkerOption[];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [workerId, setWorkerId] = useState(item.outsourcedWorker?.id ?? "");
+  const [cost, setCost] = useState(item.workerCost ?? "");
+  const [costCurrency, setCostCurrency] = useState(item.workerCostCurrency);
+
+  const pick = (id: string) => {
+    setWorkerId(id);
+    if (!id) {
+      setCost("");
+      return;
+    }
+    const rate = workers.find((w) => w.id === id)?.rates.find((r) => r.serviceId === item.service.id);
+    const auto = computeAssignmentCost(
+      { metricType: item.service.metricType, targetCount: item.targetCount, startingCount: item.startingCount },
+      rate ?? null,
+    );
+    setCost(auto?.cost ?? "");
+    setCostCurrency(auto?.currency ?? "PKR");
+  };
+
+  const save = () => {
+    startTransition(async () => {
+      const result = await assignOrderItemWorkerAction({
+        itemId: item.id,
+        outsourcedWorkerId: workerId || null,
+        cost: workerId ? cost : "",
+        costCurrency,
+      });
+      if (result.ok) {
+        toast.success(result.message);
+        onClose();
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  };
+
+  return (
+    <Modal open onClose={onClose} labelledBy="assign-worker-title" className={MODAL_SHELL}>
+      <div className="flex items-start gap-3 border-b border-zinc-100 px-6 py-5">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-indigo-50 text-indigo-600">
+          <UserRound aria-hidden="true" className="size-[18px]" />
+        </div>
+        <div>
+          <h2 id="assign-worker-title" className="text-[15px] font-semibold text-zinc-900">
+            Assign worker
+          </h2>
+          <p className="mt-0.5 text-[13px] text-zinc-500">{item.service.name}</p>
+        </div>
+      </div>
+
+      <div className="max-h-72 space-y-1 overflow-y-auto px-3 py-3">
+        <button
+          type="button"
+          onClick={() => pick("")}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-[8px] px-3 py-2.5 text-left transition-colors",
+            workerId === "" ? "bg-indigo-50" : "hover:bg-zinc-50",
+          )}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400">
+            <UserRound aria-hidden="true" className="size-4" />
+          </span>
+          <span className="flex-1 text-[13px] font-medium text-zinc-500">Unassigned</span>
+          {workerId === "" ? <CheckCircle2 aria-hidden="true" className="size-4 text-indigo-600" /> : null}
+        </button>
+
+        {workers.map((worker) => {
+          const rate = worker.rates.find((r) => r.serviceId === item.service.id);
+          const selected = workerId === worker.id;
+          return (
+            <button
+              key={worker.id}
+              type="button"
+              onClick={() => pick(worker.id)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-[8px] px-3 py-2.5 text-left transition-colors",
+                selected ? "bg-indigo-50" : "hover:bg-zinc-50",
+              )}
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-semibold text-indigo-700">
+                {initials(worker.name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-zinc-900">{worker.name}</span>
+                <span className="block text-xs text-zinc-500">
+                  {rate ? `${rate.rate} ${rate.currency} per ${item.service.metricType ? "unit" : "item"}` : "No rate set"}
+                </span>
+              </span>
+              {selected ? <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-indigo-600" /> : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {workerId ? (
+        <div className="flex items-end gap-2 border-t border-zinc-100 px-6 py-4">
+          <Field label="Cost" htmlFor="assign-cost" hint="Auto-filled from their rate — always editable.">
+            <Input id="assign-cost" className={FIELD} inputMode="decimal" value={cost} onChange={(event) => setCost(event.target.value)} />
+          </Field>
+          <Select
+            value={costCurrency}
+            onChange={(event) => setCostCurrency(event.target.value)}
+            className={cn(FIELD, "w-24")}
+          >
+            {CURRENCIES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
+
+      <div className="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4">
+        <Button variant="secondary" className="rounded-[8px]" onClick={onClose} disabled={pending}>
+          Cancel
+        </Button>
+        <Button variant="accent" className="rounded-[8px]" onClick={save} disabled={pending}>
+          {pending ? "Saving…" : "Save assignment"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -511,16 +957,23 @@ function CancelWithAdjustmentDialog({ item, onClose }: { item: OrderItemRow; onC
   };
 
   return (
-    <Modal open onClose={onClose} labelledBy="cancel-item-dialog-title">
-      <h2 id="cancel-item-dialog-title" className="text-[15px] font-medium text-ink-strong">
-        Cancel &ldquo;{item.service.name}&rdquo;
-      </h2>
-      <p className="mt-1 text-[13px] text-ink-muted">
-        Assigned to {item.outsourcedWorker?.name}. If they had already done some of the work, adjust
-        what&apos;s owed below — the worker&apos;s earnings reflect this amount, not the original cost.
-      </p>
+    <Modal open onClose={onClose} labelledBy="cancel-item-dialog-title" className={MODAL_SHELL}>
+      <div className="flex items-start gap-3 border-b border-zinc-100 px-6 py-5">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-red-50 text-red-600">
+          <XCircle aria-hidden="true" className="size-[18px]" />
+        </div>
+        <div>
+          <h2 id="cancel-item-dialog-title" className="text-[15px] font-semibold text-zinc-900">
+            Cancel &ldquo;{item.service.name}&rdquo;
+          </h2>
+          <p className="mt-0.5 text-[13px] text-zinc-500">
+            Assigned to {item.outsourcedWorker?.name}. If they had already done some of the work, adjust
+            what&apos;s owed below.
+          </p>
+        </div>
+      </div>
 
-      <div className="mt-5 space-y-4">
+      <div className="space-y-4 px-6 py-5">
         <Field
           label="Amount owed to the worker"
           htmlFor="cancel-worker-cost"
@@ -528,6 +981,7 @@ function CancelWithAdjustmentDialog({ item, onClose }: { item: OrderItemRow; onC
         >
           <Input
             id="cancel-worker-cost"
+            className={FIELD}
             inputMode="decimal"
             value={adjustedWorkerCost}
             onChange={(event) => setAdjustedWorkerCost(event.target.value)}
@@ -535,7 +989,7 @@ function CancelWithAdjustmentDialog({ item, onClose }: { item: OrderItemRow; onC
         </Field>
 
         <Field label="Note" htmlFor="cancel-note" hint="Required — explain what happened.">
-          <Textarea id="cancel-note" rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
+          <Textarea id="cancel-note" className={FIELD} rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
         </Field>
 
         {error ? (
@@ -545,8 +999,8 @@ function CancelWithAdjustmentDialog({ item, onClose }: { item: OrderItemRow; onC
         ) : null}
       </div>
 
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={pending}>
+      <div className="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4">
+        <Button variant="secondary" className="rounded-[8px]" onClick={onClose} disabled={pending}>
           Back
         </Button>
         <Button variant="dangerGhost" onClick={submit} disabled={pending || !note.trim()}>
@@ -602,16 +1056,16 @@ function ItemLinks({
   };
 
   return (
-    <div className="mt-3 rounded-[3px] border border-line-soft bg-canvas-subtle p-3">
+    <div className="mt-3 rounded-[12px] bg-zinc-50 p-3">
       {links.length === 0 ? (
-        <p className="text-xs text-ink-faint">No links yet.</p>
+        <p className="text-xs text-zinc-400">No links yet.</p>
       ) : (
         <ul className="space-y-1.5">
           {links.map((link) => (
             <li key={link.id} className="flex items-center justify-between gap-2 text-xs">
               <span className="min-w-0 truncate">
-                {link.label ? <span className="text-ink-muted">{link.label}: </span> : null}
-                <a href={safeExternalHref(link.url) ?? undefined} target="_blank" rel="noreferrer noopener" className="text-ink hover:underline">
+                {link.label ? <span className="text-zinc-500">{link.label}: </span> : null}
+                <a href={safeExternalHref(link.url) ?? undefined} target="_blank" rel="noreferrer noopener" className="text-zinc-700 hover:underline">
                   {link.url}
                 </a>
               </span>
@@ -620,7 +1074,7 @@ function ItemLinks({
                   type="button"
                   onClick={() => removeLink(link.id)}
                   disabled={pending}
-                  className="shrink-0 text-ink-faint hover:text-red-600"
+                  className="shrink-0 text-zinc-400 hover:text-red-600"
                 >
                   Remove
                 </button>
@@ -636,15 +1090,15 @@ function ItemLinks({
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://example.com/project"
-            className="h-7 max-w-xs text-xs"
+            className="h-7 max-w-xs rounded-[6px] text-xs"
           />
           <Input
             value={label}
             onChange={(event) => setLabel(event.target.value)}
             placeholder="Label (optional)"
-            className="h-7 max-w-32 text-xs"
+            className="h-7 max-w-32 rounded-[6px] text-xs"
           />
-          <Button variant="secondary" size="sm" onClick={addLink} disabled={pending || !url.trim()}>
+          <Button variant="secondary" size="sm" className="rounded-[6px]" onClick={addLink} disabled={pending || !url.trim()}>
             Add link
           </Button>
         </div>

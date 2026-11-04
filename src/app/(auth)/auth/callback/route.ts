@@ -30,7 +30,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
       const fallback = type === "recovery" || type === "invite" ? "/auth/reset-password" : "/dashboard";
-      return NextResponse.redirect(new URL(safeRedirectPath(searchParams.get("next"), fallback), request.url));
+      const destination = new URL(safeRedirectPath(searchParams.get("next"), fallback), request.url);
+      // First-time invite: the set-password page greets the person instead of
+      // talking about a "new" password they never had.
+      if (type === "invite" && destination.pathname === "/auth/reset-password") {
+        destination.searchParams.set("welcome", "1");
+      }
+      return NextResponse.redirect(destination);
     }
   }
 

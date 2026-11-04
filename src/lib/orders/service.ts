@@ -11,14 +11,19 @@ import {
   type TransactionClient,
 } from "@/lib/db/transaction";
 import { emitNotificationEvent } from "@/lib/notifications/service";
+import { isAssignedToIdentity } from "./assignment";
+import { computeAssignmentCost } from "./rate";
 import {
-  allRequiredItemsComplete,
   canTransitionItem,
   canTransitionOrder,
+  deriveOrderStatus,
   ORDER_ITEM_STATUS_LABELS,
   ORDER_STATUS_LABELS,
 } from "./state-machine";
 import { normalizeUrl, safeExternalHref } from "./url-normalize";
+import { syncWorkerDeadlines } from "./worker-deadline-sync";
+import { getWorkerDeadlineSettings } from "@/lib/settings/queries";
+import { computeWorkerDeadline } from "@/lib/settings/worker-deadline";
 
 export type { ServiceResult };
 
@@ -42,6 +47,56 @@ async function logActivity(
   await tx.orderActivity.create({
     data: { orderId, actorId: actor.user.id, actorLabel: actor.user.fullName, action, summary },
   });
+}
+
+/**
+ * Recalculates the order's status from its items (owner-directed rework,
+ * 2026-11-03 — see `deriveOrderStatus` in state-machine.ts) and records the
+ * change. Called inside every transaction that changes an item's status,
+ * assignment or existence, so the order can never disagree with its items.
+ */
+async function refreshOrderStatus(tx: TransactionClient, orderId: string, actor: Actor): Promise<void> {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      status: true,
+      orderNumber: true,
+      createdById: true,
+      items: { select: { status: true, workerId: true, outsourcedWorkerId: true } },
+    },
+  });
+  if (!order) return;
+  const next = deriveOrderStatus(
+    order.status,
+    order.items.map((item) => ({ status: item.status, assigned: Boolean(item.outsourcedWorkerId || item.workerId) })),
+  );
+  if (next === order.status) return;
+
+  await tx.order.update({ where: { id: orderId }, data: { status: next } });
+  await logActivity(
+    tx,
+    orderId,
+    actor,
+    "order.status_changed",
+    `Order #${order.orderNumber} is now ${ORDER_STATUS_LABELS[next]} (updated automatically from its items)`,
+  );
+  if (next === "COMPLETED") {
+    await emitNotificationEvent(
+      tx,
+      "ORDER_COMPLETED",
+      [
+        {
+          userId: order.createdById,
+          title: `Order #${order.orderNumber} completed`,
+          message: `Every item on order #${order.orderNumber} is done. It's ready to deliver.`,
+          entityType: "Order",
+          entityId: orderId,
+          actionUrl: `/orders/${orderId}`,
+        },
+      ],
+      { orderId },
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +203,7 @@ export async function updateOrder(
   return runTransaction(async (tx) => {
     const existing = await tx.order.findUnique({
       where: { id: orderId },
-      select: { orderNumber: true },
+      select: { orderNumber: true, deadline: true },
     });
     if (!existing) throw new ServiceRejection("That order no longer exists.");
 
@@ -177,6 +232,11 @@ export async function updateOrder(
       },
     });
 
+    // Items that follow the order get their worker deadline moved with it.
+    if ((existing.deadline?.getTime() ?? null) !== (data.deadline?.getTime() ?? null)) {
+      await syncWorkerDeadlines(tx, [orderId]);
+    }
+
     await logActivity(tx, orderId, actor, "order.updated", `Order #${existing.orderNumber} details updated`);
     await recordAudit(tx, {
       actorUserId: actor.user.id,
@@ -193,6 +253,12 @@ export async function updateOrder(
 // Order status
 // ---------------------------------------------------------------------------
 
+/**
+ * The manual order steps (owner-directed rework, 2026-11-03): Completed →
+ * Delivered → Finalized, and Refunded / Cancelled from any status. Every other
+ * status is calculated from the items (`refreshOrderStatus`), so nobody can
+ * set it here — `canTransitionOrder` only allows these three targets.
+ */
 export async function changeOrderStatus(
   actor: Actor,
   orderId: string,
@@ -202,12 +268,7 @@ export async function changeOrderStatus(
   return runTransaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
-      select: {
-        orderNumber: true,
-        status: true,
-        createdById: true,
-        items: { select: { status: true, workerId: true } },
-      },
+      select: { orderNumber: true, status: true },
     });
     if (!order) throw new ServiceRejection("That order no longer exists.");
 
@@ -216,36 +277,15 @@ export async function changeOrderStatus(
         `Cannot move an order from ${ORDER_STATUS_LABELS[order.status]} to ${ORDER_STATUS_LABELS[targetStatus]}.`,
       );
     }
-
-    if (targetStatus === "INTERNAL_REVIEW") {
-      const itemStatuses = order.items.map((item) => item.status);
-      if (!allRequiredItemsComplete(itemStatuses)) {
-        throw new ServiceRejection(
-          "Every item must be completed (or cancelled) before moving to Internal Review.",
-        );
-      }
-    }
-    if (targetStatus === "COMPLETED") {
-      const hasOpenRevision = order.items.some((item) => item.status === "REVISION");
-      if (hasOpenRevision) {
-        throw new ServiceRejection("An item is still in Revision. Resolve it before completing the order.");
-      }
-    }
     if (targetStatus === "CANCELLED" && !reason?.trim()) {
-      throw new ServiceRejection("A reason is required to cancel an order.");
-    }
-    if (targetStatus === "REVISION" && !reason?.trim()) {
-      throw new ServiceRejection("A reason is required to send an order to Revision.");
+      throw new ServiceRejection("A reason is required to refund or cancel an order.");
     }
 
     await tx.order.update({
       where: { id: orderId },
       data: {
         status: targetStatus,
-        // Revenue recognition point (docs/REQUIREMENTS.md D4): stamped each
-        // time the order reaches DELIVERED, including a re-delivery after a
-        // REVISION loop — the recognition date should reflect the delivery
-        // that actually stuck, not the first attempt.
+        // Revenue recognition point (docs/REQUIREMENTS.md D4).
         ...(targetStatus === "DELIVERED" ? { deliveredAt: new Date() } : {}),
       },
     });
@@ -264,136 +304,6 @@ export async function changeOrderStatus(
       previousValue: { status: order.status },
       newValue: { status: targetStatus, reason: reason ?? null },
     });
-
-    if (targetStatus === "REVISION") {
-      const workerIds = [...new Set(order.items.map((item) => item.workerId).filter((id) => id !== null))];
-      await emitNotificationEvent(
-        tx,
-        "ORDER_REVISED",
-        workerIds.map((userId) => ({
-          userId,
-          title: `Order #${order.orderNumber} sent for revision`,
-          message: reason ?? `Order #${order.orderNumber} was sent for revision.`,
-          entityType: "Order",
-          entityId: orderId,
-          actionUrl: `/orders/${orderId}`,
-        })),
-        { orderId, reason: reason ?? null },
-      );
-    }
-    if (targetStatus === "COMPLETED") {
-      await emitNotificationEvent(
-        tx,
-        "ORDER_COMPLETED",
-        [
-          {
-            userId: order.createdById,
-            title: `Order #${order.orderNumber} completed`,
-            message: `Order #${order.orderNumber} has been marked completed.`,
-            entityType: "Order",
-            entityId: orderId,
-            actionUrl: `/orders/${orderId}`,
-          },
-        ],
-        { orderId },
-      );
-    }
-  });
-}
-
-/**
- * Process Order (specification Section 42, docs/ORDERS.md §5): the
- * PENDING -> PROCESSING transition, plus activating assigned items.
- *
- * No provider or queue call happens inside this transaction — only a
- * `NotificationOutbox` row recording intent. A dispatcher (Phase 8) drains it
- * afterwards, so this never fails because email/WhatsApp is unreachable.
- */
-export async function processOrder(actor: Actor, orderId: string): Promise<ServiceResult> {
-  return runTransaction(async (tx) => {
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      select: {
-        orderNumber: true,
-        status: true,
-        deadline: true,
-        items: {
-          select: {
-            id: true,
-            serviceId: true,
-            workerId: true,
-            outsourcedWorkerId: true,
-            status: true,
-            service: { select: { name: true } },
-          },
-        },
-      },
-    });
-    if (!order) throw new ServiceRejection("That order no longer exists.");
-    if (!canTransitionOrder(order.status, "PROCESSING")) {
-      throw new ServiceRejection(`Cannot process an order that is ${ORDER_STATUS_LABELS[order.status]}.`);
-    }
-    if (order.items.length === 0) {
-      throw new ServiceRejection("Add at least one item before processing this order.");
-    }
-    if (!order.deadline) {
-      throw new ServiceRejection("Set a deadline before processing this order.");
-    }
-    const unassigned = order.items.filter((item) => !item.workerId && !item.outsourcedWorkerId);
-    if (unassigned.length > 0) {
-      throw new ServiceRejection(
-        `${unassigned.length} ${unassigned.length === 1 ? "item needs" : "items need"} a worker assigned before processing.`,
-      );
-    }
-
-    await tx.order.update({ where: { id: orderId }, data: { status: "PROCESSING" } });
-
-    const activatable = order.items.filter((item) => item.status === "PENDING");
-    for (const item of activatable) {
-      await tx.orderItem.update({ where: { id: item.id }, data: { status: "IN_PROGRESS" } });
-    }
-
-    await logActivity(
-      tx,
-      orderId,
-      actor,
-      "order.processed",
-      `Order #${order.orderNumber} processed — ${activatable.length} item(s) activated`,
-    );
-    await recordAudit(tx, {
-      actorUserId: actor.user.id,
-      actorEmail: actor.user.email,
-      action: "order.processed",
-      entityType: "Order",
-      entityId: orderId,
-      summary: `Processed order #${order.orderNumber}`,
-      newValue: { activatedItems: activatable.length },
-    });
-
-    await emitNotificationEvent(
-      tx,
-      "ORDER_PROCESSED",
-      [],
-      { orderId, orderNumber: order.orderNumber },
-    );
-    for (const item of activatable) {
-      if (!item.workerId) continue; // outsourced workers have no in-app account to notify
-      await emitNotificationEvent(
-        tx,
-        "ORDER_STARTED",
-        [
-          {
-            userId: item.workerId,
-            title: `Order #${order.orderNumber} started`,
-            message: `"${item.service.name}" on order #${order.orderNumber} is now in progress.`,
-            entityType: "Order",
-            entityId: orderId,
-            actionUrl: `/orders/${orderId}`,
-          },
-        ],
-        { orderId, orderItemId: item.id },
-      );
-    }
   });
 }
 
@@ -415,8 +325,10 @@ export type OrderItemInput = {
   channelLink?: string | null;
   targetCount?: number | null;
   currentCount?: number | null;
-  workerCost?: string | null;
-  workerCostCurrency?: string;
+  // No workerCost/workerCostCurrency here, 2026-10-08 — cost now lives
+  // entirely with assignment (`assignOrderItemWorker`), computed from the
+  // assigned External Worker's `ServiceRate`. There is exactly one place
+  // to set it, not two (this input used to carry it too, redundantly).
 };
 
 /** Validates and normalizes the metric fields against the chosen service's `metricType`, if any. */
@@ -451,17 +363,20 @@ export async function addOrderItem(
   input: OrderItemInput,
 ): Promise<ServiceResult<{ id: string }>> {
   return runTransaction(async (tx) => {
-    const [order, service] = await Promise.all([
-      tx.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } }),
+    const [order, service, deadlineSettings] = await Promise.all([
+      tx.order.findUnique({ where: { id: orderId }, select: { orderNumber: true, deadline: true, createdAt: true } }),
       tx.service.findUnique({
         where: { id: input.serviceId },
         select: { id: true, name: true, categoryId: true, metricType: true },
       }),
+      getWorkerDeadlineSettings(tx),
     ]);
     if (!order) throw new ServiceRejection("That order no longer exists.");
     if (!service) throw new ServiceRejection("That service no longer exists.");
 
     const metric = resolveMetricFields(service, input);
+    // A deadline given here is a manual one; otherwise the item follows the order.
+    const manualDeadline = input.deadline ? new Date(input.deadline) : null;
 
     const item = await tx.orderItem.create({
       data: {
@@ -469,12 +384,17 @@ export async function addOrderItem(
         serviceId: service.id,
         categoryId: service.categoryId,
         description: input.description?.trim() || null,
-        deadline: input.deadline ? new Date(input.deadline) : null,
+        deadline: manualDeadline ?? computeWorkerDeadline(order.deadline, order.createdAt, deadlineSettings),
+        deadlineOverridden: manualDeadline !== null,
         channelLink: metric.channelLink,
         targetCount: metric.targetCount,
         currentCount: metric.currentCount,
-        workerCost: input.workerCost?.trim() || null,
-        workerCostCurrency: (input.workerCostCurrency?.trim() || "PKR").toUpperCase(),
+        // Snapshotted ONLY here, never touched again by updateOrderItem or
+        // updateOrderItemProgress — see the schema doc comment on this
+        // column for why (2026-10-05): the progress bar must measure actual
+        // work done since creation, not restate the count the item already
+        // had before any work started.
+        startingCount: metric.currentCount,
       },
       select: { id: true },
     });
@@ -495,6 +415,7 @@ export async function addOrderItem(
       summary: `Added item "${service.name}" to order #${order.orderNumber}`,
       newValue: { itemId: item.id, serviceId: service.id },
     });
+    await refreshOrderStatus(tx, orderId, actor);
 
     return { id: item.id };
   });
@@ -526,12 +447,11 @@ export async function updateOrderItem(
         serviceId: service.id,
         categoryId: service.categoryId,
         description: input.description?.trim() || null,
-        deadline: input.deadline ? new Date(input.deadline) : null,
+        // No deadline here: it has its own inline editor and action
+        // (setOrderItemDeadline), so saving other details never resets it.
         channelLink: metric.channelLink,
         targetCount: metric.targetCount,
         currentCount: metric.currentCount,
-        workerCost: input.workerCost?.trim() || null,
-        workerCostCurrency: (input.workerCostCurrency?.trim() || "PKR").toUpperCase(),
       },
     });
 
@@ -553,6 +473,55 @@ export async function updateOrderItem(
   });
 }
 
+/**
+ * Sets an item's worker deadline by hand, or (`deadline: null`) puts it back
+ * on automatic, following the order deadline and the settings again.
+ * Owner request, 2026-11-03: editable from the item itself, one click away.
+ */
+export async function setOrderItemDeadline(
+  actor: Actor,
+  itemId: string,
+  deadline: Date | null,
+): Promise<ServiceResult<{ deadline: Date | null; overridden: boolean }>> {
+  return runTransaction(async (tx) => {
+    const [item, settings] = await Promise.all([
+      tx.orderItem.findUnique({
+        where: { id: itemId },
+        select: {
+          orderId: true,
+          deadline: true,
+          service: { select: { name: true } },
+          order: { select: { orderNumber: true, deadline: true, createdAt: true } },
+        },
+      }),
+      deadline ? Promise.resolve(null) : getWorkerDeadlineSettings(tx),
+    ]);
+    if (!item) throw new ServiceRejection("That item no longer exists.");
+
+    const next = deadline ?? computeWorkerDeadline(item.order.deadline, item.order.createdAt, settings!);
+    const overridden = deadline !== null;
+    await tx.orderItem.update({ where: { id: itemId }, data: { deadline: next, deadlineOverridden: overridden } });
+
+    const label = next ? `${next.toISOString().slice(0, 16).replace("T", " ")} UTC` : "none";
+    const summary = overridden
+      ? `Set the deadline of "${item.service.name}" on order #${item.order.orderNumber} to ${label}`
+      : `Reset the deadline of "${item.service.name}" on order #${item.order.orderNumber} to automatic (${label})`;
+    await logActivity(tx, item.orderId, actor, "order_item.deadline_changed", summary);
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "order_item.deadline_changed",
+      entityType: "Order",
+      entityId: item.orderId,
+      summary,
+      previousValue: { itemId, deadline: item.deadline?.toISOString() ?? null },
+      newValue: { itemId, deadline: next?.toISOString() ?? null, overridden },
+    });
+
+    return { deadline: next, overridden };
+  });
+}
+
 export async function removeOrderItem(actor: Actor, itemId: string): Promise<ServiceResult> {
   return runTransaction(async (tx) => {
     const item = await tx.orderItem.findUnique({
@@ -566,6 +535,7 @@ export async function removeOrderItem(actor: Actor, itemId: string): Promise<Ser
     if (!item) throw new ServiceRejection("That item no longer exists.");
 
     await tx.orderItem.delete({ where: { id: itemId } });
+    await refreshOrderStatus(tx, item.orderId, actor);
     await logActivity(
       tx,
       item.orderId,
@@ -584,54 +554,107 @@ export async function removeOrderItem(actor: Actor, itemId: string): Promise<Ser
   });
 }
 
-/** Exactly one of `workerId` / `outsourcedWorkerId` may be set; pass both `null` to clear. */
+/**
+ * Assignment is External-Worker-only going forward — owner-directed,
+ * confirmed directly (2026-10-08): "employees wont be assigned a order
+ * item its assigned to oursourced(external) only." Pass `outsourcedWorkerId:
+ * null` to unassign. `cost`/`costCurrency` are optional:
+ * - Omitted entirely → auto-computed from `ServiceRate` (rate × the
+ *   metric's required count — target minus starting, never charging for
+ *   units the channel already had — or a flat rate for a non-metric
+ *   service), left blank if no rate is configured. Never blocks the
+ *   assignment either way.
+ * - Provided (including `""`, meaning "no cost") → used exactly as given.
+ *   "anyone putting the item there should be able to change the amount
+ *   for it" — the auto-fill is a UX convenience, not a locked value.
+ */
 export async function assignOrderItemWorker(
   actor: Actor,
   itemId: string,
-  assignment: { workerId?: string | null; outsourcedWorkerId?: string | null },
+  assignment: { outsourcedWorkerId: string | null; cost?: string | null; costCurrency?: string },
 ): Promise<ServiceResult> {
-  const workerId = assignment.workerId || null;
   const outsourcedWorkerId = assignment.outsourcedWorkerId || null;
-  if (workerId && outsourcedWorkerId) {
-    return failure("An item can be assigned to an internal worker or an outsourced worker, not both.");
-  }
 
   return runTransaction(async (tx) => {
     const item = await tx.orderItem.findUnique({
       where: { id: itemId },
       select: {
         orderId: true,
-        order: { select: { orderNumber: true } },
-        service: { select: { name: true } },
+        serviceId: true,
+        targetCount: true,
+        startingCount: true,
+        status: true,
+        outsourcedWorkerId: true,
+        order: { select: { orderNumber: true, deadline: true } },
+        service: { select: { name: true, metricType: true } },
       },
     });
     if (!item) throw new ServiceRejection("That item no longer exists.");
-
-    if (workerId) {
-      const worker = await tx.user.findUnique({ where: { id: workerId }, select: { id: true, isActive: true } });
-      if (!worker || !worker.isActive) throw new ServiceRejection("That user is not an active user.");
+    // Owner's choice, 2026-11-03: the deadline is needed before work is handed
+    // out (it used to be needed for the removed "Process order" step), and the
+    // worker's own deadline is calculated from it.
+    if (outsourcedWorkerId && !item.order.deadline) {
+      throw new ServiceRejection("Set the order deadline before assigning a worker.");
     }
+
+    let cost: string | null = null;
+    let costCurrency = "PKR";
+    let assigneeName: string | null = null;
+    let assigneeUserId: string | null = null;
+
     if (outsourcedWorkerId) {
       const worker = await tx.outsourcedWorker.findUnique({
         where: { id: outsourcedWorkerId },
-        select: { id: true, isActive: true },
+        select: { name: true, isActive: true, userId: true },
       });
       if (!worker || !worker.isActive) throw new ServiceRejection("That outsourced worker is not active.");
+      assigneeName = worker.name;
+      assigneeUserId = worker.userId;
+
+      if (assignment.cost !== undefined) {
+        cost = assignment.cost?.trim() || null;
+        costCurrency = (assignment.costCurrency?.trim() || "PKR").toUpperCase();
+      } else {
+        const rate = await tx.serviceRate.findUnique({
+          where: { serviceId_outsourcedWorkerId: { serviceId: item.serviceId, outsourcedWorkerId } },
+          select: { rate: true, currency: true },
+        });
+        const computed = computeAssignmentCost(
+          { metricType: item.service.metricType, targetCount: item.targetCount, startingCount: item.startingCount },
+          rate ? { rate: rate.rate.toString(), currency: rate.currency } : null,
+        );
+        if (computed) {
+          cost = computed.cost;
+          costCurrency = computed.currency;
+        }
+      }
     }
 
-    await tx.orderItem.update({ where: { id: itemId }, data: { workerId, outsourcedWorkerId } });
+    // A changed assignee (a new worker, or clearing one) restarts the
+    // accept → start → pause/resume cycle for whoever holds the item now —
+    // owner-directed, confirmed directly (2026-10-15): acceptance is a
+    // deliberate per-assignment step, so a reassignment must not inherit the
+    // previous assignee's ASSIGNED/IN_PROGRESS/PAUSED progress. A finished
+    // item (COMPLETED/CANCELLED) is left alone — reassignment there is just
+    // a record correction, not a new work cycle.
+    const reassigned = outsourcedWorkerId !== item.outsourcedWorkerId;
+    const resetStatus = reassigned && item.status !== "DONE" && item.status !== "CANCELLED";
 
-    const [assignee] = await Promise.all([
-      workerId
-        ? tx.user.findUnique({ where: { id: workerId }, select: { fullName: true } })
-        : outsourcedWorkerId
-          ? tx.outsourcedWorker.findUnique({ where: { id: outsourcedWorkerId }, select: { name: true } })
-          : null,
-    ]);
-    const assigneeName = assignee ? ("fullName" in assignee ? assignee.fullName : assignee.name) : null;
+    await tx.orderItem.update({
+      where: { id: itemId },
+      data: {
+        workerId: null, // the deprecated path — see its schema doc comment
+        outsourcedWorkerId,
+        assignedById: outsourcedWorkerId ? actor.user.id : null,
+        workerCost: cost,
+        workerCostCurrency: costCurrency,
+        ...(reassigned ? { assignedAt: outsourcedWorkerId ? new Date() : null } : {}),
+        ...(resetStatus ? { status: "PENDING" as const } : {}),
+      },
+    });
 
     const summary = assigneeName
-      ? `Assigned "${item.service.name}" on order #${item.order.orderNumber} to ${assigneeName}`
+      ? `Assigned "${item.service.name}" on order #${item.order.orderNumber} to ${assigneeName}${cost ? ` at ${cost} ${costCurrency}` : ""}`
       : `Unassigned "${item.service.name}" on order #${item.order.orderNumber}`;
     await logActivity(tx, item.orderId, actor, "order_item.assigned", summary);
     await recordAudit(tx, {
@@ -641,19 +664,22 @@ export async function assignOrderItemWorker(
       entityType: "Order",
       entityId: item.orderId,
       summary,
-      newValue: { itemId, workerId, outsourcedWorkerId },
+      newValue: { itemId, outsourcedWorkerId, cost, costCurrency },
     });
+    await refreshOrderStatus(tx, item.orderId, actor);
 
-    // Outsourced workers have no in-app account — outbox intent only, no recipients.
-    if (workerId) {
+    // Notify the assignee only if they're onboarded with portal access
+    // (`OutsourcedWorker.userId` — see its schema doc comment); a pure
+    // cost-tracking worker with no login has nothing to receive this in.
+    if (reassigned && assigneeUserId) {
       await emitNotificationEvent(
         tx,
         "ORDER_ASSIGNED",
         [
           {
-            userId: workerId,
-            title: `Assigned to order #${item.order.orderNumber}`,
-            message: `You were assigned "${item.service.name}" on order #${item.order.orderNumber}.`,
+            userId: assigneeUserId,
+            title: `New task: ${item.service.name}`,
+            message: `You've been assigned "${item.service.name}" on order #${item.order.orderNumber}. Accept it to get started.`,
             entityType: "Order",
             entityId: item.orderId,
             actionUrl: `/orders/${item.orderId}`,
@@ -677,22 +703,29 @@ export async function changeOrderItemStatus(
         orderId: true,
         status: true,
         workerId: true,
+        outsourcedWorkerId: true,
         order: { select: { orderNumber: true } },
         service: { select: { name: true } },
+        outsourcedWorker: { select: { userId: true } },
       },
     });
     if (!item) throw new ServiceRejection("That item no longer exists.");
 
-    const actingAsAssignedWorkerOnly = !actor.permissions.has("orders.view.all") && item.workerId === actor.user.id;
+    const actingAsAssignedWorkerOnly =
+      !actor.permissions.has("orders.view.all") &&
+      isAssignedToIdentity(item, { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId });
 
     if (!canTransitionItem(item.status, targetStatus, { asAssignedWorkerOnly: actingAsAssignedWorkerOnly })) {
       throw new ServiceRejection(
         `Cannot move this item from ${ORDER_ITEM_STATUS_LABELS[item.status]} to ${ORDER_ITEM_STATUS_LABELS[targetStatus]}.`,
       );
     }
+    if (targetStatus === "PROCESSING" && !item.outsourcedWorkerId && !item.workerId) {
+      throw new ServiceRejection("Assign a worker to this item before it can be accepted.");
+    }
 
-    // finishedAt marks the two "earned" states (D5); a COMPLETED item flagged back to REVISION clears it.
-    const finishedAt = targetStatus === "COMPLETED" || targetStatus === "CANCELLED" ? new Date() : null;
+    // finishedAt marks the two "earned" states (D5); a done item sent to Refill clears it.
+    const finishedAt = targetStatus === "DONE" || targetStatus === "CANCELLED" ? new Date() : null;
     await tx.orderItem.update({ where: { id: itemId }, data: { status: targetStatus, finishedAt } });
 
     const summary = `${actor.user.fullName} changed the item status of "${item.service.name}" on order #${item.order.orderNumber} from ${ORDER_ITEM_STATUS_LABELS[item.status]} to ${ORDER_ITEM_STATUS_LABELS[targetStatus]}`;
@@ -706,6 +739,88 @@ export async function changeOrderItemStatus(
       summary,
       previousValue: { status: item.status },
       newValue: { status: targetStatus },
+    });
+
+    // A refill is new work for the worker: tell them (if they can log in).
+    if (targetStatus === "REFILL" && item.outsourcedWorker?.userId) {
+      await emitNotificationEvent(
+        tx,
+        "ORDER_REVISED",
+        [
+          {
+            userId: item.outsourcedWorker.userId,
+            title: `Refill needed: ${item.service.name}`,
+            message: `"${item.service.name}" on order #${item.order.orderNumber} needs a refill.`,
+            entityType: "Order",
+            entityId: item.orderId,
+            actionUrl: `/orders/${item.orderId}`,
+          },
+        ],
+        { orderId: item.orderId, orderItemId: itemId },
+      );
+    }
+    await refreshOrderStatus(tx, item.orderId, actor);
+  });
+}
+
+/**
+ * Updates ONLY `currentCount` — a deliberately narrow sibling of the full
+ * `updateOrderItem` edit, confirmed directly (2026-10-05): "worker or myself
+ * should be able to update progress at any time so that i know 1500/6000
+ * views are completed." The same actors who may change this item's status
+ * may update its progress (the assigned worker on their own item, or anyone
+ * with `orders.view.all`) — a worker gets a quick way to report progress
+ * without the broader edit rights `orders.edit` would otherwise require
+ * (changing the service, the deadline, the worker cost, ...).
+ *
+ * Not capped at `targetCount`: over-delivery is a real, meaningful state
+ * (worth seeing as "6200 / 6000", not silently clamped to 100%) — only the
+ * aggregate progress bar on the orders list clamps per item, for the bar
+ * itself to never visually exceed full.
+ */
+export async function updateOrderItemProgress(
+  actor: Actor,
+  itemId: string,
+  currentCount: number,
+): Promise<ServiceResult> {
+  if (!Number.isInteger(currentCount) || currentCount < 0) {
+    return failure("Enter a whole number, zero or more.");
+  }
+
+  return runTransaction(async (tx) => {
+    const item = await tx.orderItem.findUnique({
+      where: { id: itemId },
+      select: {
+        orderId: true,
+        workerId: true,
+        outsourcedWorkerId: true,
+        currentCount: true,
+        targetCount: true,
+        order: { select: { orderNumber: true } },
+        service: { select: { name: true, metricType: true } },
+      },
+    });
+    if (!item) throw new ServiceRejection("That item no longer exists.");
+    if (!item.service.metricType) throw new ServiceRejection("This item has no progress to track.");
+
+    const isAssignedWorker = isAssignedToIdentity(item, { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId });
+    if (!actor.permissions.has("orders.view.all") && !isAssignedWorker) {
+      throw new ServiceRejection("You may only update progress on an item assigned to you.");
+    }
+
+    await tx.orderItem.update({ where: { id: itemId }, data: { currentCount } });
+
+    const summary = `${actor.user.fullName} updated progress on "${item.service.name}" on order #${item.order.orderNumber} to ${currentCount} / ${item.targetCount ?? 0}`;
+    await logActivity(tx, item.orderId, actor, "order_item.progress_updated", summary);
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "order_item.progress_updated",
+      entityType: "Order",
+      entityId: item.orderId,
+      summary,
+      previousValue: { currentCount: item.currentCount },
+      newValue: { currentCount },
     });
   });
 }
@@ -751,7 +866,9 @@ export async function cancelOrderItemWithAdjustedCost(
     });
     if (!item) throw new ServiceRejection("That item no longer exists.");
 
-    const actingAsAssignedWorkerOnly = !actor.permissions.has("orders.view.all") && item.workerId === actor.user.id;
+    const actingAsAssignedWorkerOnly =
+      !actor.permissions.has("orders.view.all") &&
+      isAssignedToIdentity(item, { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId });
     if (!canTransitionItem(item.status, "CANCELLED", { asAssignedWorkerOnly: actingAsAssignedWorkerOnly })) {
       throw new ServiceRejection(`Cannot cancel this item from ${ORDER_ITEM_STATUS_LABELS[item.status]}.`);
     }
@@ -799,6 +916,7 @@ export async function cancelOrderItemWithAdjustedCost(
         outsourcedWorkerName: item.outsourcedWorker.name,
       });
     }
+    await refreshOrderStatus(tx, item.orderId, actor);
   });
 }
 

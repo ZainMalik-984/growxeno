@@ -7,15 +7,17 @@
 //     charge the client by default.
 //
 // What is deliberately NOT here, and why:
-//   - A per-service "worker cost" — specification Section 24 puts "Worker
-//     cost" on the ORDER ITEM, not the service. What it costs to fulfil a
-//     service (e.g. paying an outsourced worker) is a fact about who is doing
-//     THIS particular piece of work, entered when the Order Item is created
-//     (Phase 4), and is snapshotted there so a later rate change never rewrites
-//     history. It is deliberately not modelled as a property of Service, and
-//     not as a separate "outsourced worker's service catalog" — the owner was
-//     explicit that our own Service and whatever an outsourced worker charges
-//     us are different things, tracked separately, per Order Item.
+//   - A per-service "worker cost" directly on Service — specification Section
+//     24 puts "Worker cost" on the ORDER ITEM, which still holds the actual,
+//     snapshotted figure (`OrderItem.workerCost`), never rewritten by a later
+//     rate change. REVISED, 2026-10-08 (owner-directed, confirmed directly):
+//     an External Worker's rate per service now DOES exist as its own
+//     catalog — see `ServiceRate` in `orders.prisma` — reversing the earlier
+//     "not as a separate outsourced worker's service catalog" position
+//     stated in Phase 4. That rate is looked up and copied into the Order
+//     Item's `workerCost` at assignment time (never read from live at any
+//     other time), so the snapshot-on-the-item discipline above is unchanged
+//     — only where the DEFAULT value comes from is new.
 //   - Pricing tiers. Removed from the CRM domain entirely at the owner's
 //     direction — see the note at the top of `crm.prisma`. There is no
 //     override layer any more either: Buyer, and with it `BuyerPricing`, was
@@ -90,6 +92,7 @@ model Service {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   orderItems OrderItem[]
+  rates      ServiceRate[]
 
   @@index([categoryId])
   @@index([name])

@@ -13,9 +13,12 @@ import type { OutsourcedWorkerDetail } from "@/lib/outsourced-workers/queries";
 export function OutsourcedWorkerProfileForm({
   worker,
   canEdit,
+  onDone,
 }: {
   worker: OutsourcedWorkerDetail;
   canEdit: boolean;
+  /** Called after a successful save, or on Cancel — lets a read-only card switch back from edit mode. */
+  onDone?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -53,6 +56,7 @@ export function OutsourcedWorkerProfileForm({
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
+        onDone?.();
       } else {
         setError(result.error);
       }
@@ -60,21 +64,23 @@ export function OutsourcedWorkerProfileForm({
   };
 
   return (
-    <form onSubmit={submit} className="max-w-lg space-y-5">
+    <form onSubmit={submit} className="space-y-4">
       <Field label="Name" htmlFor="edit-worker-name">
         <Input id="edit-worker-name" required value={name} onChange={(event) => setName(event.target.value)} />
       </Field>
       <Field label="Email" htmlFor="edit-worker-email" hint="Optional.">
         <Input id="edit-worker-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
       </Field>
-      <Field label="Phone" htmlFor="edit-worker-phone" hint="Optional.">
-        <Input id="edit-worker-phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
-      </Field>
-      <Field label="WhatsApp number" htmlFor="edit-worker-whatsapp" hint="Optional.">
-        <Input id="edit-worker-whatsapp" value={whatsappNumber} onChange={(event) => setWhatsappNumber(event.target.value)} />
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+        <Field label="Phone" htmlFor="edit-worker-phone" hint="Optional.">
+          <Input id="edit-worker-phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
+        </Field>
+        <Field label="WhatsApp number" htmlFor="edit-worker-whatsapp" hint="Optional.">
+          <Input id="edit-worker-whatsapp" value={whatsappNumber} onChange={(event) => setWhatsappNumber(event.target.value)} />
+        </Field>
+      </div>
       <Field label="Notes" htmlFor="edit-worker-notes" hint="Optional.">
-        <Textarea id="edit-worker-notes" rows={4} value={notes} onChange={(event) => setNotes(event.target.value)} />
+        <Textarea id="edit-worker-notes" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
       </Field>
 
       {error ? (
@@ -83,9 +89,16 @@ export function OutsourcedWorkerProfileForm({
         </p>
       ) : null}
 
-      <Button type="submit" variant="secondary" disabled={pending || !name.trim()}>
-        {pending ? "Saving…" : "Save changes"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
+          {pending ? "Saving…" : "Save changes"}
+        </Button>
+        {onDone ? (
+          <Button type="button" variant="ghost" onClick={onDone} disabled={pending}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

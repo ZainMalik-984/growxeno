@@ -2,20 +2,25 @@ import "server-only";
 
 import type { OrderItemStatus } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { assignedItemWhere, type AssignmentIdentity } from "@/lib/orders/assignment";
 import { todayRangeUtc } from "@/lib/orders/date-ranges";
 import { ORDER_ITEM_STATUS_LABELS } from "@/lib/orders/state-machine";
 
 /**
- * Read queries for internal Worker profiles and the personal "your work"
+ * Read queries for internal Employee profiles and the personal "your work"
  * summary (specification Sections 43–45), documented in docs/ORDERS.md §9.
  *
- * Distinct from `src/lib/outsourced-workers/`: that module is login-less
- * third parties; this one is the internal `User` acting in their Worker
- * capacity, which is why it reads `OrderItem.workerId`, not
- * `outsourcedWorkerId`, throughout.
+ * Renamed from "Worker" to "Employee" (owner-directed, confirmed directly,
+ * 2026-10-08) — Employees are managers/admins who create and assign orders,
+ * salaried, never themselves the assignee doing the work. Execution is done
+ * by External Workers (`src/lib/outsourced-workers/`), which is why
+ * `getMyWorkSummary` below also matches `outsourcedWorkerId` — it serves
+ * BOTH an Employee's dashboard (reading the deprecated `workerId` history,
+ * see its schema doc comment) and an External Worker's, via the shared
+ * `assignedItemWhere` (`src/lib/orders/assignment.ts`).
  */
 
-const OPEN_ITEM_STATUSES: OrderItemStatus[] = ["PENDING", "IN_PROGRESS", "INTERNAL_REVIEW", "REVISION"];
+const OPEN_ITEM_STATUSES: OrderItemStatus[] = ["PENDING", "PROCESSING", "REFILL"];
 const RECENTLY_COMPLETED_LIMIT = 5;
 const ATTENTION_LIMIT = 8;
 const ACTIVITY_LIMIT = 15;
@@ -50,27 +55,27 @@ export type WorkSummary = {
 
 /**
  * The personal work summary behind both the dashboard's "Your work" section
- * and a worker's own profile page — one query shape, two surfaces.
+ * and an employee's own profile page — one query shape, two surfaces.
  *
  * Item-level, not order-level: an Order Item carries its own `deadline`
- * (falling back to the order's if unset — see docs/ORDERS.md), and a worker
- * only cares about the items assigned to them, not the rest of the order.
+ * (falling back to the order's if unset — see docs/ORDERS.md).
  */
-export async function getMyWorkSummary(userId: string): Promise<WorkSummary> {
+export async function getMyWorkSummary(identity: AssignmentIdentity): Promise<WorkSummary> {
   const now = new Date();
   const { start: todayStart, end: todayEnd } = todayRangeUtc(now);
+  const mine = assignedItemWhere(identity);
 
   const [newCount, activeCount, dueTodayCount, overdueCount, attentionItems, recentlyCompleted] = await Promise.all([
-    prisma.orderItem.count({ where: { workerId: userId, status: "PENDING" } }),
-    prisma.orderItem.count({ where: { workerId: userId, status: { in: ["IN_PROGRESS", "REVISION"] } } }),
+    prisma.orderItem.count({ where: { ...mine, status: "PENDING" } }),
+    prisma.orderItem.count({ where: { ...mine, status: { in: ["PROCESSING", "REFILL"] } } }),
     prisma.orderItem.count({
-      where: { workerId: userId, status: { in: OPEN_ITEM_STATUSES }, deadline: { gte: todayStart, lt: todayEnd } },
+      where: { ...mine, status: { in: OPEN_ITEM_STATUSES }, deadline: { gte: todayStart, lt: todayEnd } },
     }),
     prisma.orderItem.count({
-      where: { workerId: userId, status: { in: OPEN_ITEM_STATUSES }, deadline: { lt: now } },
+      where: { ...mine, status: { in: OPEN_ITEM_STATUSES }, deadline: { lt: now } },
     }),
     prisma.orderItem.findMany({
-      where: { workerId: userId, status: { in: OPEN_ITEM_STATUSES } },
+      where: { ...mine, status: { in: OPEN_ITEM_STATUSES } },
       select: {
         id: true,
         status: true,
@@ -83,7 +88,7 @@ export async function getMyWorkSummary(userId: string): Promise<WorkSummary> {
       take: ATTENTION_LIMIT,
     }),
     prisma.orderItem.findMany({
-      where: { workerId: userId, status: "COMPLETED" },
+      where: { ...mine, status: "DONE" },
       select: {
         id: true,
         orderId: true,
@@ -121,7 +126,7 @@ export async function getMyWorkSummary(userId: string): Promise<WorkSummary> {
   };
 }
 
-export type WorkerListRow = {
+export type EmployeeListRow = {
   id: string;
   fullName: string;
   email: string;
@@ -130,8 +135,8 @@ export type WorkerListRow = {
   openItemCount: number;
 };
 
-/** Active internal users, for the `/workers` roster (`workers.view.all`). */
-export async function listWorkers(): Promise<WorkerListRow[]> {
+/** Active internal users, for the `/employees` roster (`employees.view.all`). */
+export async function listEmployees(): Promise<EmployeeListRow[]> {
   const users = await prisma.user.findMany({
     where: { isActive: true },
     select: {
@@ -155,22 +160,22 @@ export async function listWorkers(): Promise<WorkerListRow[]> {
   }));
 }
 
-export type WorkerCategoryRow = { id: string; name: string };
-export type WorkerActivityRow = { id: string; summary: string; createdAt: Date };
+export type EmployeeCategoryRow = { id: string; name: string };
+export type EmployeeActivityRow = { id: string; summary: string; createdAt: Date };
 
-export type WorkerProfile = {
+export type EmployeeProfile = {
   id: string;
   fullName: string;
   email: string;
   jobTitle: string | null;
   isActive: boolean;
   roleNames: string[];
-  categories: WorkerCategoryRow[];
-  activity: WorkerActivityRow[];
+  categories: EmployeeCategoryRow[];
+  activity: EmployeeActivityRow[];
 };
 
-/** Everything on the Worker Profile page (specification Section 45) that has a real data source today. */
-export async function getWorkerProfile(userId: string): Promise<WorkerProfile | null> {
+/** Everything on the Employee Profile page (specification Section 45) that has a real data source today. */
+export async function getEmployeeProfile(userId: string): Promise<EmployeeProfile | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {

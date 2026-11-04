@@ -212,10 +212,23 @@ export async function bulkUpsertDailyStats(
   }
 
   return runTransaction(async (tx) => {
-    for (const entry of entries) {
-      await tx.dailyStat.upsert({
-        where: { userId_statDate: { userId: entry.userId, statDate } },
-        create: {
+    // A per-entry `upsert` in a loop is N round trips no matter what; Prisma
+    // has no batch upsert. Splitting into "needs create" (one `createMany`,
+    // 1 round trip for however many) vs "needs update" (still one call each
+    // — different rows need different data, which `updateMany` can't
+    // express) is strictly no worse, and a real win whenever a bulk entry is
+    // mostly first-time rows for the date, the common case for this feature.
+    const existing = await tx.dailyStat.findMany({
+      where: { statDate, userId: { in: entries.map((e) => e.userId) } },
+      select: { userId: true },
+    });
+    const existingUserIds = new Set(existing.map((row) => row.userId));
+    const toCreate = entries.filter((entry) => !existingUserIds.has(entry.userId));
+    const toUpdate = entries.filter((entry) => existingUserIds.has(entry.userId));
+
+    if (toCreate.length > 0) {
+      await tx.dailyStat.createMany({
+        data: toCreate.map((entry) => ({
           userId: entry.userId,
           statDate,
           orders: entry.orders,
@@ -225,8 +238,13 @@ export async function bulkUpsertDailyStats(
           revenueCurrency: entry.revenueCurrency,
           notes: entry.notes?.trim() || null,
           createdById: actor.user.id,
-        },
-        update: {
+        })),
+      });
+    }
+    for (const entry of toUpdate) {
+      await tx.dailyStat.update({
+        where: { userId_statDate: { userId: entry.userId, statDate } },
+        data: {
           orders: entry.orders,
           completed: entry.completed,
           pending: entry.pending,
@@ -270,9 +288,11 @@ export async function copyPreviousDay(
     const alreadyPresent = new Set(existingTargetRows.map((row) => row.userId));
     const toCopy = previousRows.filter((row) => !alreadyPresent.has(row.userId));
 
-    for (const row of toCopy) {
-      await tx.dailyStat.create({
-        data: {
+    if (toCopy.length > 0) {
+      // Every row here is a fresh insert (filtered above) — one `createMany`
+      // instead of one round trip per copied row.
+      await tx.dailyStat.createMany({
+        data: toCopy.map((row) => ({
           userId: row.userId,
           statDate: targetDate,
           orders: row.orders,
@@ -282,7 +302,7 @@ export async function copyPreviousDay(
           revenueCurrency: row.revenueCurrency,
           notes: row.notes,
           createdById: actor.user.id,
-        },
+        })),
       });
     }
 

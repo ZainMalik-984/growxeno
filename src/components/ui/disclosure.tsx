@@ -18,24 +18,27 @@ export function Disclosure({
   title,
   description,
   defaultOpen = false,
+  className,
   children,
 }: {
   title: string;
   description?: string;
   defaultOpen?: boolean;
+  /** Overrides the default top hairline — e.g. when a parent `Card` already draws its own border. */
+  className?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="border-t border-line pt-4">
+    <div className={cn("border-t border-zinc-200/80 pt-4", className)}>
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         className="flex w-full items-center justify-between gap-3 text-left"
       >
-        <span className="section-title">{title}</span>
+        <span className="text-[15px] font-semibold text-zinc-900">{title}</span>
         <ChevronDown
           aria-hidden="true"
           className={cn("size-4 shrink-0 text-ink-faint transition-transform", open && "rotate-180")}

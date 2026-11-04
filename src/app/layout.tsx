@@ -5,10 +5,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Business Manager",
-    template: "%s · Business Manager",
+    default: "Grow Xeno · Business Manager",
+    template: "%s · Grow Xeno",
   },
-  description: "Internal business operations management platform.",
+  description: "Grow Xeno internal business operations management platform.",
+  applicationName: "Grow Xeno",
   robots: { index: false, follow: false },
 };
 

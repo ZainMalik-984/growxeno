@@ -66,10 +66,36 @@ function createPrismaClient(): PrismaClient {
      * between recycles, a query on it fails within 15s with a clear
      * "canceling statement due to statement timeout" error rather than
      * hanging indefinitely and taking the page down with it.
+     *
+     * RAISED TO 5 MINUTES (2026-11-03, measured): with 30s, anyone who read a
+     * page for more than half a minute paid a fresh handshake on their next
+     * click — ~0.85-1.3s per connection to this region, and a page opens
+     * several in parallel. A test connection left idle for 300s with TCP
+     * keepalive on was reused fine (query 207ms, no reconnect, no error), so
+     * 5 minutes keeps the warm pool across normal reading time while still
+     * recycling on a bounded schedule. `keepAliveInitialDelayMillis` starts
+     * the TCP probes after 10s idle instead of the OS default (often 2 hours),
+     * so a connection dropped in between is detected early; `query_timeout`
+     * below still bounds anything that slips through.
      */
-    idleTimeoutMillis: 30_000,
+    idleTimeoutMillis: 300_000,
     keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
     query_timeout: 15_000,
+    /**
+     * Explicit rather than left at node-postgres's own default (also 10,
+     * coincidentally — this is about intent, not changing behavior). Phase 7
+     * perf pass (2026-10-13): `DATABASE_URL` already points at Supabase's
+     * Supavisor pooler in transaction mode (`pgbouncer=true`, port 6543),
+     * which multiplexes many app-side connections onto a smaller shared
+     * backend pool server-side — so OUR pool's size is a limit on how many
+     * requests this single Node process can have in flight at once, not a
+     * limit on Postgres itself. 10 is comfortably more than this internal
+     * tool's concurrent-request count in practice; written down explicitly
+     * so a future change to it is a deliberate decision, not a silent
+     * side effect of a `pg`/Prisma version bump changing its own default.
+     */
+    max: 10,
   });
 
   return new PrismaClient({

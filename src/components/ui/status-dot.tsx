@@ -61,3 +61,37 @@ export function StatusDot({
     </span>
   );
 }
+
+const TONE_BADGE: Record<StatusTone, string> = {
+  neutral: "bg-zinc-100 text-zinc-600",
+  active: "bg-blue-50 text-blue-700",
+  progress: "bg-indigo-50 text-indigo-700",
+  review: "bg-amber-50 text-amber-700",
+  ready: "bg-teal-50 text-teal-700",
+  done: "bg-emerald-50 text-emerald-700",
+  warning: "bg-amber-50 text-amber-700",
+  danger: "bg-red-50 text-red-700",
+};
+
+/**
+ * Filled colour pill, same tone palette and dot-plus-label accessibility
+ * shape as `StatusDot` (colour is reinforcement, never the only signal) —
+ * for the pages that opted into visible colour (2026-10-14), alongside
+ * `Card`. `StatusDot` is unchanged and still used everywhere else.
+ */
+export function StatusBadge({
+  tone = "neutral",
+  label,
+  className,
+}: {
+  tone?: StatusTone;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", TONE_BADGE[tone], className)}>
+      <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[tone])} />
+      {label}
+    </span>
+  );
+}

@@ -17,11 +17,9 @@ const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeS
  * and `UserMenu` (relative/absolute, click-outside + Escape to close), for
  * something meant to be glanced at and dismissed, not a centered dialog.
  *
- * Fixed just right of the sidebar on `lg+` (`--spacing-sidebar`, so it never
- * sits under the fixed sidebar itself); on smaller screens the sidebar is an
- * off-canvas drawer with its own toggle fixed at `top-3 left-3`
- * (`src/components/layout/sidebar.tsx`), so this sits lower at `top-14` to
- * clear it rather than overlap.
+ * Placement (2026-11-03 redesign): still top-left and still a button you open
+ * only when needed, but it now sits in the order title row instead of being
+ * fixed over the page, where it covered the breadcrumb.
  */
 export function OrderNotesButton({
   orderId,
@@ -52,20 +50,26 @@ export function OrderNotesButton({
   }, [open]);
 
   return (
-    <div ref={containerRef} className="fixed top-14 left-3 z-20 lg:left-[calc(var(--spacing-sidebar)+1rem)]">
+    <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls="order-notes-panel"
         className={cn(
-          "flex items-center gap-1.5 border border-line bg-canvas px-2.5 py-1.5 text-[13px] text-ink-muted shadow-sm transition-colors",
-          "hover:border-zinc-300 hover:text-ink",
+          "flex h-8 items-center gap-1.5 rounded-[8px] border px-2.5 text-[13px] font-medium transition-colors",
+          open
+            ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+            : "border-zinc-200 bg-white text-zinc-600 shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 hover:text-zinc-900",
         )}
       >
         <NotebookPen aria-hidden="true" className="size-4" />
         Notes
-        {notes.length > 0 ? <span className="text-ink-faint">({notes.length})</span> : null}
+        {notes.length > 0 ? (
+          <span className="grid min-w-5 place-items-center rounded-full bg-zinc-100 px-1.5 text-[11px] font-semibold leading-5 text-zinc-600">
+            {notes.length}
+          </span>
+        ) : null}
       </button>
 
       {open ? (
@@ -73,15 +77,15 @@ export function OrderNotesButton({
           id="order-notes-panel"
           role="region"
           aria-label="Order notes"
-          className="absolute left-0 z-50 mt-1 w-80 border border-line bg-canvas shadow-sm"
+          className="absolute left-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[12px] border border-zinc-200/80 bg-white shadow-[0_24px_48px_-16px_rgba(16,24,40,0.28)]"
         >
-          <div className="border-b border-line-soft px-3 py-2">
-            <p className="text-[13px] font-medium text-ink">Notes</p>
+          <div className="border-b border-zinc-100 px-4 py-3">
+            <p className="text-sm font-semibold text-zinc-900">Notes</p>
             <p className="mt-0.5 text-xs text-ink-faint">Internal — distinct from the activity feed.</p>
           </div>
 
           {canComment ? (
-            <div className="border-b border-line-soft px-3 py-2.5">
+            <div className="border-b border-zinc-100 bg-zinc-50/60 px-4 py-3">
               <AddOrderNoteForm orderId={orderId} />
             </div>
           ) : null}
@@ -91,7 +95,7 @@ export function OrderNotesButton({
               <li className="px-3 py-6 text-center text-[13px] text-ink-faint">No notes yet.</li>
             ) : (
               notes.map((note) => (
-                <li key={note.id} className="border-b border-line-soft px-3 py-2.5 last:border-0">
+                <li key={note.id} className="border-b border-zinc-100 px-4 py-3 last:border-0">
                   <p className="text-[13px] text-ink">{note.body}</p>
                   <p className="mt-1 text-xs text-ink-faint">
                     {note.author.fullName} · {dateFormat.format(note.createdAt)} UTC

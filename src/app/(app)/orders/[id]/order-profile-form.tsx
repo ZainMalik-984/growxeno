@@ -5,7 +5,7 @@ import { type FormEvent, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { MetaList } from "@/components/ui/page";
 import { updateOrderAction } from "@/lib/orders/actions";
 import type { OrderDetail } from "@/lib/orders/queries";
@@ -28,15 +28,18 @@ export function OrderProfileForm({
   fiverrAccounts,
   canEdit,
   canCreateCustomer,
+  onDone,
 }: {
   order: OrderDetail;
   fiverrAccounts: ReadonlyArray<{ id: string; name: string }>;
   canEdit: boolean;
   canCreateCustomer: boolean;
+  /** Called after a successful save, or on Cancel — lets a read-only card switch back from edit mode. */
+  onDone?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [source, setSource] = useState<(typeof SOURCES)[number]>(order.source);
+  const [source, setSource] = useState<(typeof SOURCES)[number]>(order.source ?? "EXTERNAL");
   const [externalReference, setExternalReference] = useState(order.externalReference ?? "");
   const [customer, setCustomer] = useState<SelectedCustomer | null>(order.customer ?? null);
   const [fiverrAccountId, setFiverrAccountId] = useState(order.fiverrAccount?.id ?? "");
@@ -49,7 +52,7 @@ export function OrderProfileForm({
     return (
       <MetaList
         items={[
-          { label: "Source", value: order.source[0] + order.source.slice(1).toLowerCase() },
+          { label: "Source", value: order.source ? order.source[0] + order.source.slice(1).toLowerCase() : <span className="text-ink-faint">—</span> },
           { label: "External reference", value: order.externalReference ?? <span className="text-ink-faint">—</span> },
           { label: "Customer", value: order.customer?.name ?? <span className="text-ink-faint">—</span> },
           { label: "Fiverr account", value: order.fiverrAccount?.name ?? <span className="text-ink-faint">—</span> },
@@ -76,31 +79,29 @@ export function OrderProfileForm({
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
+        onDone?.();
       } else {
         setError(result.error);
       }
     });
   };
 
+  const field = "rounded-[8px] focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
+
   return (
-    <form onSubmit={submit} className="max-w-lg space-y-5">
+    <form onSubmit={submit} className="space-y-4">
       <Field label="Source" htmlFor="edit-order-source">
-        <select
-          id="edit-order-source"
-          value={source}
-          onChange={(event) => setSource(event.target.value as typeof source)}
-          className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
-        >
+        <Select id="edit-order-source" className={field} value={source} onChange={(event) => setSource(event.target.value as typeof source)}>
           {SOURCES.map((value) => (
             <option key={value} value={value}>
               {value[0] + value.slice(1).toLowerCase()}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       <Field label="External reference" htmlFor="edit-order-external-reference" hint="Optional.">
-        <Input id="edit-order-external-reference" value={externalReference} onChange={(event) => setExternalReference(event.target.value)} />
+        <Input id="edit-order-external-reference" className={field} value={externalReference} onChange={(event) => setExternalReference(event.target.value)} />
       </Field>
 
       <Field label="Customer" htmlFor="edit-order-customer" hint="Optional. Type a name to search, or create one.">
@@ -109,25 +110,21 @@ export function OrderProfileForm({
 
       {source === "FIVERR" ? (
         <Field label="Fiverr account" htmlFor="edit-order-fiverr-account" hint="Which of your Fiverr profiles this order came in on.">
-          <select
-            id="edit-order-fiverr-account"
-            value={fiverrAccountId}
-            onChange={(event) => setFiverrAccountId(event.target.value)}
-            className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
-          >
+          <Select id="edit-order-fiverr-account" className={field} value={fiverrAccountId} onChange={(event) => setFiverrAccountId(event.target.value)}>
             <option value="">Choose…</option>
             {fiverrAccounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
       ) : null}
 
       <Field label="Order price" htmlFor="edit-order-total-amount" hint="The whole order's price, not per item.">
         <Input
           id="edit-order-total-amount"
+          className={field}
           inputMode="decimal"
           placeholder="0.00"
           value={totalAmount}
@@ -136,11 +133,11 @@ export function OrderProfileForm({
       </Field>
 
       <Field label="Deadline" htmlFor="edit-order-deadline" hint="Required before the order can be processed.">
-        <Input id="edit-order-deadline" type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
+        <Input id="edit-order-deadline" className={field} type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
       </Field>
 
       <Field label="Notes" htmlFor="edit-order-notes" hint="Optional.">
-        <Textarea id="edit-order-notes" rows={4} value={notes} onChange={(event) => setNotes(event.target.value)} />
+        <Textarea id="edit-order-notes" className={field} rows={4} value={notes} onChange={(event) => setNotes(event.target.value)} />
       </Field>
 
       {error ? (
@@ -149,9 +146,16 @@ export function OrderProfileForm({
         </p>
       ) : null}
 
-      <Button type="submit" variant="secondary" disabled={pending || (source === "FIVERR" && !fiverrAccountId)}>
-        {pending ? "Saving…" : "Save changes"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" disabled={pending || (source === "FIVERR" && !fiverrAccountId)}>
+          {pending ? "Saving…" : "Save changes"}
+        </Button>
+        {onDone ? (
+          <Button type="button" variant="ghost" onClick={onDone} disabled={pending}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

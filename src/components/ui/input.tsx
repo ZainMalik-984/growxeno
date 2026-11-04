@@ -13,12 +13,12 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={cn(
-        "h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink",
+        "h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)]",
         "transition-colors placeholder:text-ink-faint",
         "hover:border-zinc-300",
-        "focus:border-zinc-900 focus:outline-none focus-visible:outline-none",
-        "disabled:cursor-not-allowed disabled:bg-canvas-subtle disabled:text-ink-faint",
-        "aria-[invalid=true]:border-red-500",
+        "focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus-visible:outline-none",
+        "disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-ink-faint",
+        "aria-[invalid=true]:border-red-400 aria-[invalid=true]:focus:ring-red-500/10",
         className,
       )}
       {...props}
@@ -35,11 +35,11 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   return (
     <select
       className={cn(
-        "h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink",
+        "h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)]",
         "transition-colors",
         "hover:border-zinc-300",
-        "focus:border-zinc-900 focus:outline-none focus-visible:outline-none",
-        "disabled:cursor-not-allowed disabled:bg-canvas-subtle disabled:text-ink-faint",
+        "focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus-visible:outline-none",
+        "disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-ink-faint",
         className,
       )}
       {...props}
@@ -53,12 +53,12 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   return (
     <textarea
       className={cn(
-        "w-full rounded-[3px] border border-line bg-canvas px-2.5 py-2 text-[13px] text-ink",
+        "w-full rounded-[8px] border border-zinc-200 bg-white px-3 py-2 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)]",
         "transition-colors placeholder:text-ink-faint",
         "hover:border-zinc-300",
-        "focus:border-zinc-900 focus:outline-none focus-visible:outline-none",
-        "disabled:cursor-not-allowed disabled:bg-canvas-subtle disabled:text-ink-faint",
-        "aria-[invalid=true]:border-red-500",
+        "focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus-visible:outline-none",
+        "disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-ink-faint",
+        "aria-[invalid=true]:border-red-400 aria-[invalid=true]:focus:ring-red-500/10",
         className,
       )}
       {...props}

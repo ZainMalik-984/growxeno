@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Outsourced Workers" };
  * `prisma/schema/orders.prisma`'s `OutsourcedWorker` doc comment.
  */
 export default async function OutsourcedWorkersPage() {
-  const actor = await requirePermission("workers.view.all");
+  const actor = await requirePermission("outsourced_workers.view");
   const workers = await listOutsourcedWorkers({ includeInactive: true });
 
   return (
@@ -26,7 +26,7 @@ export default async function OutsourcedWorkersPage() {
         title="Outsourced Workers"
         description="Third parties who fulfil Order Items, with no application login of their own."
         actions={
-          actor.permissions.has("workers.create") ? (
+          actor.permissions.has("outsourced_workers.create") ? (
             <Link href="/outsourced-workers/new" className={buttonVariants({ variant: "primary" })}>
               New worker
             </Link>

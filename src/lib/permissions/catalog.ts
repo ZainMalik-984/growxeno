@@ -21,7 +21,8 @@
 export const PERMISSION_MODULES = [
   "orders",
   "customers",
-  "workers",
+  "employees",
+  "outsourced_workers",
   "daily_stats",
   "services",
   "categories",
@@ -84,17 +85,34 @@ export const PERMISSION_CATALOG = [
   { key: "customers.edit", name: "Edit customers", module: "customers", description: "Edit customer details." },
   { key: "customers.delete", name: "Delete customers", module: "customers", description: "Delete a customer." },
 
-  // --- Workers (specification Section 8) ----------------------------------
-  { key: "workers.view", name: "View workers", module: "workers", description: "See worker profiles — outsourced workers, and (scoped) internal worker profiles. Without workers.view.all, an internal worker profile is visible only to that worker themselves." },
-  { key: "workers.view.all", name: "View all worker profiles", module: "workers", description: "ADDED (scope). See every internal worker's profile, not only your own.", widensScopeOf: "workers.view" },
-  { key: "workers.create", name: "Create workers", module: "workers", description: "Create worker profiles." },
-  { key: "workers.edit", name: "Edit workers", module: "workers", description: "Edit worker profiles." },
-  { key: "workers.delete", name: "Delete workers", module: "workers", description: "Remove a worker profile." },
-  { key: "workers.assign", name: "Assign work to workers", module: "workers", description: "Choose which worker performs an item." },
-  { key: "workers.stats.view", name: "View worker statistics", module: "workers", description: "See performance figures. Without workers.stats.view.all this is limited to the user's own statistics." },
-  { key: "workers.stats.view.all", name: "View all worker statistics", module: "workers", description: "ADDED (scope). See every worker's statistics.", widensScopeOf: "workers.stats.view" },
-  { key: "workers.payments.view", name: "View worker payments", module: "workers", description: "See worker earnings and payments." },
-  { key: "workers.payments.manage", name: "Manage worker payments", module: "workers", description: "Record worker payments." },
+  // --- Employees (specification Section 8's "Workers", renamed — owner-
+  // directed, confirmed directly 2026-10-08: "internal employees(said
+  // workers here: rename them to employee as well)". An Employee manages
+  // orders and assignments; they are never themselves the assignee on an
+  // Order Item — see "Outsourced Workers" below for who performs the work.
+  // `workers.create`/`.edit`/`.delete`/`.assign` are RETIRED rather than
+  // renamed here: in the actual code they only ever gated Outsourced Worker
+  // management (`workers.create`/`.edit`) or were unused (`.delete`,
+  // `.assign` — `orders.assign` is the real, already-correctly-named gate
+  // for assignment) — see the Outsourced Workers block below.
+  { key: "employees.view", name: "View employees", module: "employees", description: "See an employee's own profile. Without employees.view.all this is limited to the user's own profile." },
+  { key: "employees.view.all", name: "View all employee profiles", module: "employees", description: "ADDED (scope). See every employee's profile, not only your own.", widensScopeOf: "employees.view" },
+  { key: "employees.stats.view", name: "View employee statistics", module: "employees", description: "See performance figures. Without employees.stats.view.all this is limited to the user's own statistics." },
+  { key: "employees.stats.view.all", name: "View all employee statistics", module: "employees", description: "ADDED (scope). See every employee's statistics.", widensScopeOf: "employees.stats.view" },
+  { key: "employees.payments.view", name: "View employee payments", module: "employees", description: "See employee salary payments." },
+  { key: "employees.payments.manage", name: "Manage employee payments", module: "employees", description: "Record employee salary payments." },
+
+  // --- Outsourced Workers (ADDED, 2026-10-08) ------------------------------
+  // Split out of the old "Workers" module — external contractors who
+  // actually perform Order Item work and are paid a per-service rate (see
+  // `OutsourcedWorker`/`ServiceRate` in prisma/schema/orders.prisma). Was
+  // previously conflated with the internal Worker/Employee module (both
+  // reused the same `workers.*` keys); kept genuinely separate, per owner
+  // direction: "keep the External Workers separate from employees."
+  { key: "outsourced_workers.view", name: "View outsourced workers", module: "outsourced_workers", description: "See outsourced worker records, their rates, and (once they can log in) their own profile/dashboard." },
+  { key: "outsourced_workers.create", name: "Create outsourced workers", module: "outsourced_workers", description: "Add outsourced worker records." },
+  { key: "outsourced_workers.edit", name: "Edit outsourced workers", module: "outsourced_workers", description: "Edit outsourced worker details and service rates." },
+  { key: "outsourced_workers.delete", name: "Delete outsourced workers", module: "outsourced_workers", description: "Remove an outsourced worker record." },
 
   // --- Daily statistics (specification Section 8) -------------------------
   { key: "daily_stats.view", name: "View daily statistics", module: "daily_stats", description: "See manually entered daily statistics. Without daily_stats.view.all this is limited to the user's own rows." },

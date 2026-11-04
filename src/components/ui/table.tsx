@@ -24,7 +24,7 @@ export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>)
 }
 
 export function THead({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={cn("", className)} {...props} />;
+  return <thead className={cn("[&>tr]:hover:bg-transparent", className)} {...props} />;
 }
 
 export function TBody({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
@@ -34,7 +34,7 @@ export function TBody({ className, ...props }: HTMLAttributes<HTMLTableSectionEl
 export function TR({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn("border-b border-line-soft last:border-0", className)}
+      className={cn("border-b border-zinc-100 transition-colors last:border-0 hover:bg-zinc-50/70", className)}
       {...props}
     />
   );
@@ -45,8 +45,8 @@ export function TH({ className, scope = "col", ...props }: ThHTMLAttributes<HTML
     <th
       scope={scope}
       className={cn(
-        "border-b border-line px-3 py-2 text-left text-[11px] font-medium",
-        "uppercase tracking-[0.06em] text-ink-faint",
+        "border-b border-zinc-200/80 px-3 py-2.5 text-left text-[11px] font-medium",
+        "uppercase tracking-[0.06em] text-zinc-500",
         "first:pl-0 last:pr-0",
         className,
       )}
@@ -58,7 +58,7 @@ export function TH({ className, scope = "col", ...props }: ThHTMLAttributes<HTML
 export function TD({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={cn("px-3 py-2.5 align-middle text-ink first:pl-0 last:pr-0", className)}
+      className={cn("px-3 py-3 align-middle text-ink first:pl-0 last:pr-0", className)}
       {...props}
     />
   );

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AuthHeading, AuthShell } from "@/components/auth/auth-shell";
 import { isDatabaseConfigured, isSupabaseConfigured } from "@/lib/env";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
@@ -10,28 +11,23 @@ export default function ForgotPasswordPage() {
   const ready = isSupabaseConfigured() && isDatabaseConfigured();
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-6 py-16">
-      <div className="mb-10">
-        <h1 className="text-lg font-medium tracking-[-0.01em] text-ink-strong">Reset your password</h1>
-        <p className="mt-1 text-[13px] text-ink-muted">
-          Enter your email address. If it matches an account, we&apos;ll send a link to set a new
-          password.
-        </p>
-      </div>
+    <AuthShell
+      footer={
+        <Link href="/login" className="font-medium text-ink-muted hover:text-ink hover:underline">
+          Back to sign in
+        </Link>
+      }
+    >
+      <AuthHeading
+        title="Reset your password"
+        description="Enter your email address. If it matches an account, we'll send a link to set a new password."
+      />
 
       {ready ? (
         <ForgotPasswordForm />
       ) : (
-        <p className="text-[13px] text-ink-muted">
-          This deployment is not configured yet. See docs/ENVIRONMENT.md.
-        </p>
+        <p className="text-[13px] text-ink-muted">This deployment is not configured yet. See docs/ENVIRONMENT.md.</p>
       )}
-
-      <p className="mt-10 text-xs text-ink-faint">
-        <Link href="/login" className="hover:text-ink-muted hover:underline">
-          Back to sign in
-        </Link>
-      </p>
-    </main>
+    </AuthShell>
   );
 }

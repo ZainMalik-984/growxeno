@@ -1,0 +1,21 @@
+// ---------------------------------------------------------------------------
+// Application settings (2026-11-03, owner request)
+//
+// One row per setting, keyed by a stable string, value stored as JSON so a
+// new setting needs no migration. The shape of each value is validated in
+// code (see src/lib/settings/), never trusted from the database as-is: an
+// unreadable value falls back to that setting's built-in default.
+//
+// First (and so far only) key: "worker_deadline_buffer" — how much earlier
+// than the order's own deadline an External Worker's deadline is set.
+// ---------------------------------------------------------------------------
+
+model AppSetting {
+  key       String   @id @db.VarChar(80)
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Who saved it last. Plain id, no relation: the audit log is the history.
+  updatedById String? @map("updated_by_id") @db.Uuid
+
+  @@map("app_settings")
+}

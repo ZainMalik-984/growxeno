@@ -76,11 +76,11 @@ Record visibility is a second decision, expressed with a companion key:
 translate that into a `WHERE` clause; a scope is never accepted from the client.
 
 Scope keys currently in the catalog: `orders.view.all`, `daily_stats.view.all`,
-`workers.stats.view.all`, `workers.view.all` (added Phase 5 — an internal worker's own profile at
-`/workers/[id]` is visible with plain `workers.view`; the `/workers` roster and every other
-worker's profile need `.all`). The seeded **Worker** role holds `orders.view` and deliberately
-**not** `orders.view.all` — that is the difference between "can open the orders page" and "can read
-every order in the business".
+`employees.stats.view.all`, `employees.view.all` (added Phase 5 as `workers.view.all`, renamed
+2026-10-08 — an employee's own profile at `/employees/[id]` is visible with plain `employees.view`;
+the `/employees` roster and every other employee's profile need `.all`). The seeded **Employee** role
+(renamed from "Worker") holds `orders.view` and deliberately **not** `orders.view.all` — that is the
+difference between "can open the orders page" and "can read every order in the business".
 
 When adding a module, follow this convention rather than inventing a second mechanism.
 
@@ -186,13 +186,15 @@ been seeded, which would otherwise be silently ungranted.
 
 78 keys across 15 modules. All keys listed in specification Section 8 that the owner has not directed
 removed are present verbatim, and a unit test asserts it — see "Buyer removed" below for what that
-exception covers. Nine keys are documented additions:
+exception covers. Documented additions:
 
 | Added key | Why |
 | --- | --- |
 | `orders.view.all` | Scope: separates "open orders" from "see every order" |
-| `daily_stats.view.all` | Scope: a worker sees their own statistics |
-| `workers.stats.view.all` | Scope: a worker sees their own performance |
+| `daily_stats.view.all` | Scope: an employee sees their own statistics |
+| `employees.view.all` | Scope: an employee sees only their own profile without it. Renamed from `workers.view.all`, 2026-10-08 |
+| `employees.stats.view.all` | Scope: an employee sees their own performance without it. Renamed from `workers.stats.view.all`, 2026-10-08 |
+| `outsourced_workers.view` / `.create` / `.edit` / `.delete` | ADDED, 2026-10-08 — split out of the old `workers.*` module so External Worker management has its own permission module, genuinely separate from Employees (see the "renamed to Employee" entry above) |
 | `audit.view` | The cross-entity activity feed in the Overview section. Order-scoped history stays `orders.activity.view` |
 | `fiverr_accounts.view` | Not in the specification: the business's own Fiverr seller profiles, added 2026-09-27 so an order can record which profile it came in on |
 | `fiverr_accounts.manage` | Create/edit accounts and gigs, and enter daily gig stats |
@@ -232,16 +234,39 @@ requires the matching finance key (`finance.revenue.view`, `finance.profit.view`
 `finance.worker_payments.view`) — Sales and Profit refuse the page without it, the others hide the
 money columns — so a report can never reveal what Finance would not. Global search needs no key of
 its own: each result category is gated by the permission that governs viewing it (`orders.view` with
-its assigned-only scope, `customers.view`, `workers.view.all` for staff and `workers.view` for
-outsourced workers, `services.view`, `categories.view`); a category the actor cannot view is not queried.
+its assigned-only scope, `customers.view`, `employees.view.all` for the Employees category,
+`outsourced_workers.view` for the Outsourced Workers category, `services.view`, `categories.view`); a
+category the actor cannot view is not queried.
 
-**Phase 10 changed what two existing keys mean — no new keys.** (1) `workers.view` is *only* "my own
-profile"; the outsourced-worker pages, their search results and their sidebar entry now need
-`workers.view.all`, because an outsourced worker's name, phone and notes were readable by every Worker.
-(2) `orders.view` (even with `.all`) no longer implies seeing money or parties: `orderVisibility()`
-(`src/lib/orders/visibility.ts`) shows item prices to `orders.edit`/`orders.create`/`finance.revenue.view`,
-worker costs to `orders.edit`/`finance.worker_payments.view`/`finance.profit.view`, and the customer to
+**Phase 10 changed what two existing keys mean — no new keys.** (1) `workers.view` (now `employees.view`
+— see below) was *only* "my own profile"; the outsourced-worker pages, their search results and their
+sidebar entry needed `workers.view.all`, because an outsourced worker's name, phone and notes were
+readable by every Worker. (2) `orders.view` (even with `.all`) no longer implies seeing money or
+parties: `orderVisibility()` (`src/lib/orders/visibility.ts`) shows item prices to
+`orders.edit`/`orders.create`/`finance.revenue.view`, worker costs to
+`orders.edit`/`finance.worker_payments.view`/`finance.profit.view`, and the customer to
 `orders.edit`/`customers.view`. A Worker assigned to one item sees only that item.
+
+**2026-10-08: "Worker" renamed to "Employee"; the old `workers.*` module split in two.** Owner-directed,
+confirmed directly: an Employee is a salaried manager/admin who creates orders and assigns them — never
+themselves the assignee doing the work — while an External/Outsourced Worker is who actually performs
+it, paid a per-service rate. The old `workers.*` keys conflated both ("`/outsourced-workers` reused the
+internal module's `workers.view.all`/`.create`/`.edit`", a pre-existing wart, not a deliberate design).
+Split: `workers.view` → `employees.view`; `workers.view.all` → `employees.view.all` (internal roster)
+**and** the new `outsourced_workers.view` (outsourced roster — previously shared one key, now two,
+since they're genuinely separate audiences); `workers.create`/`.edit` → `outsourced_workers.create`/
+`.edit` (their only real call sites were always outsourced-worker management — an Employee has no
+creation flow of their own, that's `users.create`); `workers.delete` (unused) →
+`outsourced_workers.delete`; `workers.assign` (unused — `orders.assign` was always the real,
+correctly-named gate) → retired entirely; `workers.stats.*`/`workers.payments.*` →
+`employees.stats.*`/`employees.payments.*`. `finance.worker_payments.*` is unchanged — that ledger
+legitimately pays either an Employee's salary or an External Worker's earnings, it is not role-specific.
+Migrated live via `scripts/migrate-worker-to-employee.ts` (role renamed in place, by id, so existing
+`user_roles` rows kept working; grants copied from old keys to new ones before the old permission rows
+were deleted). The Employee role's actual permission SET is unchanged by this rename — the behavioural
+redesign (granting `orders.create`/`orders.assign`/`outsourced_workers.view` so Employees can actually
+create and assign orders to External Workers, since that's now their whole job) is a later, separate
+phase of the same rework.
 
 ### Adding a permission
 
@@ -256,42 +281,52 @@ worker costs to `orders.edit`/`finance.worker_payments.view`/`finance.profit.vie
 
 `✓` granted at seed time. Roles are editable afterwards; this is a starting point, not a constraint.
 
-| Module | Super Admin | Admin | Worker |
-| --- | :---: | :---: | :---: |
-| `orders.view` | ✓ | ✓ | ✓ |
-| `orders.view.all` | ✓ | ✓ | — |
-| `orders.create` / `edit` / `delete` | ✓ | ✓ | — |
-| `orders.assign` / `process` | ✓ | ✓ | — |
-| `orders.change_status` | ✓ | ✓ | ✓ |
-| `orders.comment` | ✓ | ✓ | ✓ |
-| `orders.files.view` / `files.upload` | ✓ | ✓ | ✓ |
-| `orders.activity.view` | ✓ | ✓ | ✓ |
-| `orders.export` | ✓ | ✓ | — |
-| `customers.*` | ✓ | ✓ | — |
-| `fiverr_accounts.view` / `manage` / `credentials.view` | ✓ | ✓ | — |
-| `workers.view` / `create` / `edit` / `assign` | ✓ | ✓ | — |
-| `workers.delete` | ✓ | ✓ | — |
-| `workers.stats.view` | ✓ | ✓ | ✓ |
-| `workers.stats.view.all` | ✓ | ✓ | — |
-| `workers.payments.*` | ✓ | ✓ | — |
-| `daily_stats.view` | ✓ | ✓ | ✓ |
-| `daily_stats.view.all` | ✓ | ✓ | — |
-| `daily_stats.create` / `edit` / `delete` / `export` | ✓ | ✓ | — |
-| `services.*`, `categories.*` | ✓ | ✓ | — |
-| `finance.*` | ✓ | ✓ | — |
-| `reports.*` | ✓ | ✓ | — |
-| `communications.*`, `email.send`, `whatsapp.send`, `templates.*`, `message_logs.view` | ✓ | ✓ | — |
-| `users.view` / `create` / `edit` | ✓ | ✓ | — |
-| `users.delete` | ✓ | — | — |
-| `roles.view` | ✓ | ✓ | — |
-| `roles.create` / `edit` / `delete` | ✓ | — | — |
-| `permissions.view` | ✓ | ✓ | — |
-| `settings.view` | ✓ | ✓ | — |
-| `settings.edit` | ✓ | — | — |
-| `audit.view` | ✓ | ✓ | — |
+| Module | Super Admin | Admin | Employee | External Worker |
+| --- | :---: | :---: | :---: | :---: |
+| `orders.view` | ✓ | ✓ | ✓ | ✓ |
+| `orders.view.all` | ✓ | ✓ | — | — |
+| `orders.create` / `edit` / `delete` | ✓ | ✓ | — | — |
+| `orders.assign` / `process` | ✓ | ✓ | — | — |
+| `orders.change_status` | ✓ | ✓ | ✓ | ✓ |
+| `orders.comment` | ✓ | ✓ | ✓ | ✓ |
+| `orders.files.view` / `files.upload` | ✓ | ✓ | ✓ | — |
+| `orders.activity.view` | ✓ | ✓ | ✓ | — |
+| `orders.export` | ✓ | ✓ | — | — |
+| `customers.*` | ✓ | ✓ | — | — |
+| `fiverr_accounts.view` / `manage` / `credentials.view` | ✓ | ✓ | — | — |
+| `outsourced_workers.view` / `create` / `edit` / `delete` | ✓ | ✓ | — | — |
+| `employees.view` | ✓ | ✓ | ✓ | — |
+| `employees.view.all` | ✓ | ✓ | — | — |
+| `employees.stats.view` | ✓ | ✓ | ✓ | — |
+| `employees.stats.view.all` | ✓ | ✓ | — | — |
+| `employees.payments.*` | ✓ | ✓ | — | — |
+| `daily_stats.view` | ✓ | ✓ | ✓ | — |
+| `daily_stats.view.all` | ✓ | ✓ | — | — |
+| `daily_stats.create` / `edit` / `delete` / `export` | ✓ | ✓ | — | — |
+| `services.*`, `categories.*` | ✓ | ✓ | — | — |
+| `finance.*` | ✓ | ✓ | — | — |
+| `reports.*` | ✓ | ✓ | — | — |
+| `communications.*`, `email.send`, `whatsapp.send`, `templates.*`, `message_logs.view` | ✓ | ✓ | — | — |
+| `users.view` / `create` / `edit` | ✓ | ✓ | — | — |
+| `users.delete` | ✓ | — | — | — |
+| `roles.view` | ✓ | ✓ | — | — |
+| `roles.create` / `edit` / `delete` | ✓ | — | — | — |
+| `permissions.view` | ✓ | ✓ | — | — |
+| `settings.view` | ✓ | ✓ | — | — |
+| `settings.edit` | ✓ | — | — | — |
+| `audit.view` | ✓ | ✓ | — | — |
 
-A Worker therefore sees only: Dashboard, and (once Phase 4 lands) their assigned orders, their own
-statistics and their own performance. They have **no** financial access of any kind.
+An Employee (renamed from "Worker", 2026-10-08) therefore sees only: Dashboard, their own profile and
+statistics, and — until the behavioural redesign noted above lands — whatever legacy items the old
+`workerId` assignment path left them with. They have **no** financial access of any kind. Under the
+rework's target state, Employees instead hold `orders.create`/`orders.assign`/`outsourced_workers.view`
+so they can actually do their job (create orders, assign them to External Workers) — not yet granted
+
+An **External Worker** (added 2026-10-08, `docs/ORDERS.md` §14) sees only: Dashboard ("Your work") and
+their own assigned Order Items, scoped by `OutsourcedWorker.userId`/`Actor.outsourcedWorkerId`, not
+`orders.view.all`. They have **no** financial access, no `orders.assign` (they're never the one
+assigning), and no visibility into other External Workers' rates, items or earnings.
+by this rename pass.
 
 ---
 

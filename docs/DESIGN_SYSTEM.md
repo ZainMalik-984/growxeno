@@ -197,3 +197,22 @@ Non-negotiable, and cheaper to keep than to retrofit.
 - Colour is never the only signal.
 
 Verified so far by the sidebar component tests. A full audit is Phase 10.
+
+## 2026-11-03 update: layered surfaces (owner-directed)
+
+The owner replaced the flat, borderless language above with the New Order page's style across the
+signed-in app. Where this section conflicts with earlier rules, this section wins.
+
+- **Canvas:** every page under `src/app/(app)` sits on a tinted canvas (`bg-zinc-100/60`, set in the
+  `(app)` layout). The top header is sticky, white and translucent.
+- **Surfaces:** `Section` (`src/components/ui/page.tsx`) renders a raised white card:
+  `rounded-[12px]`, a `zinc-200/80` hairline, and a soft two-layer shadow (`SURFACE_CLASS`). `Card`
+  uses the same shadow. Use `<Section plain>` only for a Section nested inside a Card.
+- **Radii:** use explicit pixel radii (`rounded-[8px]`, `[12px]`, …). Named radii such as `rounded-lg`
+  resolve only inside the marketing page's `.gx` scope, so they render square in the app.
+- **Controls:** inputs, selects and textareas are `h-9`, `rounded-[8px]`, `zinc-200` border, with an
+  indigo focus ring. Buttons are `rounded-[8px]` and the `primary` variant is indigo-600. Segmented
+  switches (Fiverr/External, List/Board, date ranges) use a white raised chip on a tinted track.
+- **Unchanged:** status in long tables stays a dot plus label (Section 99). Colour still carries
+  meaning, never decoration: indigo = action/focus, amber = needs attention, red = overdue/error,
+  emerald = done/growth.

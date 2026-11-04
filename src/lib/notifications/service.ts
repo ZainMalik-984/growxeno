@@ -28,52 +28,99 @@ export type NotificationRecipient = {
   actionUrl?: string;
 };
 
-async function isInAppEnabled(tx: TransactionClient, userId: string, event: NotificationEvent): Promise<boolean> {
-  const override = await tx.notificationPreference.findUnique({
-    where: { userId_event_channel: { userId, event, channel: "IN_APP" } },
-    select: { enabled: true },
-  });
-  return override?.enabled ?? getDefaultPreference(event, "IN_APP");
-}
+export type NotificationEventEntry = {
+  event: NotificationEvent;
+  recipients: readonly NotificationRecipient[];
+  payload?: Prisma.InputJsonValue;
+};
 
 /**
- * Writes a durable `NotificationOutbox` row (intent for a future dispatcher —
- * the queue itself is deferred this phase, see messaging.prisma's header
- * comment) and, for every recipient with in-app enabled, a `Notification`
- * row. In-app is a plain database write, not a provider call, so it happens
- * synchronously here rather than waiting on a queue that does not exist yet.
+ * Writes one durable `NotificationOutbox` row per entry (intent for a future
+ * dispatcher — the queue itself is deferred this phase, see
+ * messaging.prisma's header comment) and, for every recipient with in-app
+ * enabled, a `Notification` row. In-app is a plain database write, not a
+ * provider call, so it happens synchronously here rather than waiting on a
+ * queue that does not exist yet.
  *
- * `recipients` may be empty (e.g. `ORDER_ITEM_STOP_WORK_REQUESTED`, whose
- * real recipient is an OutsourcedWorker with no User row to notify in-app) —
- * the outbox row is still written either way.
+ * An entry's `recipients` may be empty (e.g. `ORDER_ITEM_STOP_WORK_REQUESTED`,
+ * whose real recipient is an OutsourcedWorker with no User row to notify
+ * in-app) — its outbox row is still written either way.
+ *
+ * Batched across ALL entries rather than looped per event/recipient
+ * (2026-10-13 perf pass) — one `createMany` for the outbox rows, one
+ * `findMany` for every recipient's preference override, then one more
+ * `createMany` for the resulting `Notification` rows: 3 round trips total
+ * no matter how many events or recipients are in the batch. A per-recipient
+ * `findUnique`+`create` pair looked parallelizable with `Promise.all` but is
+ * NOT: every call here runs on the same interactive-transaction connection
+ * as everything else in the caller's transaction, and Postgres (and
+ * node-postgres) process queries on one connection strictly one at a time
+ * regardless of `Promise.all` — verified empirically against this project
+ * (see the Phase 7 note in drifting-scribbling-clarke.md), not assumed. The
+ * only real lever is fewer round trips, which batching genuinely delivers.
  */
+async function emitNotificationEventsBatch(
+  tx: TransactionClient,
+  entries: readonly NotificationEventEntry[],
+): Promise<void> {
+  if (entries.length === 0) return;
+
+  await tx.notificationOutbox.createMany({
+    data: entries.map(({ event, recipients, payload = {} }) => ({
+      eventType: event,
+      payload: { ...(payload as object), recipientUserIds: recipients.map((r) => r.userId) } as Prisma.InputJsonValue,
+    })),
+  });
+
+  const allRecipients = entries.flatMap(({ event, recipients }) => recipients.map((r) => ({ ...r, event })));
+  if (allRecipients.length === 0) return;
+
+  const key = (userId: string, event: NotificationEvent) => `${userId}:${event}`;
+  const overrides = await tx.notificationPreference.findMany({
+    where: {
+      channel: "IN_APP",
+      event: { in: [...new Set(entries.map((e) => e.event))] },
+      userId: { in: [...new Set(allRecipients.map((r) => r.userId))] },
+    },
+    select: { userId: true, event: true, enabled: true },
+  });
+  const overrideByKey = new Map(overrides.map((o) => [key(o.userId, o.event), o.enabled]));
+  const toNotify = allRecipients.filter((r) => overrideByKey.get(key(r.userId, r.event)) ?? getDefaultPreference(r.event, "IN_APP"));
+  if (toNotify.length === 0) return;
+
+  await tx.notification.createMany({
+    data: toNotify.map((recipient) => ({
+      recipientId: recipient.userId,
+      type: recipient.event,
+      title: recipient.title,
+      message: recipient.message,
+      entityType: recipient.entityType,
+      entityId: recipient.entityId,
+      actionUrl: recipient.actionUrl,
+    })),
+  });
+}
+
+/** Single-event convenience wrapper around {@link emitNotificationEventsBatch}. */
 export async function emitNotificationEvent(
   tx: TransactionClient,
   event: NotificationEvent,
   recipients: readonly NotificationRecipient[],
   payload: Prisma.InputJsonValue = {},
 ): Promise<void> {
-  await tx.notificationOutbox.create({
-    data: {
-      eventType: event,
-      payload: { ...(payload as object), recipientUserIds: recipients.map((r) => r.userId) } as Prisma.InputJsonValue,
-    },
-  });
+  return emitNotificationEventsBatch(tx, [{ event, recipients, payload }]);
+}
 
-  for (const recipient of recipients) {
-    if (!(await isInAppEnabled(tx, recipient.userId, event))) continue;
-    await tx.notification.create({
-      data: {
-        recipientId: recipient.userId,
-        type: event,
-        title: recipient.title,
-        message: recipient.message,
-        entityType: recipient.entityType,
-        entityId: recipient.entityId,
-        actionUrl: recipient.actionUrl,
-      },
-    });
-  }
+/**
+ * Emits several distinct events (e.g. one "this item started" event per
+ * order item) in one batch instead of one `emitNotificationEvent` call per
+ * event — see {@link emitNotificationEventsBatch} for why that matters here.
+ */
+export async function emitNotificationEvents(
+  tx: TransactionClient,
+  entries: readonly NotificationEventEntry[],
+): Promise<void> {
+  return emitNotificationEventsBatch(tx, entries);
 }
 
 // ---------------------------------------------------------------------------

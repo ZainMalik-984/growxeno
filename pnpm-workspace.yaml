@@ -10,6 +10,7 @@ onlyBuiltDependencies:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+  - core-js
 
 # Security overrides (Phase 10 dependency audit: `pnpm audit --prod` is clean with these).
 # Both vulnerable packages are reached only through the Prisma CLI (`prisma > mysql2`,

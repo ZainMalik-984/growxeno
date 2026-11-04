@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getNavigationFor,
+  currentNavChild,
   isNavNodeActive,
   NAVIGATION,
   type NavNode,
@@ -133,5 +134,34 @@ describe("isNavNodeActive", () => {
 
   it("ignores the query string when matching", () => {
     expect(isNavNodeActive(node("/orders?status=PENDING"), "/orders")).toBe(true);
+  });
+});
+
+describe("currentNavChild", () => {
+  const child = (label: string, href: string, exact = false): NavNode => ({ label, href, implemented: true, exact });
+  const orders = [
+    child("All Orders", "/orders", true),
+    child("Pending", "/orders?status=PENDING"),
+    child("Processing", "/orders?status=PROCESSING"),
+    child("Overdue", "/orders?due=overdue"),
+  ];
+  const pick = (pathname: string, search = "") => currentNavChild(orders, pathname, new URLSearchParams(search))?.label ?? null;
+
+  it("highlights only the shortcut whose query matches", () => {
+    expect(pick("/orders", "status=PENDING")).toBe("Pending");
+    expect(pick("/orders", "due=overdue")).toBe("Overdue");
+  });
+
+  it("falls back to the plain link when no shortcut matches", () => {
+    expect(pick("/orders")).toBe("All Orders");
+    expect(pick("/orders", "q=abc&source=FIVERR")).toBe("All Orders");
+  });
+
+  it("keeps a shortcut current alongside extra filters", () => {
+    expect(pick("/orders", "status=PENDING&q=abc")).toBe("Pending");
+  });
+
+  it("highlights nothing on a page none of the children point to", () => {
+    expect(pick("/orders/123")).toBeNull();
   });
 });

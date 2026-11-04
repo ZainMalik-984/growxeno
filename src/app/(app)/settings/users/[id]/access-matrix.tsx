@@ -137,7 +137,7 @@ export function AccessMatrix({
               onClick={() => setFilter(value)}
               aria-pressed={filter === value}
               className={cn(
-                "rounded-[3px] px-2 py-1 text-[13px] transition-colors",
+                "rounded-[6px] px-2 py-1 text-[13px] transition-colors",
                 filter === value
                   ? "bg-zinc-200/60 font-medium text-ink-strong"
                   : "text-ink-muted hover:bg-canvas-subtle hover:text-ink",
@@ -158,7 +158,7 @@ export function AccessMatrix({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Filter permissions…"
-            className="h-8 w-full rounded-[3px] border border-line bg-canvas px-2.5 text-[13px] text-ink placeholder:text-ink-faint hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
+            className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] placeholder:text-ink-faint hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
         </div>
 
@@ -303,7 +303,7 @@ function OverrideButton({
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "rounded-[3px] border px-1.5 py-0.5 text-xs transition-colors disabled:opacity-30",
+        "rounded-[6px] border px-1.5 py-0.5 text-xs transition-colors disabled:opacity-30",
         active
           ? tone === "danger"
             ? "border-red-300 bg-red-50 font-medium text-red-700"

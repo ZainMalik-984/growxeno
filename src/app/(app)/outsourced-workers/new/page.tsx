@@ -7,7 +7,7 @@ import { CreateOutsourcedWorkerForm } from "./create-outsourced-worker-form";
 export const metadata: Metadata = { title: "New outsourced worker" };
 
 export default async function NewOutsourcedWorkerPage() {
-  await requirePermission("workers.create");
+  await requirePermission("outsourced_workers.create");
 
   return (
     <>

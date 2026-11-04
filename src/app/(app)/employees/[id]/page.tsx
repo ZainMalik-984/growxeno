@@ -7,51 +7,52 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { requireActor } from "@/lib/auth/authorize";
 import { lastNDaysRangeUtc } from "@/lib/daily-stats/date-ranges";
 import { getDailyStatsRangeTotals } from "@/lib/daily-stats/queries";
+import { getEmployeeProfile, getMyWorkSummary } from "@/lib/employees/queries";
 import { formatCurrencyBreakdown } from "@/lib/finance/money";
 import { getWorkerEarnings } from "@/lib/finance/queries";
-import { getMyWorkSummary, getWorkerProfile } from "@/lib/workers/queries";
 
-export const metadata: Metadata = { title: "Worker profile" };
+export const metadata: Metadata = { title: "Employee profile" };
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 
 /**
- * Worker Profile (specification Section 45).
+ * Employee Profile (specification Section 45, renamed from "Worker Profile"
+ * — owner-directed, confirmed directly, 2026-10-08).
  *
  * Only what has a real data source today: identity, roles, categories/
- * services actually worked on, active/pending/completed work, this worker's
- * own activity, manually entered daily statistics (Phase 6), and earnings
- * (Phase 7). Performance is still named but marked "not available yet" — no
- * operational metric has been decided — rather than fabricated.
+ * services actually worked on, active/pending/completed work, this
+ * employee's own activity, manually entered daily statistics (Phase 6), and
+ * earnings (Phase 7). Performance is still named but marked "not available
+ * yet" — no operational metric has been decided — rather than fabricated.
  */
-export default async function WorkerProfilePage({ params }: PageProps<"/workers/[id]">) {
+export default async function EmployeeProfilePage({ params }: PageProps<"/employees/[id]">) {
   const actor = await requireActor();
   const { id } = await params;
 
-  const canViewAll = actor.permissions.has("workers.view.all");
-  const canViewOwn = actor.permissions.has("workers.view") && actor.user.id === id;
+  const canViewAll = actor.permissions.has("employees.view.all");
+  const canViewOwn = actor.permissions.has("employees.view") && actor.user.id === id;
   if (!canViewAll && !canViewOwn) {
-    redirect("/forbidden?permission=workers.view.all");
+    redirect("/forbidden?permission=employees.view.all");
   }
 
-  const profile = await getWorkerProfile(id);
-  if (!profile) notFound();
-
   const canViewDailyStats = actor.permissions.has("daily_stats.view.all") || actor.user.id === id;
-  // finance.worker_payments.view has no `.all` scope pair — a worker seeing
+  // finance.worker_payments.view has no `.all` scope pair — an employee seeing
   // their OWN earnings is a baseline right, same pattern as daily stats
   // above, not a permission escalation.
   const canViewEarnings = actor.permissions.has("finance.worker_payments.view") || actor.user.id === id;
 
-  const [summary, dailyStatsTotals, earnings] = await Promise.all([
-    getMyWorkSummary(id),
+  // One round of requests: the summaries only need the id, not the profile.
+  const [profile, summary, dailyStatsTotals, earnings] = await Promise.all([
+    getEmployeeProfile(id),
+    getMyWorkSummary({ userId: id, outsourcedWorkerId: null }),
     canViewDailyStats ? getDailyStatsRangeTotals(lastNDaysRangeUtc(30), { mode: "OWN", userId: id }) : Promise.resolve(null),
     canViewEarnings ? getWorkerEarnings({ workerId: id }) : Promise.resolve(null),
   ]);
+  if (!profile) notFound();
 
   return (
     <>
-      <Breadcrumbs items={[{ label: "Workforce" }, { label: "Workers", href: "/workers" }, { label: profile.fullName }]} />
+      <Breadcrumbs items={[{ label: "Workforce" }, { label: "Employees", href: "/employees" }, { label: profile.fullName }]} />
       <PageHeader
         title={profile.fullName}
         description={profile.jobTitle ?? undefined}

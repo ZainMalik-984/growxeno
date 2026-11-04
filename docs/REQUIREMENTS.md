@@ -979,3 +979,369 @@ template in production yet (§7) but a future one legitimately could have declar
 then thrown forever. Removed, along with the one e2e test (`notifications.spec.ts`) that used it in
 a sample template body. Re-verified after: `tsc` clean, `eslint` clean, `vitest run` 215/215, `next
 build` clean (51 routes, unchanged shape).
+
+## Grow Xeno branding and invoice generator (2026-10-28, owner-directed)
+
+Owner request: use the logo and images in `/Archive` across the app and in the browser title bar;
+add a dashboard page to create an invoice (enter items, download it) with no tracking and no
+database.
+
+**Implemented:**
+- Browser tab: `src/app/icon.svg` (GX logo on white tile) and `src/app/apple-icon.png`; title
+  template is now `"%s · Grow Xeno"` (default `"Grow Xeno · Business Manager"`).
+- Web-ready brand files are in `public/brand/` and generated from `/Archive`: `gx-symbol.svg`,
+  `gx-app-icon.svg` and `grow-xeno-wordmark.png` (trimmed transparent wordmark).
+  The shared component is `src/components/brand/brand-logo.tsx`.
+- Logo placement: sidebar (GX symbol + "Grow Xeno / Business Manager"), sign-in page (wordmark above
+  the form; the growth banner side panel was tried and removed at the owner's request), marketing header and footer (wordmark).
+- `/invoices` ("Create Invoice", Finance section, `finance.view`): the form has the invoice number,
+  dates, currency, billed by/to, line items (add/remove), discount %, tax %, payment details and
+  notes. A live preview updates as you type, and **Download PDF** produces a vector A4 PDF via
+  `jspdf` (`src/lib/invoices/invoice-pdf.ts`). State lives only in React; there is no DB, storage or
+  analytics.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| `tsc --noEmit` | PASS | 0 errors |
+| `eslint` (changed files) | PASS | 0 errors; 1 existing `<img>` warning on the marketing hero photo |
+| `vitest run` | PASS | 249 tests |
+| Browser | PASS | `/invoices` renders; two items + 5% tax gave totals $1,200 / $60 / $1,260; tab title "Create Invoice · Grow Xeno"; icon links served |
+| PDF output | PASS | Rendered a 3-item invoice (1 page) and a 28-item invoice (2 pages, table header repeated, totals on the last page) through `buildInvoicePdf` and inspected them |
+
+**Not verified:** the browser's
+own file-save dialog when clicking Download PDF. The same `buildInvoicePdf` output was checked
+directly instead.
+
+**Follow-ups (2026-10-28 to 2026-11-02, owner-directed):**
+- Item descriptions are multi-line (Enter adds a line break), and the breaks carry into the preview and the PDF.
+- Quantity 0 (or blank) means a fixed-price item that isn't counted: the amount is the price. The Qty and
+  Unit price columns are left out of the preview and PDF when no item has a quantity. When some items do
+  have one, fixed-price rows show "—" in those columns. Covered by `tests/unit/invoice.test.ts`.
+- A "Show on invoice" checkbox next to Due date (on by default) controls whether the due date is printed.
+  Checked in a rendered PDF; the form toggle itself was not tested in a signed-in browser session.
+
+## New Order page redesign (2026-11-02, owner-directed)
+
+**Implemented:** `/orders/new` (`src/app/(app)/orders/new/`). The server actions, payloads and
+permissions are unchanged: `createOrderAction`, then `addOrderItemAction` only when a service is chosen.
+- Layout: a primary Order details card and a secondary First item card marked "Optional". On wide
+  screens (xl) a sticky live Summary panel holds Create order / Cancel. Below xl a sticky bottom action
+  bar holds them instead.
+- Source is a Fiverr / External segmented control. Fiverr reveals the Fiverr account select in an
+  attached inset panel. Reference sits beside Source, with a hint that changes with the source.
+- Price shows a USD prefix (the currency the service layer defaults to). Deadline is labelled "Needed
+  before processing" but stays optional.
+- Services are grouped by category. A growth service reveals channel link, current and required counts
+  (labels from `METRIC_*_LABELS`) and a live "current → target" readout, where target = current + required.
+- Changing the service resets its counts when the metric changes and clears everything for a
+  non-metric service, so stale values never reach the new item.
+- Client-side validation now runs before submit and mirrors the server rules (Fiverr account required
+  for Fiverr, money format, `safeExternalHref` channel link, whole-number counts, required count).
+  Previously a bad channel link created the order and then failed to add the item. Errors show on each
+  field, and focus moves to the first one.
+- Submit shows a spinner and disables the form. A ref guard blocks duplicate submits. Server errors
+  appear in a visible alert next to the actions.
+- `src/components/ui/card.tsx`: `rounded-xl`/`rounded-lg` replaced with explicit radii. The scoped
+  `--radius` token only resolves on the marketing page, so these corners never rendered before
+  (this affects the order detail page and the invoice page too).
+- `customer-picker.tsx`: new optional `inputClassName`/`invalid` props, and a rounded dropdown.
+  Behaviour is unchanged.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| `tsc --noEmit`, `eslint` | PASS | 0 errors, 0 warnings in changed files |
+| `vitest run` | PASS | 254 tests |
+| Browser, 1440 px | PASS | Fiverr/External switch, Fiverr account validation and focus, growth fields and target (1,000 + 2,000 → 3,000), invalid link caught before submit, service removal clears values |
+| Submit | PASS | Order #124 (reference `TEST-REDESIGN`) created with no item and no deadline. A double `requestSubmit()` produced one order, a success toast, and a redirect to the detail page |
+| Tablet 768 px / phone 375 px | PASS | Summary hidden, sticky action bar shown, no horizontal scroll |
+
+**Not run:** the Playwright e2e and axe suites, which need the e2e environment. Their selectors
+(`getByLabel("Deadline")`, `getByRole("button", { name: "Create order" })`) are unchanged. Customer
+creation inside the picker was not re-exercised; its logic is untouched.
+
+## Dashboard restyle (2026-11-03, owner-directed)
+
+`/dashboard` now uses the New Order page's visual language: a tinted workspace, raised white cards,
+tinted icon chips, and a right-hand column on xl screens. The data sources and permission gates are
+unchanged: "Your work" requires `orders.view`, "Access control" requires `users.view`, and "Customers"
+requires `customers.view`.
+- Four stat tiles (New, Active, Due today, Overdue). Due today turns amber and Overdue turns red when
+  above zero.
+- "Your work" lists the attention items with the order's item-status badges (same tones as the order
+  page). Each row links to its order, and there is a friendly empty state.
+- A new "Recently completed" card shows the `recentlyCompleted` rows that `getMyWorkSummary` already
+  returned but the page never displayed.
+- Removed the stale "Next" developer note (it claimed finance and daily statistics did not exist yet,
+  and was visible to every user, including workers).
+- E2E selectors are kept: the "Good day" h1, the "Your work" h2, and the "Effective permissions" text.
+
+Checked: `tsc`, `eslint`, and `vitest` (254 tests) all pass. In the browser at 1440 / 768 / 375 px there
+is no horizontal scroll and no error overlay.
+
+## Orders list restyle (2026-11-03, owner-directed)
+
+`/orders` now uses the New Order page and dashboard look. Queries, visibility redaction, URL filter
+state and drag-and-drop logic are unchanged.
+- Page: an accent "New order" button with an icon. A tinted workspace holds a List / Board switch
+  (still plain links in the URL) and a live order count.
+- Filters (`order-filter-bar.tsx`): a white card with a full-height search box and status select. The
+  "More filters" button shows a count badge for active hidden filters and opens automatically when one
+  is set. Overdue, Due today, Due this week and Has links are now always-visible toggle chips (they were
+  checkboxes inside "More filters"). The Overdue chip also clears the sidebar's legacy `due=overdue`
+  param. "Clear all" resets every filter but keeps view and page size. The link filter also applies on
+  Enter.
+- Table (`orders-table.tsx`): inside a raised card, with padded cells, a tinted header and row hover.
+  Past-deadline, unfinished orders show the deadline in red with a clock icon (new `isOverdue` row flag,
+  computed in `page.tsx`). Expanded items sit in an inset panel with formatted counts. Status stays a
+  dot + label (spec §99).
+- Board (`orders-board.tsx`): rounded columns with count badges and a "No items" placeholder. Cards
+  are raised and show the assignee initial, a progress block and an order-number tag. The column
+  highlights while dragging over it. Only class names changed; drag/drop rules are untouched.
+- E2E selectors are kept: the "More filters" button, the "Amount"/"Customer" column headers, the
+  `#N` order links, and the filter labels.
+
+Checked: `tsc`, `eslint` and `vitest` (254 tests) pass. In the browser: the Overdue chip (12 of 23
+orders), the More filters panel, row expansion, Clear all, and the board at 1440 px; the list at
+768 / 375 px with no page-level horizontal scroll. Not run: an actual board drag, which would change a
+real item's status. Its code is unchanged.
+
+## App-wide restyle (2026-11-03, owner-directed)
+
+The New Order / dashboard / orders style now applies to every signed-in page and `/invoices`. Shared
+primitives carry most of it; no data, permission or behaviour changes. Details are in
+`docs/DESIGN_SYSTEM.md` ("2026-11-03 update").
+- `(app)/layout.tsx`: tinted canvas and a sticky translucent header (`z-20`, under the mobile nav button).
+- `ui/page.tsx`: `Section` is a raised card (new `plain` prop for nesting); a stronger `PageHeader`;
+  `EmptyState` with an icon; `MetaList` with readable labels.
+- `ui/input.tsx`, `ui/button.tsx`, `ui/modal.tsx`, `ui/table.tsx`, `ui/card.tsx`, `ui/pagination.tsx`,
+  `ui/disclosure.tsx`: 8px radii, indigo focus/primary, row hover, raised dialogs, bordered pager.
+- Hand-styled controls in 12 page files and the layout chrome (sidebar, search, bell, user menu):
+  old `rounded-[3px]` and flat field classes replaced. The Finance and Daily Statistics date ranges
+  are now segmented switches. The `/invoices` actions use the shared indigo primary.
+- Order detail: its nested Sections use `plain`, unrendered `rounded-lg/xl/2xl/md` classes are
+  converted to explicit radii, and its extra tinted wrapper is removed (as on dashboard, orders and
+  new order).
+
+Checked: `tsc`, `eslint` (0 errors) and `vitest` (254 tests) pass. All 36 signed-in routes return 200
+with no error page. Screenshots were reviewed for dashboard, orders, order detail, new order,
+customers, finance, users, services/new, daily stats and invoices at 1440 px, and invoices and users
+at 375 px (no horizontal scroll). Pre-existing, not from this change: `/settings/system` is linked
+in the sidebar but has no page (404).
+
+## Sidebar redesign (2026-11-03, owner-directed)
+
+`src/components/layout/sidebar.tsx` restyled to match the app. Behaviour is unchanged: it receives a
+server-filtered tree, remembers collapsed groups, keeps the current page's group open, and works as a
+drawer below `lg` (backdrop click and Escape both close it).
+- A white panel against the tinted canvas, and a logo header the same height as the top bar (`h-14`).
+- Taller rounded links. The current page gets a soft indigo highlight and an indigo icon.
+- Child links hang off a guide line under the parent icon, with an indigo marker on the current one.
+- The drawer has a blurred backdrop and a raised shadow.
+- **Bug fixed:** on `/orders?status=…` every Orders shortcut (Pending, Processing, …) was highlighted,
+  because `isNavNodeActive` ignores the query string by design (it decides whether a group is open). New
+  `currentNavChild` in `nav-tree.ts` picks exactly one child: path and every href query param must match,
+  and the most specific match wins. The existing `isNavNodeActive` behaviour and its tests are unchanged.
+
+Checked: `tsc` and `eslint` clean. `vitest` passes 258 tests, including 4 new `currentNavChild` tests;
+the sidebar component test mock now provides `useSearchParams`. In the browser: `/orders?status=PENDING`
+marks only "Pending", `/customers` highlights Customers, and at 375 px the drawer opens and closes
+with Escape, with no horizontal scroll.
+
+## Orders: single sidebar link + status tabs (2026-11-03, owner-directed)
+
+- `nav-tree.ts`: "Orders" is one link. The nine `/orders?status=…` and `?due=overdue` children are
+  removed. Old links using those params still work: the page reads them, and `due=overdue` lights the
+  Overdue chip.
+- `/orders` list view: a status tab row (All, then each status in lifecycle order) with live counts.
+  The tabs replace the sidebar shortcuts and the old "Any status" dropdown. Counts come from the new
+  `countOrdersByStatus` (`src/lib/orders/queries.ts`), which uses the same `buildOrderListWhere` as
+  `listOrders` (extracted, no behaviour change). So counts honour the actor's scope and every other
+  active filter, and can never include orders the actor cannot see. Statuses with 0 orders are hidden
+  unless that status is the one selected. Tabs keep the other filters, and the page resets to 1.
+- Board view has no tabs; its columns are already per status.
+
+Checked: `tsc`, `eslint`, `vitest` (258). In the browser: the sidebar shows only "Orders"; tabs read
+All 23 / Pending 22 / Processing 1; with Overdue on they read All 12 / Pending 11 / Processing 1 and
+match the rows; the Pending tab keeps `overdue=1`; `?status=CANCELLED` shows its selected 0 tab and
+the empty state; the legacy `?due=overdue` gives 12 rows with the chip on; 375 px has no horizontal
+scroll.
+
+## Order detail page redesign (2026-11-03, owner-directed)
+
+`/orders/[id]`. Data loading, redaction (`redactOrderDetail`) and permissions are unchanged.
+- Header: an h1 "Order #N" with a status badge (plus "Refunded" when set) and the Notes button in the
+  title row. A meta line shows source · reference · created date/by · items assigned. Status actions
+  sit on the right: the forward step is primary, Revision is neutral, and Cancelled is a red outline.
+  Button names are unchanged.
+- New `order-status-stepper.tsx`: a lifecycle tracker (Pending → … → Completed), with Revision shown
+  on the Review step and a Cancelled notice. Plus a hint while Pending without a deadline.
+- Layout: Items (main) and a timeline Activity feed on the left; a sticky right column with the new
+  `order-details-card.tsx` (read-only, with an **Edit** button opening the existing
+  `OrderProfileForm`, which gained `onDone` and a Cancel button) and the collapsible "Summary,
+  financials & expenses" card. It stays collapsed by default per the owner's 2026-09-28 decision; the
+  developer-facing description text is replaced.
+- Notes: the panel is no longer `position: fixed` over the breadcrumb. It is still a top-left button
+  opening a dropdown (owner's 2026-10-01 request), now in the title row.
+- Overdue for the details card is computed on the server (`isOverdue` prop) to keep renders pure.
+- Kept for e2e/visibility: the h1 name, "Process order"/status button names, the Notes button name,
+  the h2 "Summary"/"Financials" inside the disclosure, and "Total amount" only when prices are visible.
+
+Checked: `tsc`, `eslint`, `vitest` (258). In the browser at 1440 px: Edit opens the form and its
+Cancel returns to view mode; Notes opens and closes on Escape; the disclosure reveals Summary,
+Financials and Expenses; order #124 stayed Pending (a mis-clicked "Cancelled" dialog was dismissed
+without confirming). At 375 px there is no horizontal scroll.
+
+## Outsourced worker profile redesign (2026-11-03, owner-directed)
+
+`/outsourced-workers/[id]`. Data, actions and permissions are unchanged.
+- Identity header: initials avatar, name, Active/Inactive badge, "since" date, and mailto/tel
+  links. Deactivate stays on the right. The deactivated notice is now an amber callout.
+- Three at-a-glance tiles: Assigned, Rates set, Portal access. No money here, so each amount on the
+  page appears once (the e2e test counts "1750.00 PKR" exactly twice in Earnings).
+- Main column: a Rates card (`service-rates-panel.tsx` restyled: per-unit rate pills, real Edit/Clear
+  buttons, a tinted "add a rate" row; same actions) and an Earnings Section (h2 "Earnings" kept)
+  with Earned / Paid / Outstanding tiles. Outstanding turns amber when above zero.
+- Side column: the new `worker-contact-card.tsx` (read-only, with Edit opening the existing profile
+  form, which gained `onDone` and a Cancel button) and a Portal access card.
+
+Checked: `tsc`, `eslint`, `vitest` (258). In the browser at 1440 px: contact Edit and Cancel, and a
+rate's Edit and Cancel, with nothing saved. At 375 px there is no horizontal scroll and the tiles sit
+three across.
+
+## Page-switch speed (2026-11-03, owner-reported "page switch is very slow")
+
+**Measured (local dev → Supabase `ap-northeast-2`):** a database round trip is ~170-220ms, a Supabase
+Auth HTTP call ~180-260ms, and a new DB connection ~0.85-1.3s. Per page: `auth.getUser()` 350-410ms,
+the actor/permissions query 200-290ms, then the page's own data. With the old 30s pool idle timeout,
+the first click after 30s of reading paid a fresh handshake (the actor query took 1,305ms instead of
+~250ms).
+
+**Changes:**
+- `src/lib/db/prisma.ts`: pool `idleTimeoutMillis` raised from 30s to 5 min, plus
+  `keepAliveInitialDelayMillis: 10_000`. A connection idle for 300s with keepalive was reused (207ms,
+  no error). `query_timeout: 15s` is still the backstop. Result: `/finance` after 40s idle took 849ms
+  vs 828ms warm (before, the same case paid an extra 1.1-1.3s).
+- Order, outsourced worker and employee detail pages: the second-stage queries (pickers, financials,
+  earnings, summaries) now run in the same `Promise.all` as the main record. They only needed the id
+  and permissions. `notFound()`/permission redirects still run before anything renders.
+- Instant feedback: `(app)/loading.tsx` skeleton plus `NavigationProgress` (a top bar from the click)
+  sharing `TopProgressBar`. Measured: the bar is visible 4ms after a click and stays until content
+  arrives.
+
+**Follow-up, owner-approved the same day:** `getCurrentActor()` switched from `auth.getUser()` to `auth.getClaims()`. Previously it called `auth.getUser()`, a network call
+on every page (~350-400ms). The project uses asymmetric ES256 JWT signing keys, so
+`auth.getClaims()` could verify the token locally against cached JWKS instead. Trade-off: a signed-out
+or revoked session stays accepted until its access token expires (default 1 hour). The DB `isActive`
+check still blocks deactivated users immediately.
+
+**Context:** every page is fundamentally several ~200ms trips to Seoul from this machine. Hosting the
+app in the same region as the database (or the database nearer the users) removes most of this; the
+dev server also adds its own overhead that a production build does not.
+
+**getClaims switch: evidence.** `tsc`, `eslint` and `vitest` (258) pass. Signed in, `/dashboard`
+loads as the user; with cookies omitted it redirects to `/login?next=%2Fdashboard`. A token signed
+with a different ES256 key but the project's `kid` was rejected ("Invalid JWT signature"), and an
+expired token was rejected ("JWT has expired"). Warm page times, before → after: customers ~1.2s →
+~0.55s, finance ~1.1s → ~0.55s, dashboard ~1.7s → ~0.95s, orders ~1.9s → ~1.2s, order detail ~1.7s →
+~1.2s, outsourced worker ~1.5s → ~1.0s (local dev, same network). `src/lib/auth/actions.ts` keeps its
+own `getUser()` (a rare action path, not per page).
+
+**2026-11-03 — New Order: several items, and Duplicate with another service (owner request).**
+`/orders/new` now holds a list of items instead of one optional "First item"
+(`src/app/(app)/orders/new/order-item-editor.tsx`, `create-order-form.tsx`). "Add another item" appends a
+blank item; "Duplicate" inserts a copy right below with the channel link (and counts) kept and the service
+left to choose, so the same link can be ordered for another service. Counts still reset when the new
+service measures something different, as before. A lone blank item still means "no item yet"; any other
+blank item must get a service or be removed. On submit the order is created first, then each item is added
+one at a time with the existing `addOrderItemAction`, in on-screen order; any item that fails is reported in
+one toast. No server or schema change. Verified in the browser: duplicate kept the link and focused the new
+service field; validation focused the first invalid item field; removing every item leaves one blank item.
+tsc, eslint and vitest (258) pass. Not verified: an end-to-end submit (skipped to avoid adding another test
+order to the database).
+
+**2026-11-03 — Set-password, forgot-password and sign-in pages share one branded frame (owner request:
+"this is too flat").** New `src/components/auth/auth-shell.tsx` (dark brand panel + off-white column,
+moved out of the login page unchanged). `/auth/reset-password` now greets invited people ("Welcome, <first
+name>", "Create password") when `/auth/callback` adds `?welcome=1` for invite links, shows the account email,
+and adds a show/hide toggle, a strength meter (guide only; the server still enforces 12+ characters) and a
+live "passwords match" check. The expired-link state is a card with "Request a new link" / "Back to sign in".
+Verified in the browser at desktop width; tsc, eslint and vitest pass.
+
+**2026-11-03 — Worker deadlines, Settings → System, and countdowns (owner request).**
+Implemented:
+- An External Worker sees only a Deadline on an order: no source, reference, notes, creator, Summary panel
+  or activity. Removed on the server in `redactOrderDetail` (new `orderDetails` visibility flag = `orders.edit`
+  or `orders.view.all`), so the values never reach their browser. The deadline they see is the earliest of
+  their own items' deadlines. The orders list does the same per row; their date filters match their own item
+  deadlines; their search no longer matches reference, notes or customer; the Source filter is hidden; the
+  Items count shows only their items.
+- Each item stores the worker's deadline (`order_items.deadline`, new `deadline_overridden`). By default it is
+  the order deadline minus a gap from Settings → System (`/settings/system`, `settings.view` / `settings.edit`,
+  new `app_settings` table): a default number of days plus "at least N days → X days early" rules, counted from
+  order creation to deadline (owner's choice), never more than half the lead time. Seeded: default 1 day,
+  ≥50 days → 5, ≥10 days → 4. Recalculated when the order deadline changes and, for open orders, when the
+  settings are saved. Items set by hand keep their date.
+- On the order page each item shows its deadline with a small pencil; clicking it opens a date-time picker
+  (Save / Cancel / Use automatic). The item dialog no longer has a deadline field, and saving it no longer
+  touches the deadline. New `setOrderItemDeadlineAction` (`orders.edit`).
+- Deadlines show as time left in days, hours and minutes, with the exact date in the viewer's timezone
+  (`src/components/ui/deadline.tsx`): order page, item cards, orders list, dashboard "Your work".
+- Migration `20261103120000_worker_deadlines_and_app_settings` (applied to the dev database) seeds the settings,
+  marks existing item deadlines as manual, and fills the rest from their order.
+Evidence: unit tests `worker-deadline.test.ts`, `countdown.test.ts`, extended `order-visibility.test.ts`
+(no reference/source/notes/order deadline in the serialized worker view); component test
+`worker-deadline-settings.test.tsx`; browser check as an External Worker on test order #126 (deadline
+19 Nov = order 23 Nov − 4 days; reference, source, order deadline and the other item absent from the page
+payload); the bulk recalculation query run against order #126 (2 items updated, second run 0).
+Not verified in the browser: the admin views (settings page, pencil editor), because no admin session was
+available in the preview browser.
+
+**2026-11-03 — Workers can no longer change a whole order's status (owner request).** The order-level status
+buttons (e.g. "Cancelled") are hidden unless the actor has `orders.change_status` and `orders.view.all`
+(`canChangeWholeOrderStatus`, src/lib/orders/visibility.ts), and `changeOrderStatusAction` enforces the same
+on the server. Before this, any holder of `orders.change_status` (External Worker, Employee) could change the
+status of any order, even one with none of their items, by calling the action. Item status buttons are
+unchanged. Verified: unit test, and as an External Worker on order #126 the button is gone while "Start" on
+their item remains.
+
+**2026-11-03 — Order and item status rework (owner request).**
+Implemented as described in docs/ORDERS.md §4 (box at the top). Owner's choices, confirmed directly the same
+day: Done counts as complete with no admin review; only an admin sends a done item to Refill; Refunded and
+Cancelled are one combined status; the order deadline is required before assigning a worker.
+Migration `20261103130000_rework_order_and_item_statuses` (applied to the dev database) maps old item
+statuses (Assigned/In progress/Paused → Processing; Internal review/Completed → Done; Revision → Refill),
+maps old order statuses (Delivered → Delivered; old Completed → Finalized; Cancelled or refunded →
+Refunded / Cancelled), recalculates every other order from its items, and backfills `assigned_at` from the
+item's last update. Result on the dev data: 20 Pending, 3 Assigned, 2 Processing, 1 Completed.
+Workers see "assigned … ago" under their name on each item (frozen to "done … after assignment" once done).
+Revenue is recognized for Delivered and Finalized; worker cost is earned on Done or Cancelled.
+Removed: Process Order (button, action, service), the refund toggle and `setOrderRefundedAction`.
+Evidence: rewritten `tests/unit/order-state-machine.test.ts` (transitions, every derivation rule, manual
+steps); e2e `orders.spec.ts` updated to the new flow (not run here); browser check below.
+Known: `tests/e2e/finance.spec.ts` (worker payment) and `tests/e2e/notifications.spec.ts` already used
+controls removed by earlier redesigns ("Assigned to" select, "Move to" select) before this change; only the
+parts this rework touched were updated.
+Workers never see the order's real calculated status, because it depends on other workers' items: on the order
+page and the orders list they get a status worked out from their own items only (`redactOrderDetail` and the
+list page), the stepper and the status tabs/counts are hidden from them, and the status filter is ignored for
+them. Verified as External Worker on order #126: Mark done moved their item to Done and the real order to
+Partially Completed by itself, while the worker's page and list showed Completed and contained no trace of
+"Partially Completed".
+
+**2026-11-03 — Accept from the orders list and a banner on the order page (owner request).** A worker's own
+Pending items show an Accept button on the orders list: on the row (in place of the status; "Accept N" when
+several) and on each expanded item. The order page shows a banner ("You have a new task on this order",
+Accept task / Accept all) above the progress. All use the existing `changeOrderItemStatusAction` → Processing,
+so the same permission and assignment checks apply (`src/app/(app)/orders/accept-items-button.tsx`).
+Verified as External Worker on test order #126: Accept on the list row and item; banner Accept moved the item to
+Processing with "Task accepted." and the banner disappeared.
+
+**2026-11-03 — For a worker, each item is the order, with their pay (owner request).** Reverses part of the
+Phase 10 money rule for one case only: a worker now receives the worker cost of their OWN items
+(`redactOrderDetail`, `redactOrderListItems`); other workers' costs, the order price and the customer stay
+removed on the server. The orders list for a worker is one row per task (`worker-tasks-table.tsx`: task and
+order number, channel, "You earn", status or Accept, the task's deadline, progress) and counts tasks. On the
+order page their item shows "You earn …" and the side panel totals it per currency (cancelled items
+excluded). Admins and employees keep the order-with-items table. Board cards show the worker their own pay.
+Evidence: visibility tests (own pay present, others' absent from the serialized data; pay hidden from
+someone who can see all orders but not costs); browser check as Zain (3 task rows, 5,000.00 PKR on #125).

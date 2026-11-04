@@ -4,11 +4,19 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { authorizeAction } from "@/lib/auth/authorize";
-import { createOutsourcedWorker, setOutsourcedWorkerActive, updateOutsourcedWorker } from "./service";
+import {
+  clearServiceRate,
+  createOutsourcedWorker,
+  inviteOutsourcedWorkerToLogin,
+  setOutsourcedWorkerActive,
+  setServiceRate,
+  updateOutsourcedWorker,
+} from "./service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
 const uuid = z.uuid("Invalid identifier.");
+const moneyString = z.string().trim().regex(/^\d+(\.\d{1,2})?$/, "Enter a valid amount.");
 
 const workerInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(160),
@@ -30,7 +38,7 @@ export async function createOutsourcedWorkerAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
   }
 
-  const auth = await authorizeAction("workers.create");
+  const auth = await authorizeAction("outsourced_workers.create");
   if (!auth.ok) return { ok: false, error: auth.message };
 
   const result = await createOutsourcedWorker(auth.actor, parsed.data);
@@ -48,7 +56,7 @@ export async function updateOutsourcedWorkerAction(input: unknown): Promise<Acti
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
   }
 
-  const auth = await authorizeAction("workers.edit");
+  const auth = await authorizeAction("outsourced_workers.edit");
   if (!auth.ok) return { ok: false, error: auth.message };
 
   const result = await updateOutsourcedWorker(auth.actor, parsed.data.workerId, parsed.data);
@@ -65,7 +73,7 @@ export async function setOutsourcedWorkerActiveAction(input: unknown): Promise<A
   const parsed = setActiveSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid request." };
 
-  const auth = await authorizeAction("workers.edit");
+  const auth = await authorizeAction("outsourced_workers.edit");
   if (!auth.ok) return { ok: false, error: auth.message };
 
   const result = await setOutsourcedWorkerActive(auth.actor, parsed.data.workerId, parsed.data.isActive);
@@ -76,4 +84,44 @@ export async function setOutsourcedWorkerActiveAction(input: unknown): Promise<A
   return result.ok
     ? { ok: true, message: parsed.data.isActive ? "Worker reactivated." : "Worker deactivated." }
     : { ok: false, error: result.error };
+}
+
+const setRateSchema = z.object({ workerId: uuid, serviceId: uuid, rate: moneyString, currency: z.string().trim().length(3).optional() });
+
+export async function setServiceRateAction(input: unknown): Promise<ActionResult> {
+  const parsed = setRateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+
+  const auth = await authorizeAction("outsourced_workers.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await setServiceRate(auth.actor, parsed.data.workerId, parsed.data);
+  if (result.ok) revalidatePath(`/outsourced-workers/${parsed.data.workerId}`);
+  return result.ok ? { ok: true, message: "Rate saved." } : { ok: false, error: result.error };
+}
+
+const clearRateSchema = z.object({ workerId: uuid, serviceId: uuid });
+
+export async function clearServiceRateAction(input: unknown): Promise<ActionResult> {
+  const parsed = clearRateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("outsourced_workers.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await clearServiceRate(auth.actor, parsed.data.workerId, parsed.data.serviceId);
+  if (result.ok) revalidatePath(`/outsourced-workers/${parsed.data.workerId}`);
+  return result.ok ? { ok: true, message: "Rate cleared." } : { ok: false, error: result.error };
+}
+
+export async function inviteOutsourcedWorkerToLoginAction(input: unknown): Promise<ActionResult> {
+  const parsed = workerIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("outsourced_workers.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await inviteOutsourcedWorkerToLogin(auth.actor, parsed.data.workerId);
+  if (result.ok) revalidatePath(`/outsourced-workers/${parsed.data.workerId}`);
+  return result.ok ? { ok: true, message: "Invitation sent." } : { ok: false, error: result.error };
 }

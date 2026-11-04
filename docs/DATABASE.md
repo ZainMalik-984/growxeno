@@ -214,10 +214,10 @@ explicit direction before anything depended on it). `buyer_pricing` was itself d
 Buyer, post-Phase-10 (2026-09-27) — see the note above. `base_price` is now purely a reference figure;
 nothing reads it to set a price automatically, on an item or on an order.
 
-### `outsourced_workers` (Phase 4)
+### `outsourced_workers` (Phase 4, login added 2026-10-08)
 
-A third party who fulfils Order Items, with no application account, login, or RBAC — a
-cost-tracking contact, not an actor in the system.
+A third party who fulfils Order Items — a cost-tracking contact by default, optionally also an actor
+in the system once `user_id` is set.
 
 | Field | Notes |
 | --- | --- |
@@ -225,6 +225,7 @@ cost-tracking contact, not an actor in the system.
 | `name` | varchar(160) |
 | `email`, `phone`, `whatsapp_number` | nullable |
 | `notes` | text, nullable |
+| `user_id` | FK → users, nullable, unique, `ON DELETE SET NULL` (2026-10-08) — set once this worker is onboarded with portal access, confirmed directly: "External or outsourced workers should be able to login and have there own dashboard." Reuses the existing Supabase Auth + `User`/`Role` machinery (the seeded "External Worker" role, `prisma/seed.ts`) rather than a second auth system; `inviteOutsourcedWorkerToLogin` (`src/lib/outsourced-workers/service.ts`) mirrors `createUser`'s invite-then-create shape exactly. `OutsourcedWorker` is NOT merged into `User` — only linked — per "keep the External Workers separate from employees" |
 | `is_active` | boolean, default true |
 
 Indexes: `is_active`, `name`. **Deletion:** deactivate — past order items keep resolving.
@@ -310,19 +311,45 @@ The unit of work (specification Section 24). Status is independent of the parent
 | `order_id` | FK → orders, `ON DELETE CASCADE` | |
 | `service_id` | FK → services, `ON DELETE RESTRICT` | |
 | `category_id` | FK → categories, `ON DELETE RESTRICT` | Snapshotted from `service.category_id` at creation, so re-categorising the service later does not rewrite what this item was filed under |
-| `worker_id` | FK → users, nullable, `ON DELETE SET NULL` | Exactly one of this and `outsourced_worker_id` is set — enforced in the service layer, not a DB constraint |
-| `outsourced_worker_id` | FK → outsourced_workers, nullable, `ON DELETE SET NULL` | |
+| `worker_id` | FK → users, nullable, `ON DELETE SET NULL` | **DEPRECATED, 2026-10-08** — kept only so pre-rework rows that really were assigned to an internal user keep resolving; never set by any assignment path going forward (owner-directed, confirmed directly: "employees wont be assigned a order item its assigned to oursourced(external) only"). Previously: exactly one of this and `outsourced_worker_id` was set, enforced in the service layer |
+| `outsourced_worker_id` | FK → outsourced_workers, nullable, `ON DELETE SET NULL` | The only live assignment path since 2026-10-08 — see `worker_id` above |
+| `assigned_by` | FK → users, nullable, `ON DELETE SET NULL` (2026-10-08) | The Employee who performed the assignment ("put key assigned_by in order_item") — distinct from who does the work. Set whenever an assignment is made; not cleared on re-assignment (last-assignment record, not a history — `order_activity` covers the full history) |
 | `description`, `deadline` | both nullable | `description` also doubles as the free-text "note" alongside the metric fields below |
 | `channel_link` | text, nullable (post-Phase-10, 2026-09-27) | The client's channel. Only meaningful when `service.metric_type` is set — required by the service layer in that case. Validated http(s)-only, same rule as `order_item_links.url`, and never fetched by the server |
 | `target_count` | integer, nullable (post-Phase-10) | How many of the metric are wanted (e.g. "1000 subscribers"). Required by the service layer when `service.metric_type` is set |
 | `current_count` | integer, nullable (post-Phase-10) | Where the channel stands right now. Optional even for a metric item — not always known at creation — and defaults to 0 |
-| `worker_cost` | `numeric(14,2)`, nullable | Paid to whoever performs the work. Nullable: not resolved for salaried internal staff. Snapshotted at creation/edit — never recomputed from a worker's current rate |
+| `starting_count` | integer, nullable (2026-10-05) | Snapshot of `current_count` taken ONLY at creation — never touched by an edit or a progress update afterward. Lets the orders-list aggregate measure actual work done (`current - starting`) against what was actually asked for (`target - starting`), instead of restating a count the item already had before any work started — see `docs/ORDERS.md` §12 |
+| `worker_cost` | `numeric(14,2)`, nullable | Paid to the assigned External Worker — an Employee is salaried and never has a per-item fee ("no fee of the internal employees", 2026-10-08). Computed automatically from `service_rates` when assigning (rate × the metric's required count, or a flat rate for a non-metric service), but always a plain editable value afterward, never locked ("anyone putting the item there should be able to change the amount"). Null when unassigned or no rate is configured. Snapshotted — never retroactively recomputed |
 | `worker_cost_currency` | `char(3)`, default `'USD'` | |
 | `status` | `OrderItemStatus` enum, default PENDING | Subset of `OrderStatus` — see below |
 | `finished_at` | timestamptz, nullable (Phase 9) | Stamped when the item reaches COMPLETED or CANCELLED (the two "earned" states, D5); cleared if a completed item is flagged back to REVISION. Reports and Finance's worker-cost range use this, not `updated_at` (which moves on any edit). Backfilled from `updated_at` for existing finished items |
 
-Indexes: `order_id`, `(worker_id, status)`, `outsourced_worker_id`, `service_id`, `category_id`, `status`, `(status, finished_at)` (Phase 9 — worker and profit reports).
+Indexes: `order_id`, `(worker_id, status)`, `outsourced_worker_id`, `assigned_by`, `service_id`, `category_id`, `status`, `(status, finished_at)` (Phase 9 — worker and profit reports).
 **Deletion:** hard delete, cascades with the order.
+
+### `service_rates` (2026-10-08)
+
+An External Worker's price for one service — owner-directed, confirmed directly, worked example:
+"subscriber service by Zia charges are 3.5pkr for 1 subscriber... the cost would be 500*3.5=1750."
+Looked up by `(service_id, outsourced_worker_id)` when assigning an Order Item, to compute
+`order_items.worker_cost` automatically — see `assignOrderItemWorker` in `src/lib/orders/service.ts`
+and the pure calculation in `src/lib/orders/rate.ts`. Deliberately NOT modelled for internal
+Employees — "rates would be set to workers not employees" — reversing the Phase 4 `catalog.prisma`
+header's original "not as a separate outsourced worker's service catalog" position (see that file's
+header for the full record of the reversal).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `service_id` | FK → services, `ON DELETE CASCADE` | |
+| `outsourced_worker_id` | FK → outsourced_workers, `ON DELETE CASCADE` | |
+| `rate` | `numeric(14,2)` | Per-unit for a metric service (views/subscribers/watch hours); a flat per-item price otherwise ("it'll be flat rate") |
+| `currency` | `char(3)`, default `'PKR'` | |
+
+Unique on `(service_id, outsourced_worker_id)` — one current rate per pair, upserted when set (a
+price to apply going forward, not a history — `order_items.worker_cost` is the per-assignment
+snapshot that preserves history).
+**Deletion:** hard delete, cascades with either the service or the worker.
 
 **No `selling_price` here any more (D12, post-Phase-10, confirmed directly 2026-09-27: "order price
 should be taken for the whole order not for each item").** `orders.total_amount` is the single price

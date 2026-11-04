@@ -8,7 +8,7 @@ import { MIN_TERM_LENGTH, normalizeSearchTerm } from "@/lib/search/term";
 import type { SearchCategory, SearchHit, SearchResults } from "@/lib/search/queries";
 import { cn } from "@/lib/utils";
 
-const CATEGORY_ORDER: SearchCategory[] = ["Orders", "Customers", "Workers", "Services", "Categories"];
+const CATEGORY_ORDER: SearchCategory[] = ["Orders", "Customers", "Employees", "Outsourced Workers", "Services", "Categories"];
 const DEBOUNCE_MS = 250;
 const CACHE_LIMIT = 30;
 
@@ -131,7 +131,7 @@ export function GlobalSearch() {
         type="button"
         onClick={openDialog}
         aria-label="Search"
-        className="flex h-8 items-center gap-2 rounded-[3px] border border-line px-2.5 text-[13px] text-ink-muted transition-colors hover:border-zinc-300 hover:text-ink"
+        className="flex h-8 items-center gap-2 rounded-[8px] border border-line px-2.5 text-[13px] text-ink-muted transition-colors hover:border-zinc-300 hover:text-ink"
       >
         <Search aria-hidden="true" className="size-3.5" />
         <span className="hidden sm:inline">Search</span>
@@ -153,7 +153,7 @@ export function GlobalSearch() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onInputKeyDown}
-            placeholder="Search orders, customers, workers, services…"
+            placeholder="Search orders, customers, employees, outsourced workers, services…"
             aria-label="Search"
             className="w-full bg-transparent text-[14px] text-ink placeholder:text-ink-faint focus:outline-none"
           />
@@ -188,7 +188,7 @@ export function GlobalSearch() {
                           onClick={() => go(hit)}
                           onMouseEnter={() => setActive(myIndex)}
                           className={cn(
-                            "flex w-full items-baseline justify-between gap-3 rounded-[3px] px-2 py-1.5 text-left text-[13px]",
+                            "flex w-full items-baseline justify-between gap-3 rounded-[8px] px-2 py-1.5 text-left text-[13px]",
                             isActive ? "bg-canvas-subtle" : "",
                           )}
                         >

@@ -305,34 +305,3 @@ export async function deleteWorkerPayment(actor: Actor, id: string): Promise<Ser
     });
   });
 }
-
-// ---------------------------------------------------------------------------
-// Order-level: refund flag
-// ---------------------------------------------------------------------------
-
-/**
- * Whole-order, boolean, no partial refund (docs/REQUIREMENTS.md D4 follow-up,
- * answered 2026-09-17). The order keeps its real status; this just excludes
- * it from recognized revenue. Who/when is the audit log on this edit, same
- * as every other correction under D8's policy.
- */
-export async function setOrderRefunded(actor: Actor, orderId: string, refunded: boolean): Promise<ServiceResult> {
-  return runTransaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id: orderId }, select: { orderNumber: true, refunded: true } });
-    if (!order) throw new ServiceRejection("That order no longer exists.");
-    if (order.refunded === refunded) return;
-
-    await tx.order.update({ where: { id: orderId }, data: { refunded } });
-
-    await recordAudit(tx, {
-      actorUserId: actor.user.id,
-      actorEmail: actor.user.email,
-      action: refunded ? "order.marked_refunded" : "order.unmarked_refunded",
-      entityType: "Order",
-      entityId: orderId,
-      summary: `${actor.user.fullName} marked order #${order.orderNumber} as ${refunded ? "refunded" : "not refunded"}`,
-      previousValue: { refunded: order.refunded },
-      newValue: { refunded },
-    });
-  });
-}

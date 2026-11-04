@@ -64,7 +64,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // to Supabase Auth. That is normally unsafe for a trust decision, but this
   // proxy makes none: it is explicitly NOT the authorization boundary (see the
   // file header), only a UX redirect for the obviously-signed-out case. The
-  // real, security-relevant check is `getCurrentActor()`'s `auth.getUser()`
+  // real, security-relevant check is `getCurrentActor()`'s `auth.getClaims()`
+  // (signature-verified against Supabase's published key since 2026-11-03)
   // call, which every page still performs. A forged or expired cookie that
   // slips past this cheap check is caught there a moment later — nothing here
   // is ever trusted with data access. Using `getUser()` here as well would

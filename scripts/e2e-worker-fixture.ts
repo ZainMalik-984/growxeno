@@ -49,7 +49,8 @@ async function main() {
       const email = `e2e-worker-${stamp}@example.com`;
       const password = randomBytes(18).toString("base64url");
 
-      const role = await prisma.role.findUniqueOrThrow({ where: { slug: "worker" }, select: { id: true } });
+      // Renamed from "worker" (owner-directed, confirmed directly, 2026-10-08).
+      const role = await prisma.role.findUniqueOrThrow({ where: { slug: "employee" }, select: { id: true } });
       const response = await adminApi("/users", { method: "POST", body: JSON.stringify({ email, password, email_confirm: true }) });
       if (!response.ok) throw new Error(`Could not create the auth identity (HTTP ${response.status}).`);
       const authUserId = ((await response.json()) as { id: string }).id;
@@ -69,11 +70,11 @@ async function main() {
       const otherService = await prisma.service.create({ data: { name: `E2E Other Service ${stamp}`, categoryId: category.id, basePrice: 100 }, select: { id: true } });
       const admin = await prisma.user.findFirstOrThrow({ orderBy: { createdAt: "asc" }, select: { id: true } });
       const assigned = await prisma.order.create({
-        data: { source: "EXTERNAL", customerId: customer.id, currency: "USD", totalAmount: 679, status: "IN_PROGRESS", deadline: new Date(Date.now() + 86400000), createdById: admin.id },
+        data: { source: "EXTERNAL", customerId: customer.id, currency: "USD", totalAmount: 679, status: "PROCESSING", deadline: new Date(Date.now() + 86400000), createdById: admin.id },
         select: { id: true, orderNumber: true },
       });
-      await prisma.orderItem.create({ data: { orderId: assigned.id, serviceId: ownService.id, categoryId: category.id, workerId: user.id, workerCost: 67.89, workerCostCurrency: "PKR", status: "IN_PROGRESS" } });
-      await prisma.orderItem.create({ data: { orderId: assigned.id, serviceId: otherService.id, categoryId: category.id, outsourcedWorkerId: outsourced.id, workerCost: 9999.99, workerCostCurrency: "PKR", status: "IN_PROGRESS" } });
+      await prisma.orderItem.create({ data: { orderId: assigned.id, serviceId: ownService.id, categoryId: category.id, workerId: user.id, workerCost: 67.89, workerCostCurrency: "PKR", status: "PROCESSING" } });
+      await prisma.orderItem.create({ data: { orderId: assigned.id, serviceId: otherService.id, categoryId: category.id, outsourcedWorkerId: outsourced.id, workerCost: 9999.99, workerCostCurrency: "PKR", status: "PROCESSING" } });
 
       const fixture: Fixture = { email, password, userId: user.id, authUserId, outsourcedWorkerId: outsourced.id, customerId: customer.id, foreignOrderId: foreign?.id ?? null, assignedOrderId: assigned.id, assignedOrderNumber: assigned.orderNumber, stamp, categoryId: category.id, serviceIds: [ownService.id, otherService.id] };
       writeFileSync(file, JSON.stringify(fixture), { mode: 0o600 });

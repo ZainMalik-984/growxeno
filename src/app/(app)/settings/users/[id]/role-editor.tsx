@@ -91,7 +91,7 @@ export function RoleEditor({
               id="role-select"
               value={selected}
               onChange={(event) => setSelected(event.target.value)}
-              className="h-8 rounded-[3px] border border-line bg-canvas px-2 text-[13px] text-ink hover:border-zinc-300 focus:border-zinc-900 focus:outline-none"
+              className="h-9 rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
             >
               <option value="">Select a role…</option>
               {assignable.map((role) => (

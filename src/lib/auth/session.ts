@@ -29,6 +29,15 @@ export type ActorProfile = {
 export type Actor = {
   readonly user: ActorProfile;
   readonly permissions: EffectivePermissions;
+  /**
+   * Set when this signed-in `User` is linked to an `OutsourcedWorker`
+   * record (`OutsourcedWorker.userId`) — an External Worker with portal
+   * access, confirmed directly (2026-10-08). Null for everyone else
+   * (Admins, Super Admins, Employees). This is the id to compare against
+   * `OrderItem.outsourcedWorkerId` for "is this actor the assignee" —
+   * see `src/lib/orders/assignment.ts`.
+   */
+  readonly outsourcedWorkerId: string | null;
 };
 
 /**
@@ -55,11 +64,30 @@ export const getCurrentActor = cache(async (): Promise<Actor | null> => {
   if (!isSupabaseConfigured() || !isDatabaseConfigured()) return null;
 
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
 
-  if (!authUser) return null;
+  /**
+   * WHY getClaims() AND NOT getUser() (owner-approved, 2026-11-03).
+   *
+   * `getUser()` is an HTTP call to Supabase Auth on every request — measured
+   * at 350-410ms per page from this project's location to `ap-northeast-2`,
+   * the single largest fixed cost of a page switch. This project signs its
+   * access tokens with an asymmetric key (ES256; JWKS published at
+   * `/auth/v1/.well-known/jwks.json`), so `getClaims()` verifies the token's
+   * signature and expiry LOCALLY against the cached public key instead.
+   * Forged or expired tokens are still rejected. If the project ever moves
+   * back to a symmetric (HS*) secret, `getClaims()` itself falls back to
+   * `getUser()`, so this fails safe rather than open.
+   *
+   * Trade-off, accepted by the owner: a session signed out or revoked
+   * elsewhere stays usable until its access token expires (default 1 hour),
+   * because nothing asks the Auth server any more. Deactivating someone in
+   * this application still takes effect on their very next request — the
+   * `isActive` profile check below reads the database every time.
+   */
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const subject = claimsData?.claims?.sub;
+  if (typeof subject !== "string" || subject.length === 0) return null;
+  const authUser = { id: subject };
 
   /**
    * WHY THIS IS A RAW QUERY, AND WHY IT IS COMBINED WITH `Promise.all` BELOW
@@ -118,12 +146,22 @@ export const getCurrentActor = cache(async (): Promise<Actor | null> => {
     WHERE up.user_id = (SELECT id FROM me)
   `);
 
-  const [profile, grantRows] = await Promise.all([
+  const [profile, grantRows, outsourcedWorker] = await Promise.all([
     prisma.user.findUnique({
       where: { authUserId: authUser.id },
       select: { id: true, email: true, fullName: true, displayName: true, avatarUrl: true, isActive: true },
     }),
     grantsQuery,
+    // Filtering through the relation (not selecting it) compiles to one
+    // JOIN, not the N+1-prone nested-select pattern warned about above —
+    // and it runs in the SAME Promise.all, so it costs zero added latency
+    // on the critical path, only one more concurrent connection. Matches
+    // `authUser.id` directly, so it needs no result from the other two
+    // branches first.
+    prisma.outsourcedWorker.findFirst({
+      where: { user: { authUserId: authUser.id } },
+      select: { id: true },
+    }),
   ]);
 
   // An auth identity with no application profile has no access. This is the
@@ -160,5 +198,6 @@ export const getCurrentActor = cache(async (): Promise<Actor | null> => {
       roleGrants,
       directGrants,
     }),
+    outsourcedWorkerId: outsourcedWorker?.id ?? null,
   };
 });

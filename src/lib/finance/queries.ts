@@ -28,8 +28,11 @@ import { roundMoney, sumByCurrency } from "./money";
  * per-item — see `prisma/schema/catalog.prisma`'s header comment).
  */
 
-const REVENUE_RECOGNIZED_STATUSES = ["DELIVERED", "COMPLETED"] as const;
-const EARNED_ITEM_STATUSES = ["COMPLETED", "CANCELLED"] as const;
+// Delivered and Finalized (2026-11-03 rework). "Refunded / Cancelled" is
+// its own status now, so it falls out of revenue by status alone; the old
+// `refunded` flag is still honoured for rows that carry it.
+const REVENUE_RECOGNIZED_STATUSES = ["DELIVERED", "FINALIZED"] as const;
+const EARNED_ITEM_STATUSES = ["DONE", "CANCELLED"] as const;
 
 export const FINANCE_PAGE_SIZE = 25;
 export const MAX_PAGE_SIZE = 100;

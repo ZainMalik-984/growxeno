@@ -10,6 +10,8 @@ const pathname = vi.hoisted(() => ({ current: "/dashboard" }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname.current,
+  // The sidebar reads the query string to highlight one `/orders?status=…` shortcut.
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const withPermissions = (keys: string[]) =>

@@ -40,6 +40,7 @@ export type NavIconName =
   | "services"
   | "categories"
   | "finance"
+  | "invoice"
   | "communication"
   | "reports"
   | "users"
@@ -82,24 +83,10 @@ export const NAVIGATION: readonly NavSection[] = [
   {
     label: "Operations",
     items: [
-      {
-        label: "Orders",
-        href: "/orders",
-        icon: "orders",
-        permission: "orders.view",
-        implemented: true,
-        children: [
-          { label: "All Orders", href: "/orders", permission: "orders.view", implemented: true, exact: true },
-          { label: "Pending", href: "/orders?status=PENDING", permission: "orders.view", implemented: true },
-          { label: "Processing", href: "/orders?status=PROCESSING", permission: "orders.view", implemented: true },
-          { label: "In Progress", href: "/orders?status=IN_PROGRESS", permission: "orders.view", implemented: true },
-          { label: "Review", href: "/orders?status=INTERNAL_REVIEW", permission: "orders.view", implemented: true },
-          { label: "Ready for Delivery", href: "/orders?status=READY_FOR_DELIVERY", permission: "orders.view", implemented: true },
-          { label: "Completed", href: "/orders?status=COMPLETED", permission: "orders.view", implemented: true },
-          { label: "Cancelled", href: "/orders?status=CANCELLED", permission: "orders.view", implemented: true },
-          { label: "Overdue", href: "/orders?due=overdue", permission: "orders.view", implemented: true },
-        ],
-      },
+      // One link (owner-directed, 2026-11-03): status views live as tabs with counts
+      // on the Orders page itself, not as nine separate sidebar entries. The URL
+      // params they used (?status=…, ?due=overdue) still work for old links.
+      { label: "Orders", href: "/orders", icon: "orders", permission: "orders.view", implemented: true },
     ],
   },
   {
@@ -127,21 +114,24 @@ export const NAVIGATION: readonly NavSection[] = [
   {
     label: "Workforce",
     items: [
-      { label: "Workers", href: "/workers", icon: "workers", permission: "workers.view.all", implemented: true },
-      // ADDED (not in the specification's Section 80 example): third-party
-      // workers with no application account, needed as soon as Order Items
-      // can be assigned (Phase 4) — see prisma/schema/orders.prisma's
-      // `OutsourcedWorker` doc comment.
+      { label: "Employees", href: "/employees", icon: "workers", permission: "employees.view.all", implemented: true },
+      // Third-party workers with no application account (not yet true once
+      // the External Worker login portal lands — see the plan's Phase 3),
+      // needed as soon as Order Items can be assigned (Phase 4) — see
+      // prisma/schema/orders.prisma's `OutsourcedWorker` doc comment. Split
+      // into its own permission module, 2026-10-08 (owner-directed: "keep
+      // the External Workers separate from employees") — previously reused
+      // the internal Worker/Employee module's keys.
       {
         label: "Outsourced Workers",
         href: "/outsourced-workers",
         icon: "workers",
-        permission: "workers.view.all",
+        permission: "outsourced_workers.view",
         implemented: true,
       },
       { label: "Daily Statistics", href: "/daily-stats", icon: "stats", permission: "daily_stats.view", implemented: true },
-      { label: "Performance", href: "/performance", icon: "performance", permission: "workers.stats.view", implemented: false },
-      { label: "Payments", href: "/worker-payments", icon: "payments", permission: "workers.payments.view", implemented: false },
+      { label: "Performance", href: "/performance", icon: "performance", permission: "employees.stats.view", implemented: false },
+      { label: "Payments", href: "/worker-payments", icon: "payments", permission: "employees.payments.view", implemented: false },
     ],
   },
   {
@@ -168,6 +158,7 @@ export const NAVIGATION: readonly NavSection[] = [
           { label: "Profit", href: "/finance/profit", permission: "finance.profit.view", implemented: true },
         ],
       },
+      { label: "Create Invoice", href: "/invoices", icon: "invoice", permission: "finance.view", implemented: true },
     ],
   },
   {
@@ -273,4 +264,39 @@ export function isNavNodeActive(node: NavNode, pathname: string): boolean {
   const path = node.href.split("?")[0];
   if (node.exact) return pathname === path;
   return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+/**
+ * Which ONE child of a group is the current page, taking the query string into
+ * account — `isNavNodeActive` ignores it on purpose (it decides whether a group
+ * is open), which on its own would highlight every `/orders?status=…` shortcut
+ * at once. A child matches when its path is active and every query param in its
+ * href equals the current URL's; among matches the most specific one wins, so
+ * `/orders?status=PENDING` beats the plain `/orders` "All Orders" link, and
+ * "All Orders" only wins while no shortcut's params are present.
+ */
+export function currentNavChild(
+  children: readonly NavNode[],
+  pathname: string,
+  search: URLSearchParams,
+): NavNode | null {
+  let best: NavNode | null = null;
+  let bestScore = -1;
+  for (const child of children) {
+    const [path, query = ""] = child.href.split("?");
+    const wanted = new URLSearchParams(query);
+    const pathMatches = query ? pathname === path : isNavNodeActive(child, pathname);
+    if (!pathMatches) continue;
+    let matchesAll = true;
+    let score = 0;
+    for (const [key, value] of wanted) {
+      if (search.get(key) !== value) matchesAll = false;
+      else score += 1;
+    }
+    if (matchesAll && score > bestScore) {
+      best = child;
+      bestScore = score;
+    }
+  }
+  return best;
 }

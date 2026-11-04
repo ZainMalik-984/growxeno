@@ -47,13 +47,20 @@ const ADMIN_EXCLUDED = new Set([
 ]);
 
 /**
- * A Worker sees their own assigned work and nothing financial.
+ * An Employee sees their own assigned work and nothing financial.
  *
- * Note what is absent: `orders.view.all`. The Worker holds `orders.view`, which
- * resolves to the ASSIGNED scope — the difference between "can open the orders
- * page" and "can read every order in the business".
+ * Renamed from "Worker" (owner-directed, confirmed directly, 2026-10-08).
+ * This permission SET is unchanged from the old Worker role for now — the
+ * behavioral redesign (Employees become managers who create/assign orders
+ * rather than execute them, which needs `orders.create`/`orders.assign`/
+ * `outsourced_workers.view` granted here) is a later phase of the same
+ * rework, tracked in the plan, not done in this rename pass.
+ *
+ * Note what is absent: `orders.view.all`. The Employee holds `orders.view`,
+ * which resolves to the ASSIGNED scope — the difference between "can open
+ * the orders page" and "can read every order in the business".
  */
-const WORKER_PERMISSIONS = [
+const EMPLOYEE_PERMISSIONS = [
   "orders.view",
   "orders.comment",
   "orders.change_status",
@@ -61,9 +68,21 @@ const WORKER_PERMISSIONS = [
   "orders.files.upload",
   "orders.activity.view",
   "daily_stats.view",
-  "workers.view",
-  "workers.stats.view",
+  "employees.view",
+  "employees.stats.view",
 ];
+
+/**
+ * An External Worker sees only their own assigned Order Items and nothing
+ * else — no financial access, no other worker's or employee's data.
+ * Added 2026-10-08, owner-directed, confirmed directly: "External or
+ * outsourced workers should be able to login and have there own
+ * dashboard." Deliberately narrow: no `orders.view.all`, no `finance.*`,
+ * no `customers.view`, no `fiverr_accounts.*`, no `employees.*` — a
+ * starting point, widenable later like every other seeded role, not a
+ * hard ceiling.
+ */
+const EXTERNAL_WORKER_PERMISSIONS = ["orders.view", "orders.comment", "orders.change_status"];
 
 type RoleSeed = {
   name: string;
@@ -88,11 +107,19 @@ const ROLES: RoleSeed[] = [
     permissionKeys: ALL_PERMISSION_KEYS.filter((key) => !ADMIN_EXCLUDED.has(key)),
   },
   {
-    name: "Worker",
-    slug: "worker",
+    name: "Employee",
+    slug: "employee",
     description:
+      // Renamed from "Worker" (owner-directed, confirmed directly, 2026-10-08).
       "Performs assigned work. Sees only their own assignments and has no financial access.",
-    permissionKeys: WORKER_PERMISSIONS,
+    permissionKeys: EMPLOYEE_PERMISSIONS,
+  },
+  {
+    name: "External Worker",
+    slug: "external-worker",
+    description:
+      "A third party with portal access, performing assigned Order Item work. Sees only their own assignments and has no financial access.",
+    permissionKeys: EXTERNAL_WORKER_PERMISSIONS,
   },
 ];
 

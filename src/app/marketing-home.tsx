@@ -4,6 +4,8 @@ import { Code2, Share2 } from "lucide-react";
 import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { SiGoogleadsense, SiShopify, SiTiktok, SiYoutube } from "react-icons/si";
 
+import { BrandWordmark } from "@/components/brand/brand-logo";
+
 /**
  * Ported verbatim from growxeno-project/src/routes/index.tsx, confirmed
  * directly (2026-10-05): "this project has the correct UI for the frontend
@@ -216,9 +218,8 @@ function Header() {
         </Container>
       </div>
       <Container className="flex h-16 items-center justify-between">
-        <a href="#top" className="flex items-center gap-2.5 font-semibold tracking-tight">
-          <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">GX</span>
-          <span className="text-lg">Grow Xeno</span>
+        <a href="#top" className="flex items-center" aria-label="Grow Xeno home">
+          <BrandWordmark className="h-10" />
         </a>
         <nav className="hidden items-center gap-1 md:flex">
           {links.map(([l, h]) => (
@@ -589,10 +590,7 @@ function Footer() {
     <footer className="border-t bg-surface pb-24 md:pb-0">
       <Container className="grid gap-10 py-14 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
         <div>
-          <div className="flex items-center gap-2.5 font-semibold">
-            <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">GX</span>
-            <span className="text-lg">Grow Xeno</span>
-          </div>
+          <BrandWordmark className="h-11" />
           <p className="mt-4 max-w-xs text-sm text-muted-foreground">Digital growth services, run honestly. Verified before handover, supported after.</p>
         </div>
         <div>

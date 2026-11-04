@@ -65,7 +65,7 @@ test.describe("a signed-in Worker cannot read beyond their role", () => {
     "/settings/roles",
     "/settings/permissions",
     "/customers",
-    "/workers",
+    "/employees",
     "/outsourced-workers",
     "/communication",
     "/communication/templates",
@@ -139,7 +139,7 @@ test.describe("a signed-in Worker cannot read beyond their role", () => {
     await expect(page.getByRole("columnheader", { name: /Customer/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: "More filters" }).click();
-    for (const label of ["Customer", "Worker", "Outsourced worker", "Service", "Category"]) {
+    for (const label of ["Customer", "Employee", "Outsourced worker", "Service", "Category"]) {
       await expect(page.getByLabel(label, { exact: true }), `the ${label} filter must not be offered`).toHaveCount(0);
     }
     const html = await page.content();
@@ -156,7 +156,7 @@ test.describe("a signed-in Worker cannot read beyond their role", () => {
       const response = await page.request.get(`/search?q=${encodeURIComponent(term)}`);
       expect(response.status()).toBe(200);
       const body = (await response.json()) as { results: Record<string, unknown[]> };
-      for (const category of ["Orders", "Customers", "Workers", "Services", "Categories"]) {
+      for (const category of ["Orders", "Customers", "Employees", "Outsourced Workers", "Services", "Categories"]) {
         expect(body.results[category], `"${term}" must return no ${category} to a worker`).toEqual([]);
       }
     }

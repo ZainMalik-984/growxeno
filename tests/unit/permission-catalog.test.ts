@@ -28,13 +28,20 @@ describe("permission catalog", () => {
     // the Buyer category from order and from system." See
     // prisma/schema/crm.prisma's file header for the full record. This is a
     // deliberate departure from literal Section 8 conformance, not a bug.
+    //
+    // Spec Section 8's "Workers" keys (workers.view/create/edit/delete/assign,
+    // workers.stats.view, workers.payments.view/manage) were RENAMED/SPLIT,
+    // 2026-10-08 — owner-directed, confirmed directly: "rename them to
+    // employee as well" / "keep the External Workers separate from
+    // employees." See src/lib/permissions/catalog.ts's "Employees" and
+    // "Outsourced Workers" blocks for the mapping and rationale.
     const specified = [
       "orders.view", "orders.create", "orders.edit", "orders.delete", "orders.assign",
       "orders.process", "orders.change_status", "orders.comment", "orders.files.view",
       "orders.files.upload", "orders.activity.view", "orders.export",
       "customers.view", "customers.create", "customers.edit", "customers.delete",
-      "workers.view", "workers.create", "workers.edit", "workers.delete", "workers.assign",
-      "workers.stats.view", "workers.payments.view", "workers.payments.manage",
+      "employees.view", "employees.stats.view", "employees.payments.view", "employees.payments.manage",
+      "outsourced_workers.view", "outsourced_workers.create", "outsourced_workers.edit", "outsourced_workers.delete",
       "daily_stats.view", "daily_stats.create", "daily_stats.edit", "daily_stats.delete",
       "daily_stats.export",
       "services.view", "services.create", "services.edit", "services.delete",
@@ -101,7 +108,7 @@ describe("no hard-coded role checks", () => {
         .replace(/^\s*\/\/.*$/gm, "");
 
       expect(code, `${file} references a role name`).not.toMatch(
-        /["'](super[-_ ]?admin|admin|worker)["']/i,
+        /["'](super[-_ ]?admin|admin|employee|external[-_ ]?worker)["']/i,
       );
     }
   });

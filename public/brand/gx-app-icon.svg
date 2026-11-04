@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-labelledby="logo-title">
+  <title id="logo-title">Grow Xeno GX monogram</title>
+  <defs>
+    <linearGradient id="emerald" x1="9%" y1="100%" x2="91%" y2="4%">
+      <stop offset="0" stop-color="#008E60"/>
+      <stop offset="42%" stop-color="#00C954"/>
+      <stop offset="100%" stop-color="#08F52C"/>
+    </linearGradient>
+    <linearGradient id="leaf-green" x1="90%" y1="95%" x2="25%" y2="8%">
+      <stop offset="0" stop-color="#008C55"/>
+      <stop offset="48%" stop-color="#00CF48"/>
+      <stop offset="100%" stop-color="#2AFA3B"/>
+    </linearGradient>
+    <linearGradient id="graphite" x1="8%" y1="4%" x2="92%" y2="96%">
+      <stop offset="0" stop-color="#303E44"/>
+      <stop offset="46%" stop-color="#202B30"/>
+      <stop offset="100%" stop-color="#11191E"/>
+    </linearGradient>
+  </defs>
+  <!-- White tile behind the GX logo; the area outside its rounded corners is transparent. -->
+  <rect x="101" y="125" width="1045" height="995" rx="197" fill="#FFFFFF" stroke="#E9EBED" stroke-width="2"/>
+  <!-- Green rising growth arrow, beneath interlocking graphite letterform. -->
+  <path fill="url(#emerald)" d="M628 710 L870 443 L788 407 Q782 404 790 401 L1064 322 Q1079 317 1077 334 L1034 572 Q1032 583 1025 578 L980 519 L716 817 Z"/>
+  <!-- Small green return-stroke of the monogram. -->
+  <path fill="url(#leaf-green)" d="M254 882 C292 912 364 910 408 879 C447 853 471 817 480 786 L567 886 C535 922 490 949 445 951 C366 956 307 934 254 882 Z"/>
+  <!-- Upper curved G, open on its right to form a rising monogram. -->
+  <path fill="url(#graphite)" d="M421 449 L659 449 Q665 449 669 455 L749 550 Q751 553 746 558 L667 643 Q661 648 657 643 L594 568 Q591 565 585 565 L425 565 C410 565 398 573 384 585 L242 727 C218 751 205 786 204 820 C177 786 162 749 162 705 C162 641 189 576 232 533 C287 477 346 449 421 449 Z"/>
+  <!-- Dark inner ribbon, crossing over the green arrow. -->
+  <path fill="url(#graphite)" d="M379 650 L570 650 Q575 650 579 654 L820 943 Q824 948 816 948 L620 946 Q615 946 612 942 L373 665 Q367 659 372 653 Q374 650 379 650 Z"/>
+  <!-- Right angled trailing stroke. -->
+  <path fill="url(#graphite)" d="M830 715 Q834 710 838 715 L1042 942 Q1048 948 1041 948 L870 948 Q867 948 864 944 L753 804 Q749 800 753 797 Z"/>
+  <!-- Rounded lower-left interlocking tail. -->
+  <path fill="url(#graphite)" d="M272 716 L366 817 C399 851 439 829 480 786 C468 833 438 864 405 884 C377 900 350 904 314 904 C258 904 221 864 221 822 C221 783 240 745 272 716 Z"/>
+</svg>

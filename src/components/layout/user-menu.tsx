@@ -59,7 +59,7 @@ export function UserMenu({
         aria-expanded={open}
         aria-haspopup="menu"
         className={cn(
-          "flex items-center gap-2 rounded-[3px] px-1.5 py-1 text-[13px] transition-colors",
+          "flex items-center gap-2 rounded-[8px] px-1.5 py-1 text-[13px] transition-colors",
           "text-ink-muted hover:bg-canvas-subtle hover:text-ink",
         )}
       >

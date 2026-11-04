@@ -19,19 +19,14 @@ import type { Bucket } from "./range";
  *
  * Money rules are Finance's, unchanged: revenue is recognized on delivery and
  * excludes refunded orders (D4); a worker earns an item's cost when it is
- * COMPLETED or CANCELLED (D5); currencies are never summed together (D1).
+ * DONE or CANCELLED (D5); currencies are never summed together (D1).
  */
 
 const TOP_N = 15;
-const RECOGNIZED = Prisma.sql`status IN ('DELIVERED', 'COMPLETED') AND refunded = false`;
-const RECOGNIZED_WHERE = { status: { in: ["DELIVERED", "COMPLETED"] as ("DELIVERED" | "COMPLETED")[] }, refunded: false };
-const EARNED_STATUSES = ["COMPLETED", "CANCELLED"] as ("COMPLETED" | "CANCELLED")[];
-const OPEN_STATUSES = ["PENDING", "IN_PROGRESS", "INTERNAL_REVIEW", "REVISION"] as (
-  | "PENDING"
-  | "IN_PROGRESS"
-  | "INTERNAL_REVIEW"
-  | "REVISION"
-)[];
+const RECOGNIZED = Prisma.sql`status IN ('DELIVERED', 'FINALIZED') AND refunded = false`;
+const RECOGNIZED_WHERE = { status: { in: ["DELIVERED", "FINALIZED"] as ("DELIVERED" | "FINALIZED")[] }, refunded: false };
+const EARNED_STATUSES = ["DONE", "CANCELLED"] as ("DONE" | "CANCELLED")[];
+const OPEN_STATUSES = ["PENDING", "PROCESSING", "REFILL"] as ("PENDING" | "PROCESSING" | "REFILL")[];
 
 type Range = { start: Date; end: Date };
 export type CurrencyMap = Record<string, number>;
@@ -140,7 +135,7 @@ export async function getOrdersReport(range: Range, bucket: Bucket): Promise<Ord
       FROM orders
       WHERE delivered_at IS NOT NULL AND delivered_at >= ${range.start} AND delivered_at < ${range.end}`,
     prisma.order.count({
-      where: { deadline: { lt: new Date() }, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+      where: { deadline: { lt: new Date() }, status: { notIn: ["DELIVERED", "FINALIZED", "CANCELLED"] } },
     }),
   ]);
 
@@ -246,7 +241,7 @@ export async function getWorkersReport(range: Range, includeMoney: boolean): Pro
   for (const r of finished) {
     const row = ensure(r);
     if (!row) continue;
-    if (r.status === "COMPLETED") row.completed += r._count;
+    if (r.status === "DONE") row.completed += r._count;
     else row.cancelled += r._count;
     if (includeMoney && r._sum.workerCost) {
       const key = row.key;
@@ -392,7 +387,7 @@ export async function getProfitReport(range: Range, bucket: Bucket): Promise<{ b
     prisma.$queryRaw<Array<{ period: Date; currency: string; amount: string }>>`
       SELECT date_trunc(${truncFor(bucket)}, finished_at AT TIME ZONE 'UTC') AS period, worker_cost_currency AS currency, SUM(worker_cost)::text AS amount
       FROM order_items
-      WHERE status IN ('COMPLETED', 'CANCELLED') AND outsourced_worker_id IS NOT NULL AND worker_cost IS NOT NULL
+      WHERE status IN ('DONE', 'CANCELLED') AND outsourced_worker_id IS NOT NULL AND worker_cost IS NOT NULL
         AND finished_at >= ${range.start} AND finished_at < ${range.end}
       GROUP BY 1, 2`,
     prisma.$queryRaw<Array<{ period: Date; currency: string; amount: string }>>`

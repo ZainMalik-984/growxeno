@@ -75,8 +75,16 @@ model User {
   assignedRoles      UserRole[]       @relation("UserRoleAssignedBy")
   auditLogs          AuditLog[]       @relation("AuditLogActor")
 
+  /// Set only for a `User` created to give an External Worker portal
+  /// access — see `OutsourcedWorker.userId`'s doc comment, 2026-10-08.
+  outsourcedWorkerProfile OutsourcedWorker?
+
   createdOrders         Order[]         @relation("OrderCreatedBy")
   assignedOrderItems    OrderItem[]     @relation("OrderItemWorker")
+  /// Items this Employee assigned (to an External Worker) — not items
+  /// assigned TO them, which is `assignedOrderItems` above (deprecated,
+  /// see `OrderItem.workerId`'s doc comment). See `OrderItem.assignedById`.
+  itemsAssignedByMe     OrderItem[]     @relation("OrderItemAssignedBy")
   createdOrderItemLinks OrderItemLink[] @relation("OrderItemLinkCreatedBy")
   orderNotes            OrderNote[]     @relation("OrderNoteAuthor")
   orderActivity         OrderActivity[] @relation("OrderActivityActor")

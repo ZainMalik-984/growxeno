@@ -147,7 +147,7 @@ test.describe("Finance (Phase 7)", () => {
     await expect(page.getByRole("row").filter({ hasText: reference })).toHaveCount(0, { timeout: 30_000 });
   });
 
-  test("toggles the refund flag on an order and sees the financials panel", async ({ page }) => {
+  test("refunds / cancels an order and sees the financials panel", async ({ page }) => {
     test.setTimeout(90_000);
     await signIn(page);
     let orderId: string | undefined;
@@ -162,22 +162,10 @@ test.describe("Finance (Phase 7)", () => {
     orderId = page.url().split("/").pop();
 
     await expect(page.getByRole("heading", { level: 2, name: "Summary" })).toBeVisible({ timeout: 30_000 });
-    const refundButton = page.getByRole("button", { name: /Mark as refunded|Clear refund flag/ });
-    await expect(refundButton).toBeVisible({ timeout: 30_000 });
 
-    const initialLabel = await refundButton.textContent();
-    await refundButton.click();
-    await expect(page.getByText(/Order marked as refunded\.|Refund flag cleared\./)).toBeVisible({ timeout: 30_000 });
-    // Toggle back to leave the order exactly as found.
-    await expect(page.getByRole("button", { name: /Mark as refunded|Clear refund flag/ })).not.toHaveText(
-      initialLabel ?? "",
-      { timeout: 30_000 },
-    );
-    await page.getByRole("button", { name: /Mark as refunded|Clear refund flag/ }).click();
-    await expect(page.getByText(/Order marked as refunded\.|Refund flag cleared\./)).toBeVisible({ timeout: 30_000 });
-
-    // Cancel it (there is no delete UI for orders, by design); the finally block removes the row.
-    await page.getByRole("button", { name: "Cancelled" }).click();
+    // Refunded / Cancelled is an order status since the 2026-11-03 rework
+    // (it replaced the separate refund toggle). The finally block removes the row.
+    await page.getByRole("button", { name: "Refund / Cancel" }).click();
     const cancelDialog = page.locator("dialog[open]");
     await cancelDialog.getByLabel("Reason").fill("E2E test cleanup");
     await cancelDialog.getByRole("button", { name: "Confirm" }).click();
@@ -238,8 +226,6 @@ test.describe("Finance (Phase 7)", () => {
       await page.getByLabel("Assigned to").selectOption({ label: `${workerName} (outsourced)` });
       await expect(page.getByText("Assignment updated.")).toBeVisible({ timeout: 30_000 });
 
-      await page.getByRole("button", { name: "Process order" }).click();
-      await expect(page.getByText(/Order #\d+ processed/)).toBeVisible({ timeout: 30_000 });
 
       // --- Cancel with an adjusted (partial) cost ---
       await page.getByLabel("Move to").selectOption({ label: "Cancelled" });
