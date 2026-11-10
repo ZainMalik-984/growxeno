@@ -1,20 +1,20 @@
 import "server-only";
 
+import { getEmailEnv } from "@/lib/env";
+import { ResendEmailProvider } from "./resend";
 import type { EmailProvider, WhatsAppProvider } from "./types";
 import { UnconfiguredEmailProvider, UnconfiguredWhatsAppProvider } from "./unconfigured";
 
 /**
  * Factory functions feature code calls instead of importing a concrete
- * provider directly. Both currently always resolve to the unconfigured stub:
- * no RESEND_API_KEY/WHATSAPP_ACCESS_TOKEN exists in this project, AND there
- * is no queue to dispatch through yet (see messaging.prisma's header
- * comment) — building a real Resend/Meta client this phase would be
- * untestable code sitting on a shelf, not a working feature. Swapping these
- * for real implementations once both prerequisites exist is a one-line
- * change here, not a refactor of any calling code.
+ * provider directly. Email goes through Resend once RESEND_API_KEY and
+ * EMAIL_FROM are set (2026-11-11); otherwise, and for WhatsApp (sent by hand
+ * from a prefilled link, see src/lib/orders/assignment-notify.ts), the
+ * unconfigured stub, which never reports a false success.
  */
 export function getEmailProvider(): EmailProvider {
-  return new UnconfiguredEmailProvider();
+  const env = getEmailEnv();
+  return env ? new ResendEmailProvider(env.apiKey, env.from) : new UnconfiguredEmailProvider();
 }
 
 export function getWhatsAppProvider(): WhatsAppProvider {

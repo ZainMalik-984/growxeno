@@ -35,6 +35,7 @@ export const PERMISSION_MODULES = [
   "settings",
   "audit",
   "fiverr_accounts",
+  "inquiries",
 ] as const;
 
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
@@ -177,6 +178,12 @@ export const PERMISSION_CATALOG = [
   { key: "permissions.view", name: "View permission catalog", module: "permissions", description: "Browse the permission catalog." },
   { key: "settings.view", name: "View settings", module: "settings", description: "See system settings." },
   { key: "settings.edit", name: "Edit settings", module: "settings", description: "Change system settings." },
+
+  // --- Website inquiries (ADDED, 2026-11-04) ------------------------------
+  // Owner request: contact-form submissions from the public home page,
+  // shown to admins and employees.
+  { key: "inquiries.view", name: "View inquiries", module: "inquiries", description: "ADDED. See inquiries sent through the website contact form." },
+  { key: "inquiries.manage", name: "Manage inquiries", module: "inquiries", description: "ADDED. Mark website inquiries as contacted or closed." },
 
   // --- Audit -------------------------------------------------------------
   { key: "audit.view", name: "View audit log", module: "audit", description: "ADDED. Read the cross-entity audit trail. Order-scoped history is covered by orders.activity.view." },

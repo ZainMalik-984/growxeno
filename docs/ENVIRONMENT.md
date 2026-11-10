@@ -29,6 +29,9 @@ needs one produces a `ConfigurationError` naming the variable. Nothing is ever s
 | `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` | no | Playwright | authenticated suite; falls back to `SEED_ADMIN_*` |
 | `E2E_WORKER_EMAIL` | no | Playwright | a second, non-admin user for the write-path tests |
 | `SUPABASE_ANON_KEY` | no | RLS verification only | legacy anon key; proves the public role reads nothing |
+| `YOUTUBE_API_KEY` | for YouTube stats (2026-11-10) | **server only** — `src/lib/youtube/`: reads public channel/video counts for order item links | Google Cloud console → APIs & Services → enable **YouTube Data API v3** → Credentials → Create API key. Restrict it to that API. Free quota: 10,000 units/day, 1 unit per lookup |
+| `CRON_SECRET` | for the scheduled refresh on serverless hosting | `/api/cron/youtube-stats` checks `Authorization: Bearer …` against it | generate with `openssl rand -hex 32` (at least 16 characters). Not needed locally: the dev server runs its own timer |
+| `STATS_TIMER` | no | `src/instrumentation.ts` | set to `off` to stop the in-process 15-minute stats timer on a long-running server |
 | `CREDENTIALS_ENCRYPTION_KEY` | for saving a Fiverr account's PayPal password (post-Phase-10) | `src/lib/crypto/secret-box.ts` — AES-256-GCM at rest | generate with `openssl rand -base64 32`; must decode to exactly 32 bytes, or encryption fails closed rather than storing plaintext |
 
 ### Reaching the database at all
@@ -81,8 +84,8 @@ send rather than pretending it did.
 
 | Variable | Purpose |
 | --- | --- |
-| `RESEND_API_KEY` | Transactional email |
-| `EMAIL_FROM` | Sender address on a verified domain |
+| `RESEND_API_KEY` | Transactional email. **Used since 2026-11-11** for the new-task email to External Workers (see below) |
+| `EMAIL_FROM` | Sender address on a verified domain. **Used since 2026-11-11**, e.g. `Grow Xeno <tasks@growxeno.com>` |
 | `WHATSAPP_ACCESS_TOKEN` | Meta system-user token |
 | `WHATSAPP_PHONE_NUMBER_ID` | Sending number |
 | `WHATSAPP_BUSINESS_ACCOUNT_ID` | WABA id |
@@ -91,7 +94,12 @@ send rather than pretending it did.
 | `REDIS_URL` | BullMQ connection (a `rediss://` TCP URL), for the app and the worker |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Upstash's HTTP API. **Not used by BullMQ**, which needs `REDIS_URL`; present in `.env.local` but unread by any code today |
 
-None of these is read by any code yet — the queue and dispatcher are not built (docs/NOTIFICATIONS.md §7).
+None of these is read by any code yet — the queue and dispatcher are not built (docs/NOTIFICATIONS.md §7) —
+except `RESEND_API_KEY` and `EMAIL_FROM`, read since 2026-11-11 to email a worker their new task. Resend's
+shared test sender (`onboarding@resend.dev`) only delivers to the Resend account owner's own address; to
+email workers, verify your domain in Resend (Domains → Add domain → add the DNS records it shows) and set
+`EMAIL_FROM` to an address on it. Until then the assign step shows Resend's reason and the WhatsApp button
+still works.
 All are **server-only secrets**: never prefix them `NEXT_PUBLIC_`. `pnpm security:secrets` checks that none
 appears in the browser bundle, a committable file, or git history.
 Note that Supabase Auth's own emails (password reset, verification) are configured **separately**, in
@@ -104,6 +112,39 @@ monitoring variables exist. Business data stays in PostgreSQL.
 
 ---
 
+## Supabase Storage — category images (2026-11-05)
+
+Category images are stored in Supabase Storage. No new environment variable is needed: uploads go through the
+server with `SUPABASE_SECRET_KEY`, and images are read from the public URL built from `NEXT_PUBLIC_SUPABASE_URL`.
+One-time setup in the Supabase dashboard, per project (dev and production each need it):
+
+1. **Storage → New bucket.** Name: `category-images` (exactly). Turn **Public bucket** on.
+2. In the bucket's settings, set **File size limit** to `2 MB` and **Allowed MIME types** to
+   `image/png, image/jpeg, image/webp`. (The app checks both too; this is a second guard.)
+3. **No policies are needed.** The app uploads and deletes with the secret key, which bypasses Storage RLS;
+   a public bucket lets anyone read the images, which is intended for catalog pictures. Do not add INSERT,
+   UPDATE or DELETE policies for `anon` or `authenticated`.
+
+Until the bucket exists, saving an image shows "Image storage isn't set up yet" and nothing else is affected.
+`next.config.ts` allows `next/image` to load only `/storage/v1/object/public/category-images/**` from the project
+host, and raises the Server Action body limit to 9 MB for the upload (originals up to 8 MB; what is stored is a compressed WebP, well under the bucket's 2 MB limit). Restart `pnpm dev` after changing
+`NEXT_PUBLIC_SUPABASE_URL`, since `next.config.ts` reads it at start.
+
+## YouTube stats (2026-11-10)
+
+With `YOUTUBE_API_KEY` set, YouTube order items show their channel's subscribers or their video's
+views, likes and comments, read when the item is saved, when anyone presses Refresh, and on a schedule
+(interval in **Settings → YouTube stats**, default every 6 hours). Without it, the forms and items say
+the integration isn't set up and everything else works.
+
+How the schedule runs:
+
+- **Long-running server** (`pnpm dev`, `pnpm start`, a container): `src/instrumentation.ts` checks every
+  15 minutes for items that are due. Nothing to configure.
+- **Vercel** (no long-lived process): set `CRON_SECRET` and add a cron job calling
+  `/api/cron/youtube-stats` hourly — see docs/DEPLOYMENT.md.
+- Either way, opening an order refreshes its due items in the background.
+
 ## Which environment needs what
 
 | Variable | Local | Vercel (app) | Queue worker |
@@ -113,6 +154,8 @@ monitoring variables exist. Business data stays in PostgreSQL.
 | `SUPABASE_SECRET_KEY` | ✓ | ✓ | ✓ |
 | `DATABASE_URL` | ✓ | ✓ | ✓ |
 | `DIRECT_URL` | ✓ | migrations only | — |
+| `YOUTUBE_API_KEY` (YouTube stats) | ✓ | ✓ | — |
+| `CRON_SECRET` (stats cron) | — | ✓ | — |
 | `REDIS_URL` (Phase 8, not yet read) | ✓ | ✓ | ✓ |
 | provider credentials (Phase 8) | optional | ✓ | ✓ |
 

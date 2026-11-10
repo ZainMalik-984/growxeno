@@ -23,6 +23,8 @@ const PUBLIC_ROUTES = [
   "/auth/callback",
   "/auth/reset-password",
   "/error",
+  // Scheduled jobs: no session; the handler checks CRON_SECRET itself.
+  "/api/cron",
 ];
 
 function isPublicRoute(pathname: string): boolean {

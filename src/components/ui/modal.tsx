@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type SyntheticEvent } from "react";
 
 /**
  * Thin wrapper around the native `<dialog>` element's show/hide lifecycle.
@@ -23,10 +23,16 @@ export function Modal({
   onClose,
   labelledBy,
   className,
+  onCancel,
   children,
 }: {
   open: boolean;
   onClose: () => void;
+  /**
+   * Escape key (the browser's "cancel"). Call `event.preventDefault()` to keep
+   * the dialog open, e.g. to ask about unsaved changes first. Optional.
+   */
+  onCancel?: (event: SyntheticEvent<HTMLDialogElement>) => void;
   labelledBy: string;
   className?: string;
   children: ReactNode;
@@ -44,6 +50,7 @@ export function Modal({
     <dialog
       ref={ref}
       onClose={onClose}
+      onCancel={onCancel}
       aria-labelledby={labelledBy}
       className={
         className ?? "m-auto w-full max-w-md rounded-[14px] border border-zinc-200/80 bg-white p-6 text-ink shadow-[0_24px_64px_-16px_rgba(16,24,40,0.35)] backdrop:bg-zinc-950/30 backdrop:backdrop-blur-[2px]"

@@ -143,11 +143,19 @@ export async function assignRoleToUser(
   return runGuarded(async (tx) => {
     const [user, role] = await Promise.all([
       tx.user.findUnique({ where: { id: userId }, select: { id: true, fullName: true } }),
-      tx.role.findUnique({ where: { id: roleId }, select: { id: true, name: true } }),
+      tx.role.findUnique({
+        where: { id: roleId },
+        select: { id: true, name: true, permissions: { select: { permission: { select: { key: true } } } } },
+      }),
     ]);
 
     if (!user) throw new ServiceRejection("That user no longer exists.");
     if (!role) throw new ServiceRejection("That role no longer exists.");
+    // No privilege escalation (2026-11-04): only someone who already holds
+    // every permission in a role may give it — same rule as updateEmployeeProfile.
+    if (role.permissions.some((p) => !actor.permissions.has(p.permission.key))) {
+      throw new ServiceRejection(`You can't give the ${role.name} role: it includes permissions you don't have yourself.`);
+    }
 
     const existing = await tx.userRole.findUnique({
       where: { userId_roleId: { userId, roleId } },
@@ -403,6 +411,177 @@ export async function setUserActive(
       previousValue: { isActive: user.isActive },
       newValue: { isActive },
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Employee profile edit (2026-11-04, owner request: "Edit Profile" on the
+// Employee page). One save covers profile fields, roles and activation, in one
+// transaction, under the same two safety rules as everything above.
+// ---------------------------------------------------------------------------
+
+export type EmployeeProfileInput = {
+  fullName: string;
+  displayName: string | null;
+  jobTitle: string | null;
+  phone: string | null;
+  whatsappNumber: string | null;
+  isActive: boolean;
+  roleIds: readonly string[];
+  /** Commission on orders they create, 0–100; null = none (2026-11-04). */
+  commissionPercent: number | null;
+};
+
+export type UpdatedEmployeeProfile = {
+  id: string;
+  fullName: string;
+  displayName: string | null;
+  jobTitle: string | null;
+  phone: string | null;
+  whatsappNumber: string | null;
+  isActive: boolean;
+  roleIds: string[];
+  commissionPercent: number | null;
+};
+
+/**
+ * Not editable here, on purpose: the email (it is also the Supabase login, so
+ * changing it needs its own verified flow) and the categories (they are
+ * derived from the work the employee has done, not stored on the user).
+ *
+ * Privilege escalation: besides SAFETY RULE 1 (no changing your own roles or
+ * status), a role may only be GIVEN by someone who already holds every
+ * permission in it — otherwise `users.edit` alone would let an Admin hand out
+ * Super Admin. Removing a role needs no such check; the lockout guard covers it.
+ */
+export async function updateEmployeeProfile(
+  actor: Actor,
+  userId: string,
+  input: EmployeeProfileInput,
+): Promise<ServiceResult<UpdatedEmployeeProfile>> {
+  const wantedRoleIds = [...new Set(input.roleIds)];
+
+  return runGuarded(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: {
+        fullName: true,
+        displayName: true,
+        jobTitle: true,
+        phone: true,
+        whatsappNumber: true,
+        isActive: true,
+        commissionPercent: true,
+        roles: { select: { roleId: true, role: { select: { name: true } } } },
+      },
+    });
+    if (!user) throw new ServiceRejection("That employee no longer exists.");
+    const currentCommission = user.commissionPercent === null ? null : Number(user.commissionPercent);
+    const commissionChanged = currentCommission !== input.commissionPercent;
+
+    const currentRoleIds = user.roles.map((r) => r.roleId);
+    const added = wantedRoleIds.filter((id) => !currentRoleIds.includes(id));
+    const removed = currentRoleIds.filter((id) => !wantedRoleIds.includes(id));
+    const statusChanged = user.isActive !== input.isActive;
+
+    if (isSelf(actor, userId) && (added.length > 0 || removed.length > 0)) {
+      throw new ServiceRejection("You cannot change your own roles. Ask another administrator.");
+    }
+    if (isSelf(actor, userId) && statusChanged) {
+      throw new ServiceRejection("You cannot deactivate your own account.");
+    }
+    // Your own pay is set by someone else, like your own access.
+    if (isSelf(actor, userId) && commissionChanged) {
+      throw new ServiceRejection("You cannot change your own commission. Ask another administrator.");
+    }
+
+    // Every added role must exist, and must not grant more than the actor has.
+    const addedRoles = added.length
+      ? await tx.role.findMany({
+          where: { id: { in: added } },
+          select: { id: true, name: true, permissions: { select: { permission: { select: { key: true } } } } },
+        })
+      : [];
+    if (addedRoles.length !== added.length) throw new ServiceRejection("One of the chosen roles no longer exists.");
+    for (const role of addedRoles) {
+      const missing = role.permissions.map((p) => p.permission.key).filter((key) => !actor.permissions.has(key));
+      if (missing.length > 0) {
+        throw new ServiceRejection(
+          `You can't give the ${role.name} role: it includes permissions you don't have yourself.`,
+        );
+      }
+    }
+
+    const data = {
+      fullName: input.fullName,
+      displayName: input.displayName,
+      jobTitle: input.jobTitle,
+      phone: input.phone,
+      whatsappNumber: input.whatsappNumber,
+      commissionPercent: input.commissionPercent,
+      ...(statusChanged ? { isActive: input.isActive, deactivatedAt: input.isActive ? null : new Date() } : {}),
+    };
+    await tx.user.update({ where: { id: userId }, data });
+
+    if (removed.length > 0) {
+      await tx.userRole.deleteMany({ where: { userId, roleId: { in: removed } } });
+    }
+    if (added.length > 0) {
+      await tx.userRole.createMany({
+        data: added.map((roleId) => ({ userId, roleId, assignedById: actor.user.id })),
+      });
+    }
+
+    const fieldChanges = (["fullName", "displayName", "jobTitle", "phone", "whatsappNumber"] as const).filter(
+      (key) => (user[key] ?? null) !== (input[key] ?? null),
+    );
+    const removedNames = user.roles.filter((r) => removed.includes(r.roleId)).map((r) => r.role.name);
+    const addedNames = addedRoles.map((r) => r.name);
+    const parts = [
+      fieldChanges.length ? `updated ${fieldChanges.join(", ")}` : null,
+      addedNames.length ? `added role ${addedNames.join(", ")}` : null,
+      removedNames.length ? `removed role ${removedNames.join(", ")}` : null,
+      statusChanged ? (input.isActive ? "reactivated" : "deactivated") : null,
+      commissionChanged
+        ? input.commissionPercent === null
+          ? "removed commission"
+          : `set commission to ${input.commissionPercent}%`
+        : null,
+    ].filter(Boolean);
+
+    if (parts.length > 0) {
+      await recordAudit(tx, {
+        actorUserId: actor.user.id,
+        actorEmail: actor.user.email,
+        action: "user.profile.updated",
+        entityType: "User",
+        entityId: userId,
+        summary: `${input.fullName}: ${parts.join("; ")}`,
+        previousValue: {
+          fullName: user.fullName,
+          displayName: user.displayName,
+          jobTitle: user.jobTitle,
+          phone: user.phone,
+          whatsappNumber: user.whatsappNumber,
+          isActive: user.isActive,
+          roleIds: currentRoleIds,
+          commissionPercent: currentCommission,
+        },
+        newValue: { ...input, roleIds: wantedRoleIds },
+      });
+    }
+
+    return {
+      id: userId,
+      fullName: input.fullName,
+      displayName: input.displayName,
+      jobTitle: input.jobTitle,
+      phone: input.phone,
+      whatsappNumber: input.whatsappNumber,
+      isActive: input.isActive,
+      roleIds: wantedRoleIds,
+      commissionPercent: input.commissionPercent,
+    };
   });
 }
 

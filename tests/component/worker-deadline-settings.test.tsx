@@ -20,7 +20,7 @@ describe("WorkerDeadlineSettingsForm", () => {
   beforeEach(() => save.mockReset().mockResolvedValue({ ok: true, message: "Settings saved." }));
 
   it("shows the saved rules and a live preview", () => {
-    render(<WorkerDeadlineSettingsForm initial={DEFAULT_WORKER_DEADLINE_SETTINGS} canEdit lastSaved={null} />);
+    render(<WorkerDeadlineSettingsForm initial={DEFAULT_WORKER_DEADLINE_SETTINGS} canEdit />);
     expect(screen.getByLabelText("Default days early")).toHaveValue("1");
     expect(screen.getAllByLabelText("Minimum days until the order deadline").map((el) => (el as HTMLInputElement).value)).toEqual(["50", "10"]);
     // 60-day order -> 5 days early -> worker due in 55 days.
@@ -29,12 +29,12 @@ describe("WorkerDeadlineSettingsForm", () => {
     expect(previewRow("15 days")).toHaveTextContent("11 days−4 days");
     // 2-day order -> default 1 day.
     expect(previewRow("2 days")).toHaveTextContent("1 day−1 day");
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   });
 
   it("updates the preview as rules change, and saves them", async () => {
     const user = userEvent.setup();
-    render(<WorkerDeadlineSettingsForm initial={DEFAULT_WORKER_DEADLINE_SETTINGS} canEdit lastSaved={null} />);
+    render(<WorkerDeadlineSettingsForm initial={DEFAULT_WORKER_DEADLINE_SETTINGS} canEdit />);
 
     const defaultDays = screen.getByLabelText("Default days early");
     await user.clear(defaultDays);
@@ -60,7 +60,7 @@ describe("WorkerDeadlineSettingsForm", () => {
   });
 
   it("is read-only without settings.edit", () => {
-    render(<WorkerDeadlineSettingsForm initial={DEFAULT_WORKER_DEADLINE_SETTINGS} canEdit={false} lastSaved={null} />);
+    render(<WorkerDeadlineSettingsForm initial={DEFAULT_WORKER_DEADLINE_SETTINGS} canEdit={false} />);
     expect(screen.getByLabelText("Default days early")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add rule" })).toBeNull();

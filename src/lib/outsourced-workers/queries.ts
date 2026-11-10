@@ -1,6 +1,8 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
+import { serviceLabel } from "@/lib/services/label";
+import type { WorkerNotifyChannel } from "./notify-via";
 
 /**
  * Read queries for outsourced workers — third parties tracked as a cost-
@@ -79,6 +81,8 @@ export type OutsourcedWorkerDetail = {
   phone: string | null;
   whatsappNumber: string | null;
   notes: string | null;
+  /** Where new-task messages go (2026-11-11). */
+  notifyVia: WorkerNotifyChannel;
   isActive: boolean;
   assignedItemCount: number;
   rates: ServiceRateRow[];
@@ -98,13 +102,14 @@ export async function getOutsourcedWorkerDetail(id: string): Promise<OutsourcedW
       phone: true,
       whatsappNumber: true,
       notes: true,
+      notifyVia: true,
       isActive: true,
       userId: true,
       createdAt: true,
       updatedAt: true,
       _count: { select: { orderItems: true } },
       rates: {
-        select: { serviceId: true, rate: true, currency: true, service: { select: { name: true } } },
+        select: { serviceId: true, rate: true, currency: true, service: { select: { name: true, category: { select: { name: true } } } } },
         orderBy: { service: { name: "asc" } },
       },
     },
@@ -119,9 +124,10 @@ export async function getOutsourcedWorkerDetail(id: string): Promise<OutsourcedW
     phone: worker.phone,
     whatsappNumber: worker.whatsappNumber,
     notes: worker.notes,
+    notifyVia: worker.notifyVia,
     isActive: worker.isActive,
     assignedItemCount: worker._count.orderItems,
-    rates: worker.rates.map((r) => ({ serviceId: r.serviceId, serviceName: r.service.name, rate: r.rate.toString(), currency: r.currency })),
+    rates: worker.rates.map((r) => ({ serviceId: r.serviceId, serviceName: serviceLabel(r.service.name, r.service.category.name), rate: r.rate.toString(), currency: r.currency })),
     hasLogin: worker.userId != null,
     createdAt: worker.createdAt,
     updatedAt: worker.updatedAt,

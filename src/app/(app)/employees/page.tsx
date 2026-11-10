@@ -38,7 +38,7 @@ export default async function EmployeesPage() {
                   <TH>Name</TH>
                   <TH>Email</TH>
                   <TH>Roles</TH>
-                  <TH className="text-right">Open items</TH>
+                  <TH className="text-right">Open orders</TH>
                 </TR>
               </THead>
               <TBody>
@@ -53,7 +53,7 @@ export default async function EmployeesPage() {
                     <TD className="text-ink-muted">
                       {employee.roleNames.length > 0 ? employee.roleNames.join(", ") : <span className="text-ink-faint">None</span>}
                     </TD>
-                    <TD className="text-right text-ink-muted">{employee.openItemCount}</TD>
+                    <TD className="text-right text-ink-muted">{employee.openOrderCount}</TD>
                   </TR>
                 ))}
               </TBody>

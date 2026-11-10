@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
 
+import { getSiteContact } from "@/lib/settings/queries";
 import { MarketingHome } from "./marketing-home";
+
+/**
+ * Prerendered and cached; regenerated at most hourly, and straight away when
+ * a Super Admin saves the contact details (saveSiteContactAction calls
+ * revalidatePath("/")). Still no cookies or per-visitor reads here.
+ */
+export const revalidate = 3600;
 
 /**
  * The public, customer-facing home page. Content, metadata and copy ported
@@ -47,7 +55,8 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const contact = await getSiteContact();
   return (
     <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -56,7 +65,7 @@ export default function HomePage() {
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400;500&display=swap"
       />
-      <MarketingHome />
+      <MarketingHome contact={contact} />
     </>
   );
 }

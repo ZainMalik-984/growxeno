@@ -21,7 +21,7 @@ export default async function CategoriesPage() {
       <PageHeader
         title="Categories"
         description="Group related services (specification Section 50), e.g. Design containing UX Design, UI Design, Wireframes."
-        actions={canCreate ? <CategoryCreateControl /> : undefined}
+        actions={canCreate ? <CategoryCreateControl canSetImage={canManage} /> : undefined}
       />
 
       <Section>

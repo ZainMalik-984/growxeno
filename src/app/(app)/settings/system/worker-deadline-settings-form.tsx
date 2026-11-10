@@ -6,6 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { SaveBar, useUnsavedWarning } from "./settings-ui";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { saveWorkerDeadlineSettingsAction } from "@/lib/settings/actions";
@@ -38,11 +39,9 @@ function formatSpan(ms: number): string {
 export function WorkerDeadlineSettingsForm({
   initial,
   canEdit,
-  lastSaved,
 }: {
   initial: WorkerDeadlineSettings;
   canEdit: boolean;
-  lastSaved: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -66,6 +65,8 @@ export function WorkerDeadlineSettingsForm({
     defaultDays !== String(initial.defaultDays) ||
     JSON.stringify(tiers.map((t) => [t.minLeadDays, t.bufferDays])) !==
       JSON.stringify(initial.tiers.map((t) => [String(t.minLeadDays), String(t.bufferDays)]));
+
+  useUnsavedWarning(dirty);
 
   const updateTier = (key: number, patch: Partial<DraftTier>) =>
     setTiers((current) => current.map((t) => (t.key === key ? { ...t, ...patch } : t)));
@@ -104,12 +105,7 @@ export function WorkerDeadlineSettingsForm({
   return (
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
       <Card className="p-5 sm:p-6">
-        <CardHeader
-          icon={Timer}
-          tone="indigo"
-          title="Worker deadlines"
-          description="External workers see an earlier deadline than the order's, so there's time to review before delivery."
-        />
+        <CardHeader icon={Timer} tone="indigo" title="Gap rules" description="Pick the default, then add rules for longer orders." />
 
         <fieldset disabled={!canEdit || pending} className="space-y-6">
           {/* Default gap */}
@@ -206,28 +202,9 @@ export function WorkerDeadlineSettingsForm({
             deadline is never moved earlier than halfway through the order.
           </p>
 
-          {error ? (
-            <p role="alert" className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
-              {error}
-            </p>
-          ) : null}
         </fieldset>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4">
-          <p className="text-xs text-zinc-500">{canEdit ? lastSaved ?? "Using the built-in defaults." : "You can view these settings but not change them."}</p>
-          {canEdit ? (
-            <div className="flex gap-2">
-              {dirty ? (
-                <Button variant="secondary" className="rounded-[8px]" onClick={reset} disabled={pending}>
-                  Discard
-                </Button>
-              ) : null}
-              <Button variant="accent" className="rounded-[8px]" onClick={save} disabled={pending || !dirty}>
-                {pending ? "Saving…" : "Save changes"}
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        <SaveBar dirty={dirty} pending={pending} error={error} canEdit={canEdit} onSave={save} onDiscard={reset} saveDisabled={!valid} />
       </Card>
 
       {/* Live preview */}

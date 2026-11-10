@@ -61,6 +61,20 @@ absence today requires a schema change.
 
 In-app (real), email/Resend (interface only — §7), WhatsApp/Meta (interface only — §7).
 
+**Exception, 2026-11-11 — the new-task message to an External Worker.** When a task is assigned, the
+worker is told on the channel(s) set on their profile (`OutsourcedWorker.notifyVia`: email, WhatsApp,
+both, or none) — `src/lib/orders/assignment-notify.ts`:
+
+- **Email** is sent straight away, without the queue, through `ResendEmailProvider`
+  (`providers/resend.ts`, plain `fetch`), which `getEmailProvider()` returns once `RESEND_API_KEY` and
+  `EMAIL_FROM` are set. Each attempt is a `message_logs` row (SENT / FAILED with Resend's reason). It
+  runs after the assignment is saved, so a mail failure never undoes it.
+- **WhatsApp** is not sent by the app (owner's choice: no WhatsApp Business account). The admin gets a
+  "Send on WhatsApp" button: a `wa.me` link that opens WhatsApp with the message written; they press
+  Send. Nothing is logged for it.
+- The message (`assignment-message.ts`): link, Need, Current, Stop, and an accept link to
+  `/orders?open=<item>`, which opens the task's short popup with Accept (sign-in first if needed).
+
 Providers sit behind interfaces so the order domain never imports a provider SDK type
 (`src/lib/notifications/providers/types.ts`):
 

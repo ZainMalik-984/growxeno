@@ -26,7 +26,7 @@ export default async function ServiceDetailPage({ params }: PageProps<"/services
 
   const canEdit = actor.permissions.has("services.edit");
   const canDelete = actor.permissions.has("services.delete");
-  const categories = canEdit ? await listAssignableCategories() : [];
+  const categories = canEdit ? await listAssignableCategories({ includeInactive: true }) : [];
 
   return (
     <>

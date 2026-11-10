@@ -1,0 +1,45 @@
+// ---------------------------------------------------------------------------
+// Website inquiries (2026-11-04, owner request)
+//
+// The public home page's contact form used to open the visitor's email app
+// and store nothing. Each submission is now an Inquiry, listed for admins and
+// employees under Inquiries (permissions `inquiries.view` / `inquiries.manage`).
+//
+// Spam: the form carries a hidden honeypot field, and submissions are limited
+// per visitor using `ipHash` — a keyed SHA-256 of the IP, never the IP itself.
+// ---------------------------------------------------------------------------
+
+enum InquiryStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+model Inquiry {
+  id String @id @default(uuid()) @db.Uuid
+
+  name    String  @db.VarChar(160)
+  email   String  @db.VarChar(320)
+  /// The service button the visitor picked, or null for "Not sure yet".
+  service String? @db.VarChar(120)
+  message String  @db.Text
+
+  status InquiryStatus @default(NEW)
+
+  /// Who last changed the status, and when.
+  handledById String?   @map("handled_by_id") @db.Uuid
+  handledBy   User?     @relation("InquiryHandledBy", fields: [handledById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  handledAt   DateTime? @map("handled_at") @db.Timestamptz(6)
+
+  /// Keyed hash of the sender's IP, only for rate limiting. Not shown anywhere.
+  ipHash    String? @map("ip_hash") @db.VarChar(64)
+  userAgent String? @map("user_agent") @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([ipHash, createdAt])
+  @@map("inquiries")
+}

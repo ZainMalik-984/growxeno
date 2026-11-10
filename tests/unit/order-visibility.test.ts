@@ -155,6 +155,7 @@ function listItem(id: string, workerId: string | null): OrderListItemRow {
     status: "PROCESSING",
     deadline: null,
     channelLink: null,
+    channelTitle: null,
     workerCost: workerId === WORKER ? "67.89" : "9999.00",
     workerCostCurrency: "PKR",
   };

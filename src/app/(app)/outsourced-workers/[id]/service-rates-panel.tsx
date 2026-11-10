@@ -166,7 +166,7 @@ export function ServiceRatesPanel({
                 inputMode="decimal"
                 value={rateValue}
                 onChange={(event) => setRateValue(event.target.value)}
-                placeholder="Rate"
+                placeholder="e.g. 0.4"
                 className="w-28 tabular-nums"
               />
               {currencySelect("Currency")}

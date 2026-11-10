@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CategoryThumb } from "@/components/catalog/category-thumb";
 import Link from "next/link";
 import { z } from "zod";
 
@@ -43,7 +44,7 @@ export default async function ServicesPage({ searchParams }: PageProps<"/service
       categoryId: params.category,
       includeInactive: params.inactive === "1",
     }),
-    listAssignableCategories(),
+    listAssignableCategories({ includeInactive: true }),
   ]);
 
   const activeCategory = categories.find((category) => category.id === params.category);
@@ -139,7 +140,12 @@ export default async function ServicesPage({ searchParams }: PageProps<"/service
                           {service.name}
                         </Link>
                       </TD>
-                      <TD className="text-ink-muted">{service.categoryName}</TD>
+                      <TD className="text-ink-muted">
+                        <span className="flex items-center gap-2">
+                          <CategoryThumb name={service.categoryName} imageUrl={service.categoryImageUrl} size={24} className="rounded-[6px]" />
+                          {service.categoryName}
+                        </span>
+                      </TD>
                       <TD className="text-ink-muted">
                         {service.metricType ? (
                           SERVICE_METRIC_TYPE_LABELS[service.metricType]

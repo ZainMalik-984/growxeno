@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import type { OutsourcedWorkerDetail } from "@/lib/outsourced-workers/queries";
+import { WORKER_NOTIFY_LABELS } from "@/lib/outsourced-workers/notify-via";
 import { OutsourcedWorkerProfileForm } from "./outsourced-worker-profile-form";
 
 /**
@@ -56,6 +57,7 @@ export function WorkerContactCard({ worker, canEdit }: { worker: OutsourcedWorke
             )}
           </Row>
           <Row label="WhatsApp">{worker.whatsappNumber ?? <Muted>Not set</Muted>}</Row>
+          <Row label="New tasks sent by">{WORKER_NOTIFY_LABELS[worker.notifyVia]}</Row>
           <div className="py-3 text-[13px]">
             <dt className="text-zinc-500">Notes</dt>
             <dd className="mt-1 whitespace-pre-wrap break-words text-zinc-800">

@@ -21,6 +21,9 @@ import {
   ORDER_STATUS_LABELS,
 } from "./state-machine";
 import { normalizeUrl, safeExternalHref } from "./url-normalize";
+import { linkFieldFor } from "@/lib/services/link-field";
+import { serviceLabel } from "@/lib/services/label";
+import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { syncWorkerDeadlines } from "./worker-deadline-sync";
 import { getWorkerDeadlineSettings } from "@/lib/settings/queries";
 import { computeWorkerDeadline } from "@/lib/settings/worker-deadline";
@@ -333,16 +336,17 @@ export type OrderItemInput = {
 
 /** Validates and normalizes the metric fields against the chosen service's `metricType`, if any. */
 function resolveMetricFields(
-  service: { name: string; metricType: string | null },
+  service: { name: string; metricType: string | null; category?: { name: string } | null },
   input: OrderItemInput,
 ): { channelLink: string | null; targetCount: number | null; currentCount: number | null } {
   if (!service.metricType) {
     return { channelLink: null, targetCount: null, currentCount: null };
   }
   const channelLink = input.channelLink?.trim() || null;
-  if (!channelLink) throw new ServiceRejection(`"${service.name}" needs a channel link.`);
+  const noun = linkFieldFor(service.metricType as ServiceMetricType, service.category?.name).noun;
+  if (!channelLink) throw new ServiceRejection(`"${service.name}" needs a ${noun} link.`);
   if (!safeExternalHref(channelLink)) {
-    throw new ServiceRejection("Enter a valid http or https channel link, including https://.");
+    throw new ServiceRejection(`Enter a valid ${noun} link, including https://.`);
   }
   if (input.targetCount === null || input.targetCount === undefined) {
     throw new ServiceRejection(`"${service.name}" needs how many are required.`);
@@ -367,7 +371,7 @@ export async function addOrderItem(
       tx.order.findUnique({ where: { id: orderId }, select: { orderNumber: true, deadline: true, createdAt: true } }),
       tx.service.findUnique({
         where: { id: input.serviceId },
-        select: { id: true, name: true, categoryId: true, metricType: true },
+        select: { id: true, name: true, categoryId: true, metricType: true, category: { select: { name: true } } },
       }),
       getWorkerDeadlineSettings(tx),
     ]);
@@ -425,11 +429,11 @@ export async function updateOrderItem(
   actor: Actor,
   itemId: string,
   input: OrderItemInput,
-): Promise<ServiceResult> {
+): Promise<ServiceResult<{ linkChanged: boolean }>> {
   return runTransaction(async (tx) => {
     const existing = await tx.orderItem.findUnique({
       where: { id: itemId },
-      select: { orderId: true, order: { select: { orderNumber: true } }, service: { select: { name: true } } },
+      select: { orderId: true, channelLink: true, order: { select: { orderNumber: true } }, service: { select: { name: true } } },
     });
     if (!existing) throw new ServiceRejection("That item no longer exists.");
 
@@ -440,6 +444,7 @@ export async function updateOrderItem(
     if (!service) throw new ServiceRejection("That service no longer exists.");
 
     const metric = resolveMetricFields(service, input);
+    const linkChanged = (existing.channelLink ?? null) !== metric.channelLink;
 
     await tx.orderItem.update({
       where: { id: itemId },
@@ -452,6 +457,11 @@ export async function updateOrderItem(
         channelLink: metric.channelLink,
         targetCount: metric.targetCount,
         currentCount: metric.currentCount,
+        // A new link is a different channel/video: its stats start over
+        // (the old readings stay in the history under their own source id).
+        ...(linkChanged
+          ? { statsSourceId: null, statsSourceKind: null, statsTitle: null, statsFetchedAt: null, statsCheckedAt: null, statsError: null }
+          : {}),
       },
     });
 
@@ -470,6 +480,7 @@ export async function updateOrderItem(
       entityId: existing.orderId,
       summary: `Updated item "${service.name}" on order #${existing.order.orderNumber}`,
     });
+    return { linkChanged };
   });
 }
 
@@ -572,7 +583,7 @@ export async function assignOrderItemWorker(
   actor: Actor,
   itemId: string,
   assignment: { outsourcedWorkerId: string | null; cost?: string | null; costCurrency?: string },
-): Promise<ServiceResult> {
+): Promise<ServiceResult<{ notify: boolean }>> {
   const outsourcedWorkerId = assignment.outsourcedWorkerId || null;
 
   return runTransaction(async (tx) => {
@@ -586,7 +597,7 @@ export async function assignOrderItemWorker(
         status: true,
         outsourcedWorkerId: true,
         order: { select: { orderNumber: true, deadline: true } },
-        service: { select: { name: true, metricType: true } },
+        service: { select: { name: true, metricType: true, category: { select: { name: true } } } },
       },
     });
     if (!item) throw new ServiceRejection("That item no longer exists.");
@@ -678,16 +689,20 @@ export async function assignOrderItemWorker(
         [
           {
             userId: assigneeUserId,
-            title: `New task: ${item.service.name}`,
-            message: `You've been assigned "${item.service.name}" on order #${item.order.orderNumber}. Accept it to get started.`,
+            title: `New task: ${serviceLabel(item.service.name, item.service.category.name)}`,
+            message: `You've been assigned "${serviceLabel(item.service.name, item.service.category.name)}" on order #${item.order.orderNumber}. Accept it to get started.`,
             entityType: "Order",
             entityId: item.orderId,
-            actionUrl: `/orders/${item.orderId}`,
+            // Opens the task's popup with Accept (2026-11-11), like the emailed link.
+            actionUrl: `/orders?open=${itemId}`,
           },
         ],
         { orderId: item.orderId, orderItemId: itemId },
       );
     }
+
+    // The caller sends the email / prepares WhatsApp after this commits (assignment-notify.ts).
+    return { notify: reassigned && outsourcedWorkerId !== null };
   });
 }
 

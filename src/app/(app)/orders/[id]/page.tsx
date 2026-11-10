@@ -3,6 +3,7 @@ import { formatPay } from "@/lib/finance/format-pay";
 import { ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { requirePermission } from "@/lib/auth/authorize";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -18,6 +19,7 @@ import { getOrderDetail, listAssignableWorkers } from "@/lib/orders/queries";
 import { CALCULATED_ORDER_STATUSES, CLOSED_ORDER_STATUSES, ORDER_STATUS_LABELS } from "@/lib/orders/state-machine";
 import { listAssignableOutsourcedWorkers } from "@/lib/outsourced-workers/queries";
 import { listServicesForOrderPicker } from "@/lib/services/queries";
+import { refreshDueItemStats } from "@/lib/youtube/stats-service";
 import { ExpenseForm } from "../../finance/expenses/expense-form";
 import { canChangeWholeOrderStatus, orderVisibility, redactOrderDetail } from "@/lib/orders/visibility";
 import { AcceptItemsButton } from "../accept-items-button";
@@ -75,6 +77,11 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
     );
     if (!isAssigned) redirect("/forbidden?permission=orders.view.all");
   }
+
+  // Opening an order also brings its YouTube stats up to date when they are
+  // older than the interval in Settings (2026-11-10). Runs after the page is
+  // sent, so it never slows it down; the next visit shows the new numbers.
+  after(() => refreshDueItemStats({ orderId: id, limit: 20 }).catch(() => undefined));
 
   // Everything below renders `order`, never `rawOrder`: values this actor may not see
   // (other workers' items, prices, costs, customer) are removed from the data

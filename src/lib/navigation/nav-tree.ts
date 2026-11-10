@@ -32,6 +32,7 @@ export type NavIconName =
   | "activity"
   | "orders"
   | "customers"
+  | "inquiries"
   | "fiverr"
   | "workers"
   | "stats"
@@ -93,6 +94,8 @@ export const NAVIGATION: readonly NavSection[] = [
     label: "CRM",
     items: [
       { label: "Customers", href: "/customers", icon: "customers", permission: "customers.view", implemented: true },
+      // Website contact-form submissions (2026-11-04).
+      { label: "Inquiries", href: "/inquiries", icon: "inquiries", permission: "inquiries.view", implemented: true },
     ],
   },
   {

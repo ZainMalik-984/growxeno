@@ -12,11 +12,11 @@ import {
   setServiceRate,
   updateOutsourcedWorker,
 } from "./service";
+import { WORKER_NOTIFY_CHANNELS } from "./notify-via";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
 const uuid = z.uuid("Invalid identifier.");
-const moneyString = z.string().trim().regex(/^\d+(\.\d{1,2})?$/, "Enter a valid amount.");
 
 const workerInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(160),
@@ -24,6 +24,7 @@ const workerInputSchema = z.object({
   phone: z.string().trim().max(32).optional(),
   whatsappNumber: z.string().trim().max(32).optional(),
   notes: z.string().trim().max(4000).optional(),
+  notifyVia: z.enum(WORKER_NOTIFY_CHANNELS).optional(),
 });
 
 export type CreateOutsourcedWorkerActionResult =
@@ -86,7 +87,13 @@ export async function setOutsourcedWorkerActiveAction(input: unknown): Promise<A
     : { ok: false, error: result.error };
 }
 
-const setRateSchema = z.object({ workerId: uuid, serviceId: uuid, rate: moneyString, currency: z.string().trim().length(3).optional() });
+// The rate itself is checked (and ".4" accepted) by the service — see rate-input.ts.
+const setRateSchema = z.object({
+  workerId: uuid,
+  serviceId: uuid,
+  rate: z.string().trim().min(1, "Enter a rate.").max(20),
+  currency: z.string().trim().length(3).optional(),
+});
 
 export async function setServiceRateAction(input: unknown): Promise<ActionResult> {
   const parsed = setRateSchema.safeParse(input);

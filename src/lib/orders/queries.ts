@@ -2,6 +2,8 @@ import "server-only";
 
 import type { OrderItemStatus, OrderSource, OrderStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { platformOf } from "@/lib/services/link-field";
+import { serviceLabel } from "@/lib/services/label";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { assignedItemWhere, type AssignmentIdentity } from "./assignment";
 import { thisWeekRangeUtc, todayRangeUtc } from "./date-ranges";
@@ -68,6 +70,8 @@ export type OrderListItemRow = {
   deadline: Date | null;
   /** The client's channel (metric services only). */
   channelLink: string | null;
+  /** Channel or video name read from YouTube, when known (2026-11-11). */
+  channelTitle: string | null;
   /** What the assigned worker is paid. Redacted by redactOrderListItems. */
   workerCost: string | null;
   workerCostCurrency: string;
@@ -283,9 +287,10 @@ export async function listOrders(
           status: true,
           deadline: true,
           channelLink: true,
+          statsTitle: true,
           workerCost: true,
           workerCostCurrency: true,
-          service: { select: { name: true, metricType: true } },
+          service: { select: { name: true, metricType: true, category: { select: { name: true } } } },
           worker: { select: { id: true, fullName: true } },
           outsourcedWorker: { select: { id: true, name: true } },
         },
@@ -298,7 +303,7 @@ export async function listOrders(
     const row: OrderListItemRow = {
       id: item.id,
       orderId: item.orderId,
-      serviceName: item.service.name,
+      serviceName: serviceLabel(item.service.name, item.service.category.name),
       metricType: item.service.metricType,
       workerId: item.worker?.id ?? null,
       worker: item.worker,
@@ -309,6 +314,7 @@ export async function listOrders(
       status: item.status,
       deadline: item.deadline,
       channelLink: item.channelLink,
+      channelTitle: item.statsTitle,
       workerCost: item.workerCost ? item.workerCost.toString() : null,
       workerCostCurrency: item.workerCostCurrency,
     };
@@ -369,8 +375,33 @@ export type OrderItemRow = {
   /** When the item reached Done or Cancelled. */
   finishedAt: Date | null;
   links: OrderItemLinkRow[];
+  /** Public YouTube stats for the link, null for other platforms (2026-11-10). */
+  stats: ItemStats | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type ItemStatsReading = {
+  id: string;
+  takenAt: Date;
+  trigger: "INITIAL" | "MANUAL" | "SCHEDULED";
+  subscribers: number | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  /** Who pressed Refresh; null for automatic readings. */
+  by: string | null;
+};
+
+export type ItemStats = {
+  kind: "CHANNEL" | "VIDEO" | null;
+  /** UC… channel id or video id, once the link has been read. */
+  sourceId: string | null;
+  title: string | null;
+  fetchedAt: Date | null;
+  error: string | null;
+  /** Readings for the current link, oldest first; the first is the baseline. */
+  readings: ItemStatsReading[];
 };
 
 export type OrderNoteRow = {
@@ -415,6 +446,11 @@ export type OrderDetail = {
 
 const ACTIVITY_FEED_LIMIT = 30;
 
+/** Stat counts are BigInt in the database; anything a page shows fits a JS number. */
+function bigToNumber(value: bigint | null): number | null {
+  return value === null ? null : Number(value);
+}
+
 export async function getOrderDetail(orderId: string): Promise<OrderDetail | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -458,6 +494,25 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
           worker: { select: { id: true, fullName: true } },
           outsourcedWorker: { select: { id: true, name: true } },
           links: { select: { id: true, url: true, domain: true, label: true }, orderBy: { createdAt: "asc" } },
+          statsSourceId: true,
+          statsSourceKind: true,
+          statsTitle: true,
+          statsFetchedAt: true,
+          statsError: true,
+          statSnapshots: {
+            select: {
+              id: true,
+              sourceId: true,
+              takenAt: true,
+              trigger: true,
+              subscribers: true,
+              views: true,
+              likes: true,
+              comments: true,
+              triggeredByLabel: true,
+            },
+            orderBy: { takenAt: "asc" },
+          },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -512,6 +567,28 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
       assignedAt: item.assignedAt,
       finishedAt: item.finishedAt,
       links: item.links,
+      stats:
+        platformOf(item.category.name) === "youtube" && item.channelLink
+          ? {
+              kind: item.statsSourceKind === "CHANNEL" || item.statsSourceKind === "VIDEO" ? item.statsSourceKind : null,
+              sourceId: item.statsSourceId,
+              title: item.statsTitle,
+              fetchedAt: item.statsFetchedAt,
+              error: item.statsError,
+              readings: item.statSnapshots
+                .filter((r) => r.sourceId === item.statsSourceId)
+                .map((r) => ({
+                  id: r.id,
+                  takenAt: r.takenAt,
+                  trigger: r.trigger,
+                  subscribers: bigToNumber(r.subscribers),
+                  views: bigToNumber(r.views),
+                  likes: bigToNumber(r.likes),
+                  comments: bigToNumber(r.comments),
+                  by: r.triggeredByLabel,
+                })),
+            }
+          : null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     })),
@@ -601,7 +678,7 @@ export async function listBoardItems(where: Prisma.OrderItemWhereInput): Promise
       workerCostCurrency: true,
       deadline: true,
       order: { select: { orderNumber: true } },
-      service: { select: { name: true, metricType: true } },
+      service: { select: { name: true, metricType: true, category: { select: { name: true } } } },
       worker: { select: { id: true, fullName: true } },
       outsourcedWorker: { select: { id: true, name: true } },
     },
@@ -613,7 +690,7 @@ export async function listBoardItems(where: Prisma.OrderItemWhereInput): Promise
     id: item.id,
     orderId: item.orderId,
     orderNumber: item.order.orderNumber,
-    serviceName: item.service.name,
+    serviceName: serviceLabel(item.service.name, item.service.category.name),
     metricType: item.service.metricType,
     currentCount: item.currentCount,
     targetCount: item.targetCount,

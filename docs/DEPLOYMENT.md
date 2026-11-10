@@ -76,6 +76,24 @@ Host on Render, Fly.io, Railway or any container platform, as a *worker* service
 Scheduled work (deadline reminders) uses BullMQ repeatable jobs owned by the worker, not a cron that
 hits an HTTP endpoint.
 
+## 4b. YouTube stats schedule (2026-11-10)
+
+The YouTube stats refresh (docs/ENVIRONMENT.md) runs inside the server process on a long-running host.
+Vercel functions don't stay alive, so there:
+
+1. Set `YOUTUBE_API_KEY` and `CRON_SECRET` for Production.
+2. Add a `vercel.json` at the repository root:
+
+   ```json
+   { "crons": [{ "path": "/api/cron/youtube-stats", "schedule": "0 * * * *" }] }
+   ```
+
+   Vercel sends `Authorization: Bearer $CRON_SECRET` automatically. Hourly is enough — the interval
+   in Settings decides which items are due. **Hobby plans allow one cron run a day**; on Hobby use
+   `"0 6 * * *"` (or any external scheduler that sends the same header), or upgrade for hourly runs.
+
+Any other scheduler works the same way: `GET /api/cron/youtube-stats` with that header.
+
 ## 5. Security configuration (Phase 10)
 
 Do these before the first real user. None is code; see `docs/SECURITY.md` §5.

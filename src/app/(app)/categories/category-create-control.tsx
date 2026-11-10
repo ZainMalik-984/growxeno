@@ -7,14 +7,17 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { applyImageChoice, CategoryImagePicker, type ImageChoice } from "@/components/catalog/category-image";
 import { createCategoryAction } from "@/lib/categories/actions";
 
-export function CategoryCreateControl() {
+/** `canSetImage`: uploading an image needs categories.edit (2026-11-05). */
+export function CategoryCreateControl({ canSetImage = false }: { canSetImage?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [image, setImage] = useState<ImageChoice>({ kind: "keep" });
   const [error, setError] = useState<string | undefined>();
 
   const close = () => {
@@ -25,6 +28,7 @@ export function CategoryCreateControl() {
   const openDialog = () => {
     setName("");
     setDescription("");
+    setImage({ kind: "keep" });
     setError(undefined);
     setOpen(true);
   };
@@ -32,13 +36,16 @@ export function CategoryCreateControl() {
   const submit = () => {
     startTransition(async () => {
       const result = await createCategoryAction({ name, description: description || undefined });
-      if (result.ok) {
-        toast.success(result.message);
-        setOpen(false);
-        router.refresh();
-      } else {
+      if (!result.ok) {
         setError(result.error);
+        return;
       }
+      // The category exists now; attach its image if one was chosen.
+      const imageResult = await applyImageChoice(result.categoryId, image);
+      if (imageResult.ok) toast.success(result.message);
+      else toast.error(`Category created, but the image wasn't saved: ${imageResult.error}`);
+      setOpen(false);
+      router.refresh();
     });
   };
 
@@ -72,6 +79,7 @@ export function CategoryCreateControl() {
               maxLength={2000}
             />
           </Field>
+          {canSetImage ? <CategoryImagePicker currentUrl={null} value={image} onChange={setImage} disabled={pending} /> : null}
           {error ? (
             <p role="alert" className="text-[13px] text-red-600">
               {error}

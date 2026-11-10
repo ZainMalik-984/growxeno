@@ -13,6 +13,8 @@ import {
 } from "@/lib/db/transaction";
 import { getAppUrl } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { normalizeRate } from "./rate-input";
+import type { WorkerNotifyChannel } from "./notify-via";
 
 export type { ServiceResult };
 
@@ -29,6 +31,8 @@ export type OutsourcedWorkerInput = {
   phone?: string;
   whatsappNumber?: string;
   notes?: string;
+  /** Where new-task messages go (2026-11-11). Left as it is when omitted. */
+  notifyVia?: WorkerNotifyChannel;
 };
 
 function normalize(input: OutsourcedWorkerInput) {
@@ -38,6 +42,7 @@ function normalize(input: OutsourcedWorkerInput) {
     phone: input.phone?.trim() || null,
     whatsappNumber: input.whatsappNumber?.trim() || null,
     notes: input.notes?.trim() || null,
+    ...(input.notifyVia ? { notifyVia: input.notifyVia } : {}),
   };
 }
 
@@ -95,8 +100,6 @@ export async function updateOutsourcedWorker(
   });
 }
 
-const RATE_REGEX = /^\d+(\.\d{1,2})?$/;
-
 export type ServiceRateInput = { serviceId: string; rate: string; currency?: string };
 
 /**
@@ -112,8 +115,9 @@ export async function setServiceRate(
   outsourcedWorkerId: string,
   input: ServiceRateInput,
 ): Promise<ServiceResult> {
-  const rate = input.rate.trim();
-  if (!RATE_REGEX.test(rate)) return failure("Enter a valid rate, e.g. 3.50.");
+  // ".4" and "25.23" are both fine (2026-11-11); stored as "0.4" / "25.23".
+  const rate = normalizeRate(input.rate);
+  if (rate === null) return failure("Enter a valid rate, e.g. 0.4 or 25.23 (up to two decimals).");
   const currency = (input.currency?.trim() || "PKR").toUpperCase();
 
   return runTransaction(async (tx) => {

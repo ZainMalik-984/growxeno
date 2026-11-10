@@ -24,7 +24,8 @@ import { cn } from "@/lib/utils";
  * (a long table of coloured badges is unreadable).
  */
 
-export type ChannelLink = { href: string; label: string };
+/** `title` is the channel/video name read from YouTube, shown with the link (2026-11-11). */
+export type ChannelLink = { href: string; label: string; title?: string | null };
 
 export type OrdersTableItem = {
   id: string;
@@ -94,7 +95,7 @@ export function OrdersTable({
           <TR className="border-0">
             <TH className={cn(th, "w-10")} aria-hidden="true" />
             <TH className={th}>Order</TH>
-            <TH className={th}>Channel</TH>
+            <TH className={th}>Link</TH>
             {showCustomer ? <TH className={th}>Customer</TH> : null}
             <TH className={th}>Status</TH>
             <TH className={th}>Deadline</TH>
@@ -239,12 +240,24 @@ function ChannelAnchor({ channel, className }: { channel: ChannelLink; className
       rel="noreferrer noopener"
       title={channel.href}
       className={cn(
-        "inline-flex min-w-0 items-center gap-1 text-[13px] text-indigo-600 hover:text-indigo-800 hover:underline",
+        "group inline-flex min-w-0 items-center gap-1 text-[13px] text-indigo-600 hover:text-indigo-800",
         className,
       )}
     >
-      <span className="truncate">{channel.label}</span>
-      <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+      {channel.title ? (
+        <span className="min-w-0">
+          <span className="block truncate font-medium text-zinc-900 group-hover:underline">{channel.title}</span>
+          <span className="flex min-w-0 items-center gap-1 text-xs">
+            <span className="truncate">{channel.label}</span>
+            <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+          </span>
+        </span>
+      ) : (
+        <>
+          <span className="truncate group-hover:underline">{channel.label}</span>
+          <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+        </>
+      )}
       <span className="sr-only">(opens in a new tab)</span>
     </a>
   );

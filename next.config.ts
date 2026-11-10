@@ -45,9 +45,37 @@ const securityHeaders = [
   ...(isProduction ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" }] : []),
 ];
 
+/**
+ * Category images live in this project's public Supabase Storage bucket
+ * (2026-11-05). next/image fetches and serves them from this app's own origin,
+ * so the CSP above (img-src 'self') needs no change. Only that bucket is allowed.
+ */
+const supabaseHost = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL) : null;
+  } catch {
+    return null;
+  }
+})();
+
 const nextConfig: NextConfig = {
   // Do not advertise the framework and version on every response.
   poweredByHeader: false,
+  images: {
+    remotePatterns: supabaseHost
+      ? [
+          {
+            protocol: supabaseHost.protocol.replace(":", "") as "https" | "http",
+            hostname: supabaseHost.hostname,
+            pathname: "/storage/v1/object/public/category-images/**",
+          },
+        ]
+      : [],
+  },
+  experimental: {
+    // Category image originals are up to 8 MB (compressed before storage); the default 1 MB is too small.
+    serverActions: { bodySizeLimit: "9mb" },
+  },
   // Never ship source maps to browsers: they reveal the original source of every client module.
   productionBrowserSourceMaps: false,
   async headers() {

@@ -1345,3 +1345,211 @@ order page their item shows "You earn …" and the side panel totals it per curr
 excluded). Admins and employees keep the order-with-items table. Board cards show the worker their own pay.
 Evidence: visibility tests (own pay present, others' absent from the serialized data; pay hidden from
 someone who can see all orders but not costs); browser check as Zain (3 task rows, 5,000.00 PKR on #125).
+
+**2026-11-04 — Employee page redesign and Edit Profile (owner request).**
+`/employees/[id]`: compact header (initials, name, email, job title, role chips, status, Edit profile), four
+work tiles (New, Active, Due today, Overdue; not clickable — no filtered view matches item-level deadlines),
+Open work with countdowns, Activity and Completed work in one tabbed card, Profile details (email, phone,
+WhatsApp, display name, roles, status, categories, member since, last sign-in), Earnings (Earned / Paid /
+Outstanding, All payments link) and Daily statistics (same 30-day totals, Full history link, compact empty
+state). The "Not available yet" section with an internal docs reference is removed. Page-shaped loading skeleton.
+Edit Profile (`users.edit`): modal, prefilled; saves name, display name, job title, phone, WhatsApp, roles and
+active status through new `updateEmployeeProfileAction` → `updateEmployeeProfile` (one transaction, server
+validation, audit row, lockout guard). Rules: no changing your own roles or status; a role can only be given by
+someone holding every permission in it (also added to `assignRoleToUser`, so Settings → Users cannot be used to
+get around it). Email (also the Supabase login) and categories (derived from completed work) are read-only.
+Unsaved-changes prompt on Cancel/Escape (`Modal` gained an optional `onCancel`). No "Assign work" button:
+items are assigned to External Workers only (2026-10-08).
+Evidence: component test `edit-profile-dialog.test.tsx` (prefill, validation, server error keeps values,
+success closes and refreshes, self lock, unsaved prompt); the real service run against the dev database on a
+temporary user (edit + add role, escalation refused, own-role change refused, own name allowed, deactivate +
+remove role, audit rows), then removed. Not verified in the browser: no admin session in the preview.
+
+**2026-11-04 — Employees create and assign work; their page shows that (owner request).**
+Employee role permissions widened (docs/PERMISSIONS.md, same date). `/employees/[id]` now shows the
+employee's output instead of worker sections: tiles Orders created / Open / Overdue / Awaiting acceptance
+(`getEmployeeOutputSummary`: `Order.createdById`, `OrderItem.assignedById`), Recent orders (with a New order
+button on your own profile), and an Activity card with Recent activity / Assignments tabs. Removed: the
+worker work tiles, open/completed work lists and the Earnings section (employees are salaried, never paid per
+item). Categories now come from the orders they created. `/employees` roster: "Open items" → "Open orders".
+Not changed: the dashboard's "Your work" card (item-level; an e2e test expects it for admins).
+
+**2026-11-04 — Employee commission, Fiverr fee setting, Settings page sections (owner request).**
+- `users.commission_percent` (nullable) set in Edit Profile (`users.edit`; nobody can change their own). Commission
+  = % × (order price − Fiverr fee) for Fiverr orders, % × price for External orders (owner's choice), on orders the
+  employee created. Earned = Delivered + Finalized; Pending = other open orders; Refunded / Cancelled never count;
+  per currency (`src/lib/finance/commission.ts`, `getEmployeeCommission`). Shown only when a percentage is set: a
+  "Your commission" card on the dashboard and a Commission card on the employee page (visible to the employee,
+  `users.edit` and `finance.revenue.view`).
+- New setting `fiverr_fee` (default 20%), `saveFiverrFeeSettingsAction` (`settings.edit`), audited.
+- `/settings/system` now lists every setting in a section menu with its current value (Orders → Worker deadlines,
+  Finance → Fiverr fee); the chosen section is in the URL. On small screens the menu is a scrollable row.
+- Migration `20261104120000_employee_commission_and_fiverr_fee` was applied with node-postgres and recorded in
+  `_prisma_migrations` with Prisma's checksum, because `prisma migrate deploy` could not reach the database from
+  this machine at the time.
+Evidence: `tests/unit/commission.test.ts`, `tests/component/fiverr-fee-form.test.tsx`, extended
+`edit-profile-dialog.test.tsx`; real service + query run on a temporary user and orders (no commission → hidden;
+self-change refused; 100 USD Fiverr delivered → 8.00 earned; 50 USD open → 5.00 pending; cancelled ignored),
+then removed; order-number sequence untouched.
+
+**2026-11-04 — Website inquiries and editable contact details (owner request).**
+- The home page contact form used to open the visitor's email app and store nothing. It now saves an `Inquiry`
+  (new `inquiries` table) through public `submitInquiryAction`: validated, honeypot, 3 per visitor per 10 minutes
+  (keyed SHA-256 of the IP; the IP itself is not stored). The form shows a thank-you state, or an error, in place.
+- `/inquiries` (`inquiries.view`, sidebar under CRM): New / Contacted / Closed / All tabs with counts, search,
+  Reply by email, status buttons (`inquiries.manage`), who handled it and when. Dashboard: a "New inquiries" card.
+- Contact details (email, phone, WhatsApp) are a setting (`site_contact`) edited in Settings → Website → Contact
+  details (`settings.edit` = Super Admin). The home page reads them (top bar, contact section, footer, mobile bar;
+  phone and WhatsApp only when set). The page stays prerendered (`revalidate = 3600`) and is regenerated on save.
+- Migration `20261104130000_inquiries_and_site_contact`, applied with node-postgres and recorded in
+  `_prisma_migrations` (Prisma's CLI could not reach the database from this machine).
+- No notification on a new inquiry: the notification system has no matching event type yet; the dashboard card
+  and the sidebar page are where they appear.
+
+**2026-11-04 — Social profiles, WhatsApp opening message, logos, Settings layout (owner request).**
+- `site_contact` gains `whatsappMessage` (default "Hi Grow Xeno, I'd like to know more about your services.",
+  given automatically to values saved before it existed), `instagram`, `twitter` (X) and `facebook`. Social fields
+  accept a link or an @handle and are stored as full https links; a link to any other site is refused
+  (`normalizeSocialLink`). WhatsApp links open with the message typed in (`wa.me/<number>?text=…`).
+- Home page: brand logos (WhatsApp, Instagram, X, Facebook; react-icons) as round buttons in the top bar, the
+  contact section and the footer, Mail/Phone icons next to email and phone, WhatsApp button with logo on the
+  mobile bar. Only the profiles that are set appear.
+- Settings page: a section header (group, title, explanation, when and by whom it was last saved, "View only"
+  when you cannot edit) above every section; one shared sticky save bar that appears only when something
+  changed (Discard / Save changes), and a browser warning before leaving with unsaved changes. Contact details
+  is split into Email & phone, WhatsApp (number, message, chat-bubble preview, Try it), Social profiles (shows
+  the exact link each entry will save as) and an "On the website" preview.
+Evidence: unit tests for link normalization, wrong-site refusal, WhatsApp message encoding and the legacy
+default; component test `site-contact-form.test.tsx`; the Settings page viewed signed in; the home page
+showing WhatsApp logo links carrying the message.
+
+**2026-11-05 — Category images (owner request).** `categories.image_path` (path in the public Supabase Storage bucket
+`category-images`; URL built at read time). New category / Edit dialogs have an image picker (preview, replace,
+remove, undo); the server checks the file's bytes (PNG/JPEG/WebP only, SVG refused) and size (≤ 2 MB), stores it
+under `<categoryId>/<uuid>.<ext>`, and deletes the replaced file; deleting a category deletes its image. Shown as a
+thumbnail on the Categories list and next to the category on the Services list (initial letter when none).
+Setup: docs/ENVIRONMENT.md → "Supabase Storage — category images" (the bucket did not exist when this was built).
+Migration `20261105120000_category_image` applied with node-postgres and recorded in `_prisma_migrations`.
+Bucket created 2026-11-05 in the dev project via the Storage admin API: public, file size limit 2,097,152 bytes
+(the same 2 MiB the app enforces; "2MB" would have meant 2,000,000), PNG/JPEG/WebP only, no policies. Verified with
+the real service on a temporary category: upload + public URL 200; replace leaves one file; SVG renamed .png and a
+2 MiB + 1 byte file refused; deleting the category leaves no files; /_next/image serves a bucket image (200).
+
+**2026-11-05 — Category images are optimized before storage (owner request).** `optimizeCategoryImage` (sharp,
+now a direct dependency at the version Next.js already shipped): auto-rotate from EXIF, fit within 800×800 without
+enlarging, WebP quality 80, all metadata (EXIF/GPS) stripped; stored as `<categoryId>/<uuid>.webp`. Originals up to
+8 MB are accepted (Server Action body limit 9 MB); the stored file must still fit the bucket's 2 MiB limit. The
+audit entry records the stored size and dimensions and the original size. Verified on a temporary category: a
+4000×3000 JPEG of 2.87 MB with EXIF was stored as an 800×600 WebP of 86 KB with no EXIF; then removed.
+
+**2026-11-10 — Default social catalog, category active state, link field by service (owner request).**
+- Default categories YouTube, TikTok, X, Instagram, Facebook with Subscribers (YouTube) / Followers (others), Views,
+  Likes, Comments, and Watch Hours on YouTube only (`prisma/seed-catalog.ts`, run by the seed; idempotent, matches by
+  slug / metric type, never renames or reprices). Run once on the dev database: 4 categories and 20 services added;
+  the existing "Youtube" category and its "Subscribers" service were reused. The owner wrote "4 categories" but named
+  five; all five were added. New metric types FOLLOWERS, LIKES, COMMENTS.
+- `categories.is_active`: deactivating a category deactivates its active services and marks them
+  `deactivated_by_category`; reactivating brings back only those. A service cannot be activated, created in, or moved
+  into an inactive category. Inactive categories are hidden from the New service picker but still offered in filters
+  and on a service's own edit page. Categories list: status column, Activate/Deactivate with a confirmation that says
+  how many services change, "n of m active" count.
+- The order item link stays one field (`channelLink`); its label, example and messages follow the service and
+  platform (`linkFieldFor`): Channel link (YouTube subscribers, watch hours), Profile/Page link (followers), Video link
+  (YouTube/TikTok/Facebook views; YouTube/TikTok likes and comments), Post link / Post or reel link (X, Instagram,
+  Facebook likes/comments, X/Instagram views). Orders table and worker task table column renamed "Link".
+- Migration `20261110120000_category_active_and_social_metrics` applied with node-postgres and recorded in
+  `_prisma_migrations`. Verified: catalog seed run twice (second run adds nothing); cascade on X (manual-off service
+  stays off on reactivation; activating a service in an inactive category refused), then restored.
+
+**2026-11-10 — Platform shown with the service name (owner request).** `serviceLabel` ("TikTok · Views"; skipped when
+the name already contains the category as a whole word) is used where a service appears on its own: orders list
+expanded rows, the board, the worker task list, the dashboard work lists, an employee's assignments, an outsourced
+worker's pay rates, and the "New task" notification. The order page and the New Order picker already showed the
+category. Not checked visually: there are no orders in the dev database yet; covered by `service-label.test.ts`.
+
+**2026-11-10 — Service dropdown with logos on New Order (owner request).** The native select in each New Order item
+is replaced by `ServicePicker` (`src/components/catalog/service-picker.tsx`): a button showing the chosen service's
+category logo and "Category · Service", opening a searchable list grouped by category where every option shows its
+category image (or the category's initial when it has none). Keyboard: arrows, Enter, Escape, Tab; ARIA combobox +
+listbox. `listServicesForOrderPicker` now returns `categoryImageUrl`. `CategoryThumb` moved to its own file
+(`category-thumb.tsx`) so it can be used without loading the upload actions. Verified: `service-picker.test.tsx`
+(4 tests), full suite 321 passing, and in the browser on /orders/new (YouTube logos shown, selection switches the
+link field to "Channel link"). Same picker now used in the Add/Edit item dialog on the order page
+(`order-items-panel.tsx`); not checked visually there because the dev database has no orders.
+
+**2026-11-10 — YouTube stats for order item links (owner request).** "When I enter a YouTube channel link, it
+should get the channel ID and subscribers; for a video, the current views, likes and comments; update periodically
+with the delay set in Settings, or anyone can trigger it; keep the initial in the history; for watch hours generate
+the Studio analytics link."
+- Links are parsed in `src/lib/youtube/link.ts` (watch, youtu.be, shorts, live, embed; /channel/UC…, /@handle,
+  /user/…; custom /c/ URLs are refused with a hint). Subscribers/watch hours need a channel link, views/likes/comments
+  a video link. Only the parsed id is sent to the YouTube Data API v3 (`YOUTUBE_API_KEY`); the link is never fetched.
+- New Order and the Add/Edit item dialog look the link up while typing (`YoutubeLinkPreview`): title, channel/video
+  ID, counts, and the Studio analytics link for watch hours; an empty current count is filled in.
+- Each reading is a row in `order_item_stat_snapshots` (INITIAL / MANUAL / SCHEDULED, who triggered it). The first
+  reading for a link is the baseline; when no starting count was entered it becomes the starting count and the
+  target moves with it (`countsAfterReading`). Every reading moves the item's current count, so progress updates
+  itself. Watch hours are private, so they stay manual and get the Studio link.
+- Order page: each YouTube item shows its latest numbers, change since start, channel/video ID (copy), last update,
+  a Refresh button for anyone who can see the item (30 s cooldown), any error, and the full history.
+- Schedule: Settings → YouTube stats (on/off, every 1 hour … 1 week; default 6 hours). Runs from an in-process
+  15-minute timer on a long-running server (`src/instrumentation.ts`), from `/api/cron/youtube-stats` with
+  `CRON_SECRET` on serverless hosting, and in the background when an order is opened. Finalized/cancelled orders and
+  cancelled items stop refreshing; done items keep going (refills).
+- Migration `20261111120000_youtube_stats` applied with node-postgres and recorded in `_prisma_migrations`.
+- Verified: `youtube.test.ts` (25), `item-stats.test.tsx` (5), `youtube-stats-form.test.tsx` (3); an end-to-end run
+  against the database with YouTube responses faked (baseline 0→1,200 moved the target 5,000→6,200; cooldown; the
+  schedule picked the item once; history INITIAL→SCHEDULED; a bad link stored its error), then the test order was
+  deleted and order numbering reset; in the browser, New Order shows the lookup message and the wrong-link-type
+  warning, and the cron route returns 401 without the secret. **Not verified with live YouTube data: no
+  `YOUTUBE_API_KEY` is configured yet.** The Settings tab was checked by component test only (the signed-in test
+  account has no settings access).
+
+**2026-11-11 — Decimal service rates (owner request).** An outsourced worker's service rate accepts ".4", "0.4",
+"25.23" or "25." (`normalizeRate` in `src/lib/outsourced-workers/rate-input.ts`; stored as "0.4", "25.23", "25").
+Up to two decimals, matching the stored column. The action no longer rejects a missing leading zero before the
+service sees it. Verified by `rate-input.test.ts`; not saved in the browser (the signed-in test account cannot edit
+rates, and the two existing workers are real data).
+
+**2026-11-11 — Orders page for outsourced workers; channel names with links (owner request).**
+- Every orders table (admin rows, item rows, worker tasks) shows the channel/video name read from YouTube above the
+  link (`statsTitle`; links without a reading show the link alone).
+- An External Worker's Orders page is now built from their items (`listWorkerTasks`, `src/lib/orders/worker-tasks.ts`)
+  instead of paginated orders. Tabs: **To do** (Pending, Processing, Refill; the default), Pending, Processing, Refill,
+  and — set apart — Completed and Cancelled, each with a count; a search box (service, channel, order #, note).
+- Sorted Pending → Processing → Refill, and within each by the time given, oldest first (most time elapsed)
+  (`sortWorkerTasks`, `worker-task-view.ts`).
+- Columns: Task, Link (channel name + link), Given (date + time elapsed; "took …" once done), Progress, Analytics
+  (YouTube Studio link for watch hours), You earn, Status, and actions: **Accept** (pending), **Complete** / **Refill
+  done** (processing / refill, two clicks: Complete → Confirm), **Details**. The deadline is no longer a column.
+- **Details** opens a popup with the link, given time, deadline, progress (started at / now / target, delivered of
+  required), the latest YouTube numbers, the Studio link, pay, the note, other links, the same actions, and a link to
+  the order page.
+- Verified: `worker-task-view.test.ts`, `worker-tasks-table.test.tsx` (Accept, Complete with confirm, Studio link,
+  popup); full suite 380 passing; in the browser the admin table shows channel names on order and item rows. **The
+  worker view has not been seen in the browser**: the only worker with tasks is a real account (Inzmam), and creating a
+  test order would leave a gap in the order numbers.
+- (same day) **Update** on the worker's task row and in the Details popup: once a metric task is accepted (Processing
+  or Refill), the worker enters the current count (`UpdateProgressControl`, same `updateOrderItemProgressAction` and
+  own-item rule as the order page; commas allowed). Covered by `worker-tasks-table.test.tsx`.
+- (same day) The worker's progress reads as **delivered / required** ("500 / 5,000 subscribers delivered", then "Now at
+  1,500"), in the table and the popup, instead of the channel's total against the target. The bar's percentage was
+  already delivered-based (`aggregateProgress`).
+
+**2026-11-11 — The worker is told when a task is assigned (owner request).** Message: link, Need, Current, Stop, and
+"Click to accept" with a link to the task.
+- Worker profile: **Send new tasks by** Email / WhatsApp / Both / Don't send (`OutsourcedWorker.notifyVia`, default
+  Both; migration `20261111130000_worker_notify_via` applied with node-postgres). A channel with no email/number is
+  skipped, and the form warns about it.
+- On assigning a new worker (`assignOrderItemWorkerAction`): the email is sent through Resend
+  (`ResendEmailProvider`, logged in `message_logs`); the dialog then shows a confirmation step — email sent / failed
+  (Resend's reason) / skipped, and **Send on WhatsApp**, a `wa.me` link with the message written (owner's choice:
+  prefilled, the admin presses Send; no WhatsApp Business account). **Message worker** on an assigned item reopens
+  that step, with Send email / Send again.
+- Accept link `/orders?open=<item>` (also the in-app notification's link): the worker's Orders page opens a short
+  popup with the message's details (link, Need, Current, Stop at, Given, You earn) and **Accept**; "Show all details"
+  expands it. A signed-out worker signs in first and lands back on it (`next` keeps the query).
+- Verified: `assignment-message.test.ts` (owner's watch-hours example, WhatsApp numbers, Resend request/error),
+  `assignment-delivery.test.tsx`, `worker-tasks-table.test.tsx` (accept-link popup), `worker-notify-via.test.tsx`.
+  **Not done live:** no real assignment or email was sent (it touches real orders and workers); with the
+  `resend.dev` sender, email only reaches the Resend account owner until a domain is verified.

@@ -3,7 +3,7 @@
 import { ArrowRight, Copy, Link2, Trash2, TrendingUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { safeExternalHref } from "@/lib/orders/url-normalize";
 import {
   METRIC_CURRENT_LABELS,
@@ -11,6 +11,9 @@ import {
   SERVICE_METRIC_TYPE_LABELS,
   type ServiceMetricType,
 } from "@/lib/services/metric-type";
+import { ServicePicker } from "@/components/catalog/service-picker";
+import { linkFieldFor } from "@/lib/services/link-field";
+import { YoutubeLinkPreview } from "@/components/catalog/youtube-link-preview";
 import type { ServicePickerRow } from "@/lib/services/queries";
 import { cn } from "@/lib/utils";
 import { FIELD_CLASS, FormField } from "./order-form-fields";
@@ -73,7 +76,7 @@ export function validateItem(item: DraftItem, services: readonly ServicePickerRo
   }
   if (!d.metricType) return errors;
   const link = item.channelLink.trim();
-  if (!link) errors.channelLink = "Add the client's channel link.";
+  if (!link) errors.channelLink = `Add the ${linkFieldFor(d.metricType, d.service?.categoryName).noun} link.`;
   else if (!safeExternalHref(link)) errors.channelLink = "Enter a full link, starting with https://";
   if (d.startingClean !== "" && !WHOLE_NUMBER.test(d.startingClean)) errors.currentCount = "Use a whole number (0 or more).";
   if (d.requiredClean === "") errors.requiredCount = `Enter how many ${d.metricUnit} are needed.`;
@@ -102,7 +105,6 @@ export function OrderItemEditor({
   index,
   total,
   services,
-  serviceGroups,
   errors,
   onChange,
   onDuplicate,
@@ -112,7 +114,6 @@ export function OrderItemEditor({
   index: number;
   total: number;
   services: readonly ServicePickerRow[];
-  serviceGroups: ReadonlyArray<readonly [string, ServicePickerRow[]]>;
   errors: ItemErrors;
   onChange: (next: DraftItem, touched: ItemFieldKey[]) => void;
   onDuplicate: () => void;
@@ -121,6 +122,8 @@ export function OrderItemEditor({
   const d = describeItem(item, services);
   const id = (field: ItemFieldKey) => itemFieldId(item.key, field);
   const hasLink = item.channelLink.trim() !== "";
+  // Label and example follow the service: channel, video, post, profile… (2026-11-10).
+  const link = d.metricType ? linkFieldFor(d.metricType, d.service?.categoryName) : { label: "Link", placeholder: "https://…", noun: "link" };
   // A lone, empty item is the "no item yet" state: nothing to copy or remove.
   const isBlankOnly = total === 1 && !item.serviceId;
 
@@ -168,27 +171,18 @@ export function OrderItemEditor({
           error={errors.service}
           hint={d.service?.basePrice ? `List price ${d.service.basePrice} ${d.service.currency}` : undefined}
         >
-          <Select
+          {/* Options show each category's logo (2026-11-10), so not a native <select>. */}
+          <ServicePicker
             id={id("service")}
-            className={cn(FIELD_CLASS, !item.serviceId && "text-zinc-500")}
+            services={services}
             value={item.serviceId}
-            aria-invalid={Boolean(errors.service) || undefined}
-            aria-describedby={errors.service ? `${id("service")}-error` : undefined}
-            onChange={(event) =>
-              onChange(withService(item, event.target.value, services), ["service", "channelLink", "currentCount", "requiredCount"])
+            emptyLabel={total === 1 ? "No item — add later" : "Choose a service…"}
+            invalid={Boolean(errors.service)}
+            describedBy={errors.service ? `${id("service")}-error` : undefined}
+            onChange={(serviceId) =>
+              onChange(withService(item, serviceId, services), ["service", "channelLink", "currentCount", "requiredCount"])
             }
-          >
-            <option value="">{total === 1 ? "No item — add later" : "Choose a service…"}</option>
-            {serviceGroups.map(([category, rows]) => (
-              <optgroup key={category} label={category}>
-                {rows.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </Select>
+          />
         </FormField>
 
         {!item.serviceId ? (
@@ -207,16 +201,24 @@ export function OrderItemEditor({
               {SERVICE_METRIC_TYPE_LABELS[d.metricType]} growth
             </p>
 
-            <FormField label="Channel link" htmlFor={id("channelLink")} error={errors.channelLink}>
+            <FormField label={link.label} htmlFor={id("channelLink")} error={errors.channelLink}>
               <Input
                 id={id("channelLink")}
                 className={FIELD_CLASS}
                 type="url"
-                placeholder="https://youtube.com/@channel"
+                placeholder={link.placeholder}
                 value={item.channelLink}
                 aria-invalid={Boolean(errors.channelLink) || undefined}
                 aria-describedby={errors.channelLink ? `${id("channelLink")}-error` : undefined}
                 onChange={(event) => onChange({ ...item, channelLink: event.target.value }, ["channelLink"])}
+              />
+              <YoutubeLinkPreview
+                url={item.channelLink}
+                serviceId={item.serviceId}
+                metricType={d.metricType}
+                categoryName={d.service?.categoryName}
+                currentValue={item.startingCount}
+                onUseValue={(value) => onChange({ ...item, startingCount: String(value) }, ["currentCount"])}
               />
             </FormField>
 

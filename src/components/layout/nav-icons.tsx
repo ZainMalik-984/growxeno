@@ -19,6 +19,7 @@ import {
   UserRound,
   Users,
   Wallet,
+  MessageSquareText,
 } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
@@ -38,6 +39,7 @@ export const NAV_ICONS: Record<NavIconName, ComponentType<SVGProps<SVGSVGElement
   activity: Activity,
   orders: ClipboardList,
   customers: UserRound,
+  inquiries: MessageSquareText,
   fiverr: Store,
   workers: Users,
   stats: CalendarDays,

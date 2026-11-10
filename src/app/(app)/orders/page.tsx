@@ -34,6 +34,10 @@ import { listAssignableServices } from "@/lib/services/queries";
 import { CLOSED_ORDER_STATUSES, deriveOrderStatus, ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, ORDER_STATUS_VALUES } from "@/lib/orders/state-machine";
 import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { cn } from "@/lib/utils";
+import { canTransitionItem } from "@/lib/orders/state-machine";
+import { listWorkerTasks, type WorkerTask } from "@/lib/orders/worker-tasks";
+import { WORKER_TASK_VIEW_LABELS, WORKER_TASK_VIEWS, type WorkerTaskView } from "@/lib/orders/worker-task-view";
+import { Search } from "lucide-react";
 import type { OrderStatus } from "@/generated/prisma/client";
 import { OrderFilterBar } from "./order-filter-bar";
 import { OrdersBoard, type BoardCard } from "./orders-board";
@@ -66,6 +70,10 @@ const searchParamsSchema = z.object({
   size: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).catch(ORDERS_PAGE_SIZE),
   due: z.enum(["overdue"]).optional(),
   view: z.enum(["list", "board"]).catch("list"),
+  // An External Worker's task tabs (2026-11-11): "To do" (pending, processing, refill) by default.
+  task: z.enum(WORKER_TASK_VIEWS).catch("active"),
+  // A task opened from its accept link (2026-11-11): shows that task's popup.
+  open: z.uuid().optional().catch(undefined),
 });
 
 
@@ -106,17 +114,22 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
     amountMax: visibility.prices ? params.amountMax : undefined,
   };
   const now = new Date();
+  // A worker sees one row per task, with their pay (owner request,
+  // 2026-11-03: "for outsourced worker the order item is the order").
+  const showTasks = !visibility.allItems;
 
   const [result, customers, workers, outsourcedWorkers, services, categories, boardItems, statusCounts] = await Promise.all([
-    isBoardView ? Promise.resolve(null) : listOrders(listFilters, orderScope),
+    isBoardView || showTasks ? Promise.resolve(null) : listOrders(listFilters, orderScope),
     isBoardView || !visibility.pickers.customers ? Promise.resolve([]) : listAssignableCustomers(),
     isBoardView || !visibility.pickers.workers ? Promise.resolve([]) : listAssignableWorkers(),
     isBoardView || !visibility.pickers.workers ? Promise.resolve([]) : listAssignableOutsourcedWorkers(),
     isBoardView || !visibility.pickers.catalog ? Promise.resolve([]) : listAssignableServices(),
-    isBoardView || !visibility.pickers.catalog ? Promise.resolve([]) : listAssignableCategories(),
+    isBoardView || !visibility.pickers.catalog ? Promise.resolve([]) : listAssignableCategories({ includeInactive: true }),
     isBoardView ? listBoardItems(boardItemWhere(identity, canViewAll)) : Promise.resolve([]),
     isBoardView || !visibility.orderDetails ? Promise.resolve(null) : countOrdersByStatus(listFilters, orderScope),
   ]);
+  const workerTasks =
+    showTasks && !isBoardView ? await listWorkerTasks(identity, { view: params.task, search: params.q, focusId: params.open }) : null;
 
   const buildHref = (target: number) => {
     const url = new URLSearchParams();
@@ -181,10 +194,10 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
       progressPercent: progress?.percent ?? null,
       // One entry per distinct channel among the visible items, so the table
       // can link straight to it (owner request, 2026-11-03).
-      channels: channelLinks(visibleItems.map((item) => item.channelLink)),
+      channels: channelLinks(visibleItems.map((item) => ({ link: item.channelLink, title: item.channelTitle }))),
       items: visibleItems.map((item) => ({
         id: item.id,
-        channel: channelLinks([item.channelLink])[0] ?? null,
+        channel: channelLinks([{ link: item.channelLink, title: item.channelTitle }])[0] ?? null,
         canAccept: canAcceptItem(item),
         serviceName: item.serviceName,
         assigneeLabel: item.worker?.fullName ?? item.outsourcedWorker?.name ?? "Unassigned",
@@ -197,35 +210,8 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
     };
   });
 
-  // A worker sees one row per task, with their pay (owner request,
-  // 2026-11-03: "for outsourced worker the order item is the order").
-  const showTasks = !visibility.allItems;
-  const taskRows: WorkerTaskRow[] = showTasks
-    ? (result?.rows ?? []).flatMap((order) =>
-        redactOrderListItems(order.items, identity, visibility).map((item) => {
-          const progress = aggregateProgress([
-            { targetCount: item.targetCount, currentCount: item.currentCount, startingCount: item.startingCount },
-          ]);
-          return {
-            id: item.id,
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            serviceName: item.serviceName,
-            channel: channelLinks([item.channelLink])[0] ?? null,
-            statusLabel: ORDER_ITEM_STATUS_LABELS[item.status],
-            statusTone: ITEM_STATUS_TONE[item.status],
-            canAccept: canAcceptItem(item),
-            deadline: item.deadline,
-            finished: item.status === "DONE" || item.status === "CANCELLED",
-            metricLabel: item.metricType ? SERVICE_METRIC_TYPE_LABELS[item.metricType].toLowerCase() : null,
-            currentCount: item.currentCount,
-            targetCount: item.targetCount,
-            progressPercent: progress?.percent ?? null,
-            earningsLabel: item.workerCost ? formatPay(item.workerCost, item.workerCostCurrency) : null,
-          };
-        }),
-      )
-    : [];
+  // Sorted and filtered by listWorkerTasks (2026-11-11): pending, then processing, then refill, oldest first.
+  const taskRows: WorkerTaskRow[] = (workerTasks?.tasks ?? []).map((task) => toTaskRow(task, canChangeItemStatus));
 
   const canChangeStatus = actor.permissions.has("orders.change_status");
   const boardCards: BoardCard[] = boardItems.map((item) => {
@@ -307,17 +293,13 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
               );
             })}
           </nav>
-          {!isBoardView && result ? (
+          {!isBoardView && workerTasks ? (
             <p className="text-xs text-zinc-500">
-              {showTasks && result.pageCount === 1 ? (
-                <>
-                  <span className="font-medium tabular-nums text-zinc-800">{taskRows.length}</span> {taskRows.length === 1 ? "task" : "tasks"}
-                </>
-              ) : (
-                <>
-                  <span className="font-medium tabular-nums text-zinc-800">{result.total}</span> {result.total === 1 ? "order" : "orders"}
-                </>
-              )}
+              <span className="font-medium tabular-nums text-zinc-800">{taskRows.length}</span> {taskRows.length === 1 ? "task" : "tasks"}
+            </p>
+          ) : !isBoardView && result ? (
+            <p className="text-xs text-zinc-500">
+              <span className="font-medium tabular-nums text-zinc-800">{result.total}</span> {result.total === 1 ? "order" : "orders"}
             </p>
           ) : isBoardView ? (
             <p className="text-xs text-zinc-500">Drag an item to change its status.</p>
@@ -332,6 +314,40 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
           ) : (
             <OrdersBoard cards={boardCards} />
           )
+        ) : workerTasks ? (
+          <div className="space-y-4">
+            <WorkerTaskTabs active={params.task} search={params.q} counts={workerTasks.counts} />
+            <form method="get" action="/orders" role="search" className="relative max-w-sm">
+              {params.task !== "active" ? <input type="hidden" name="task" value={params.task} /> : null}
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+              <input
+                type="search"
+                name="q"
+                defaultValue={params.q ?? ""}
+                aria-label="Search your tasks"
+                placeholder="Search by service, channel or order #"
+                className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white pl-9 pr-3 text-[13px] shadow-[0_1px_1px_rgba(16,24,40,0.03)] placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+              />
+            </form>
+            <Card className={cn(SURFACE, "overflow-hidden p-0 sm:p-0")}>
+              {taskRows.length === 0 && !workerTasks.focus ? (
+                <ListEmpty
+                  icon={Inbox}
+                  title={params.q ? "No tasks match your search" : params.task === "active" ? "Nothing to do right now" : "No tasks here"}
+                  text={
+                    params.task === "active"
+                      ? "New tasks assigned to you appear here. Finished ones are under Completed."
+                      : "Tasks with this status will appear here."
+                  }
+                />
+              ) : (
+                <WorkerTasksTable
+                  rows={taskRows}
+                  focus={workerTasks.focus ? toTaskRow(workerTasks.focus, canChangeItemStatus) : null}
+                />
+              )}
+            </Card>
+          </div>
         ) : (
           <div className="space-y-4">
             {statusCounts ? <StatusTabs params={params} counts={statusCounts} /> : null}
@@ -366,11 +382,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                 />
               ) : (
                 <>
-                  {showTasks ? (
-                    <WorkerTasksTable rows={taskRows} />
-                  ) : (
-                    <OrdersTable rows={tableRows} showCustomer={visibility.parties} showAmount={visibility.prices} />
-                  )}
+                  <OrdersTable rows={tableRows} showCustomer={visibility.parties} showAmount={visibility.prices} />
                   <div className="border-t border-zinc-100 px-5 pb-4">
                     <Pagination
                       page={result!.page}
@@ -498,14 +510,136 @@ function viewHref(params: Record<string, unknown>, view: "list" | "board"): stri
  * ("youtube.com/@channel"). A link that is not plain http(s) is dropped
  * rather than rendered (same rule as everywhere else, safeExternalHref).
  */
-function channelLinks(links: ReadonlyArray<string | null>): Array<{ href: string; label: string }> {
+function channelLinks(
+  links: ReadonlyArray<{ link: string | null; title: string | null }>,
+): Array<{ href: string; label: string; title: string | null }> {
   const seen = new Set<string>();
-  const result: Array<{ href: string; label: string }> = [];
-  for (const link of links) {
+  const result: Array<{ href: string; label: string; title: string | null }> = [];
+  for (const { link, title } of links) {
     const href = link ? safeExternalHref(link) : null;
     if (!href || seen.has(href)) continue;
     seen.add(href);
-    result.push({ href, label: href.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "") });
+    // The channel/video name read from YouTube shows with the link (2026-11-11).
+    result.push({ href, label: shortLink(href), title });
   }
   return result;
+}
+
+function shortLink(href: string): string {
+  return href.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "");
+}
+
+/** Delivered = current − starting (never below 0, may pass required); required = target − starting. */
+function deliveredOf(task: { startingCount: number | null; currentCount: number | null; targetCount: number | null }): {
+  delivered: number | null;
+  required: number | null;
+} {
+  if (task.targetCount === null) return { delivered: null, required: null };
+  const start = Math.max(0, task.startingCount ?? 0);
+  return {
+    delivered: Math.max(0, (task.currentCount ?? start) - start),
+    required: Math.max(0, task.targetCount - start),
+  };
+}
+
+/** One task row for an External Worker (2026-11-11). Accept on pending; Complete on processing and refill. */
+function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean): WorkerTaskRow {
+  const progress = aggregateProgress([{ targetCount: task.targetCount, currentCount: task.currentCount, startingCount: task.startingCount }]);
+  const channelStats = task.metricType === "SUBSCRIBERS" || task.metricType === "WATCH_HOURS" || task.metricType === "FOLLOWERS";
+  return {
+    id: task.id,
+    orderId: task.orderId,
+    orderNumber: task.orderNumber,
+    serviceName: task.serviceName,
+    channel: channelLinks([{ link: task.channelLink, title: null }])[0] ?? null,
+    channelTitle: task.channelTitle,
+    isYoutube: task.channelLink ? /youtube\.com|youtu\.be/i.test(task.channelLink) : false,
+    studioUrl: task.studioUrl,
+    isWatchHours: task.metricType === "WATCH_HOURS",
+    statusLabel: ORDER_ITEM_STATUS_LABELS[task.status],
+    statusTone: ITEM_STATUS_TONE[task.status],
+    isRefill: task.status === "REFILL",
+    canAccept: canChangeItemStatus && task.status === "PENDING",
+    canComplete:
+      canChangeItemStatus && task.status !== "PENDING" && canTransitionItem(task.status, "DONE", { asAssignedWorkerOnly: true }),
+    // Once accepted, the worker records where the count stands (2026-11-11).
+    canUpdateProgress: canChangeItemStatus && task.metricType !== null && (task.status === "PROCESSING" || task.status === "REFILL"),
+    assignedAt: task.assignedAt,
+    finishedAt: task.finishedAt,
+    deadline: task.deadline,
+    finished: task.status === "DONE" || task.status === "CANCELLED",
+    metricLabel: task.metricType ? SERVICE_METRIC_TYPE_LABELS[task.metricType].toLowerCase() : null,
+    startingCount: task.startingCount,
+    currentCount: task.currentCount,
+    targetCount: task.targetCount,
+    progressPercent: progress?.percent ?? null,
+    // Progress as the worker sees it: what they delivered since the task started, out of what was asked (2026-11-11).
+    ...deliveredOf(task),
+    earningsLabel: task.workerCost ? formatPay(task.workerCost, task.workerCostCurrency) : null,
+    description: task.description,
+    stats: task.stats
+      ? channelStats
+        ? [
+            { label: "Subscribers", value: task.stats.subscribers },
+            { label: "Total views", value: task.stats.views },
+          ]
+        : [
+            { label: "Views", value: task.stats.views },
+            { label: "Likes", value: task.stats.likes },
+            { label: "Comments", value: task.stats.comments },
+          ]
+      : null,
+    statsAt: task.stats?.at ?? null,
+    links: task.links.flatMap((link) => {
+      const href = safeExternalHref(link.url);
+      return href ? [{ id: link.id, href, label: link.label || shortLink(href) }] : [];
+    }),
+  };
+}
+
+/** An External Worker's task tabs with counts (2026-11-11). "To do" is the default; Completed and Cancelled sit apart. */
+function WorkerTaskTabs({
+  active,
+  search,
+  counts,
+}: {
+  active: WorkerTaskView;
+  search: string | undefined;
+  counts: Record<WorkerTaskView, number>;
+}) {
+  return (
+    <nav aria-label="Task status" className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:thin]">
+      <ul className="flex w-max min-w-full gap-1 border-b border-zinc-200/80">
+        {WORKER_TASK_VIEWS.map((view) => {
+          const isActive = active === view;
+          const url = new URLSearchParams();
+          if (view !== "active") url.set("task", view);
+          if (search) url.set("q", search);
+          const query = url.toString();
+          return (
+            <li key={view} className={view === "done" ? "ml-auto" : undefined}>
+              <Link
+                href={query ? `/orders?${query}` : "/orders"}
+                aria-current={isActive ? "true" : undefined}
+                className={cn(
+                  "relative -mb-px inline-flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13px] font-medium transition-colors",
+                  isActive ? "border-indigo-600 text-zinc-900" : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-900",
+                )}
+              >
+                {WORKER_TASK_VIEW_LABELS[view]}
+                <span
+                  className={cn(
+                    "min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 tabular-nums",
+                    isActive ? "bg-indigo-600 text-white" : "bg-zinc-200/70 text-zinc-600",
+                  )}
+                >
+                  {counts[view]}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
 }

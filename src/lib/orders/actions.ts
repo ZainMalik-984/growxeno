@@ -21,6 +21,8 @@ import {
   updateOrderItem,
   updateOrderItemProgress,
 } from "./service";
+import { readStatsAfterSave } from "@/lib/youtube/stats-service";
+import { prepareAssignmentMessages, type AssignmentMessageOutcome } from "./assignment-notify";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -196,6 +198,8 @@ export async function addOrderItemAction(input: unknown): Promise<AddOrderItemAc
   });
   if (!result.ok) return { ok: false, error: result.error };
 
+  // First reading of a YouTube link becomes the item's baseline (2026-11-10).
+  await readStatsAfterSave(result.data.id, auth.actor);
   revalidatePath(`/orders/${parsed.data.orderId}`);
   return { ok: true, message: "Item added.", itemId: result.data.id };
 }
@@ -242,7 +246,9 @@ export async function updateOrderItemAction(input: unknown): Promise<ActionResul
     targetCount: parsed.data.targetCount ?? null,
     currentCount: parsed.data.currentCount ?? null,
   });
-  return result.ok ? { ok: true, message: "Item updated." } : { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, error: result.error };
+  if (result.data.linkChanged) await readStatsAfterSave(parsed.data.itemId, auth.actor);
+  return { ok: true, message: "Item updated." };
 }
 
 export async function removeOrderItemAction(input: unknown): Promise<ActionResult> {
@@ -268,7 +274,11 @@ const assignWorkerSchema = z.object({
   costCurrency: z.string().trim().length(3).optional(),
 });
 
-export async function assignOrderItemWorkerAction(input: unknown): Promise<ActionResult> {
+export type AssignWorkerActionResult =
+  | { ok: true; message: string; delivery: AssignmentMessageOutcome | null }
+  | { ok: false; error: string };
+
+export async function assignOrderItemWorkerAction(input: unknown): Promise<AssignWorkerActionResult> {
   const parsed = assignWorkerSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
 
@@ -280,7 +290,37 @@ export async function assignOrderItemWorkerAction(input: unknown): Promise<Actio
     cost: parsed.data.cost,
     costCurrency: parsed.data.costCurrency,
   });
-  return result.ok ? { ok: true, message: "Assignment updated." } : { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, error: result.error };
+
+  // A newly assigned worker gets the task by email and/or a prefilled WhatsApp (2026-11-11).
+  const delivery = result.data.notify
+    ? await prepareAssignmentMessages(parsed.data.itemId, { sendEmail: true }).catch(() => null)
+    : null;
+  return { ok: true, message: "Assignment updated.", delivery };
+}
+
+export type AssignmentMessageActionResult =
+  | { ok: true; message: string; delivery: AssignmentMessageOutcome }
+  | { ok: false; error: string };
+
+/**
+ * "Message worker" on an assigned item: the prefilled WhatsApp link again,
+ * and — with `resendEmail` — the email sent once more (2026-11-11).
+ */
+export async function getAssignmentMessageAction(input: unknown): Promise<AssignmentMessageActionResult> {
+  const parsed = itemIdSchema.extend({ resendEmail: z.boolean().optional() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("orders.assign");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const delivery = await prepareAssignmentMessages(parsed.data.itemId, { sendEmail: parsed.data.resendEmail === true });
+  if (!delivery) return { ok: false, error: "This item has no outsourced worker." };
+  return {
+    ok: true,
+    message: delivery.email.status === "sent" ? `Email sent to ${delivery.email.to}.` : "Message ready.",
+    delivery,
+  };
 }
 
 const changeItemStatusSchema = z.object({

@@ -15,8 +15,10 @@ import {
   setDirectPermission,
   setRolePermission,
   setUserActive,
+  updateEmployeeProfile,
   updateRole,
   type ServiceResult,
+  type UpdatedEmployeeProfile,
 } from "./service";
 
 /**
@@ -232,6 +234,66 @@ export async function deleteRoleAction(input: unknown): Promise<ActionResult> {
   const result = await deleteRole(auth.actor, parsed.data.roleId);
   if (result.ok) revalidatePath("/settings/roles");
   return toActionResult(result, "Role deleted.");
+}
+
+// ---------------------------------------------------------------------------
+// Employee profile edit (2026-11-04)
+// ---------------------------------------------------------------------------
+
+/** Empty → null; trims; caps length. */
+const optionalText = (max: number, label: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, `${label} can be at most ${max} characters.`)
+    .transform((value) => value || null)
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null);
+
+const PHONE = /^\+?[0-9\s().-]{6,32}$/;
+const optionalPhone = (label: string) =>
+  optionalText(32, label).refine((value) => value === null || PHONE.test(value), `${label} should be a phone number, e.g. +92 300 1234567.`);
+
+const updateEmployeeProfileSchema = z.object({
+  userId: uuid,
+  fullName: z.string().trim().min(1, "Name is required.").max(160, "Name can be at most 160 characters."),
+  displayName: optionalText(80, "Display name"),
+  jobTitle: optionalText(120, "Job title"),
+  phone: optionalPhone("Phone"),
+  whatsappNumber: optionalPhone("WhatsApp number"),
+  isActive: z.boolean(),
+  roleIds: z.array(uuid).max(50),
+  // "" or null = no commission. 0–100, up to two decimals.
+  commissionPercent: z
+    .union([z.literal(""), z.null(), z.coerce.number({ message: "Commission should be a number." })])
+    .optional()
+    .transform((value) => (value === "" || value === undefined ? null : value))
+    .refine((value) => value === null || (value >= 0 && value <= 100), "Commission must be between 0 and 100%.")
+    .refine((value) => value === null || Number.isInteger(Math.round(value * 1e6) / 1e4), "Use at most two decimals for commission."),
+});
+
+export type UpdateEmployeeProfileActionResult =
+  | { ok: true; message: string; profile: UpdatedEmployeeProfile }
+  | { ok: false; error: string };
+
+export async function updateEmployeeProfileAction(input: unknown): Promise<UpdateEmployeeProfileActionResult> {
+  const parsed = updateEmployeeProfileSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+  }
+
+  const auth = await authorizeAction("users.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const { userId, ...profile } = parsed.data;
+  const result = await updateEmployeeProfile(auth.actor, userId, profile);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/employees/${userId}`);
+  revalidatePath("/employees");
+  revalidatePath(`/settings/users/${userId}`);
+  return { ok: true, message: "Profile updated.", profile: result.data };
 }
 
 // ---------------------------------------------------------------------------

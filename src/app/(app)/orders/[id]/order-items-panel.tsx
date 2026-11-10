@@ -10,6 +10,7 @@ import {
   Pencil,
   PenLine,
   RotateCcw,
+  Send,
   UserRound,
   XCircle,
 } from "lucide-react";
@@ -23,6 +24,11 @@ import { DeadlineCountdown, formatDeadlineDate, useNowMinute } from "@/component
 import { formatDuration } from "@/lib/time/countdown";
 import { formatPay } from "@/lib/finance/format-pay";
 import { ITEM_STATUS_TONE } from "@/lib/orders/status-tone";
+import { ServicePicker } from "@/components/catalog/service-picker";
+import { ItemStatsPanel } from "./item-stats";
+import { AssignmentDeliveryStep, MessageWorkerDialog } from "./assignment-delivery";
+import type { AssignmentMessageOutcome } from "@/lib/orders/assignment-notify";
+import { YoutubeLinkPreview } from "@/components/catalog/youtube-link-preview";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/page";
@@ -46,6 +52,7 @@ import { computeAssignmentCost } from "@/lib/orders/rate";
 import { canTransitionItem, ORDER_ITEM_STATUS_LABELS } from "@/lib/orders/state-machine";
 import { cn } from "@/lib/utils";
 import { METRIC_CURRENT_LABELS, METRIC_TARGET_LABELS, SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
+import { linkFieldFor } from "@/lib/services/link-field";
 import type { ServicePickerRow } from "@/lib/services/queries";
 
 /** A rate per service, so the assign modal can auto-fill cost the moment a worker is chosen. */
@@ -139,11 +146,15 @@ export function OrderItemsPanel({
   const [expandedLinks, setExpandedLinks] = useState<Set<string>>(new Set());
   const [cancelDialogItem, setCancelDialogItem] = useState<OrderItemRow | null>(null);
   const [assignDialogItem, setAssignDialogItem] = useState<OrderItemRow | null>(null);
+  const [messageItemId, setMessageItemId] = useState<string | null>(null);
   const [progressEditId, setProgressEditId] = useState<string | null>(null);
   const [progressValue, setProgressValue] = useState("");
 
   const serviceById = useMemo(() => new Map(services.map((s) => [s.id, s])), [services]);
   const selectedMetricType = serviceById.get(form.serviceId)?.metricType ?? null;
+  const dialogLink = selectedMetricType
+    ? linkFieldFor(selectedMetricType, serviceById.get(form.serviceId)?.categoryName)
+    : { label: "Link", placeholder: "https://…", noun: "link" };
 
   const closeDialog = () => {
     setDialogItemId(null);
@@ -367,13 +378,16 @@ export function OrderItemsPanel({
                                     rel="noreferrer noopener"
                                     className="text-zinc-500 hover:text-zinc-900 hover:underline"
                                   >
-                                    channel
+                                    {linkFieldFor(item.service.metricType, item.category.name).noun}
                                   </a>
                                 </>
                               ) : null}
                             </>
                           )}
                         </p>
+                      ) : null}
+                      {item.stats ? (
+                        <ItemStatsPanel itemId={item.id} stats={item.stats} metricType={item.service.metricType} link={item.channelLink} />
                       ) : null}
                       <ItemDeadline
                         item={item}
@@ -434,6 +448,12 @@ export function OrderItemsPanel({
                     </button>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {canAssign && item.outsourcedWorker && item.status !== "DONE" && item.status !== "CANCELLED" ? (
+                        <Button variant="ghost" size="sm" className="rounded-[8px]" onClick={() => setMessageItemId(item.id)}>
+                          <Send aria-hidden="true" className="size-3.5" />
+                          Message worker
+                        </Button>
+                      ) : null}
                       {orderedNextStatuses.map((status) => {
                         const action = workflowAction(item.status, status);
                         return (
@@ -500,32 +520,33 @@ export function OrderItemsPanel({
 
         <div className="max-h-[65vh] space-y-4 overflow-y-auto px-6 py-5">
           <Field label="Service" htmlFor="item-service">
-            <Select
+            <ServicePicker
               id="item-service"
-              className={FIELD}
+              services={services}
               value={form.serviceId}
-              onChange={(event) => setForm((c) => ({ ...c, serviceId: event.target.value }))}
-              autoFocus
-            >
-              <option value="">Choose a service…</option>
-              {services.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.categoryName} · {service.name}
-                </option>
-              ))}
-            </Select>
+              emptyLabel="Choose a service…"
+              onChange={(serviceId) => setForm((c) => ({ ...c, serviceId }))}
+            />
           </Field>
 
           {selectedMetricType ? (
             <div className="space-y-3 rounded-[12px] bg-zinc-50 p-4">
-              <Field label="Channel link" htmlFor="item-channel-link" hint="The client's channel.">
+              <Field label={dialogLink.label} htmlFor="item-channel-link" hint={`The client's ${dialogLink.noun}.`}>
                 <Input
                   id="item-channel-link"
                   className={FIELD}
                   type="url"
-                  placeholder="https://youtube.com/@channel"
+                  placeholder={dialogLink.placeholder}
                   value={form.channelLink}
                   onChange={(event) => setForm((c) => ({ ...c, channelLink: event.target.value }))}
+                />
+                <YoutubeLinkPreview
+                  url={form.channelLink}
+                  serviceId={form.serviceId}
+                  metricType={selectedMetricType}
+                  categoryName={serviceById.get(form.serviceId)?.categoryName}
+                  currentValue={form.currentCount}
+                  onUseValue={(value) => setForm((c) => ({ ...c, currentCount: String(value) }))}
                 />
               </Field>
               {dialogItemId === "new" ? (
@@ -630,6 +651,8 @@ export function OrderItemsPanel({
           onClose={() => setAssignDialogItem(null)}
         />
       ) : null}
+
+      {messageItemId ? <MessageWorkerDialog itemId={messageItemId} onClose={() => setMessageItemId(null)} /> : null}
 
       {cancelDialogItem ? (
         <CancelWithAdjustmentDialog item={cancelDialogItem} onClose={() => setCancelDialogItem(null)} />
@@ -802,6 +825,8 @@ function AssignWorkerModal({
   const [workerId, setWorkerId] = useState(item.outsourcedWorker?.id ?? "");
   const [cost, setCost] = useState(item.workerCost ?? "");
   const [costCurrency, setCostCurrency] = useState(item.workerCostCurrency);
+  // After assigning a new worker: how they were told (email sent? WhatsApp to send), 2026-11-11.
+  const [delivery, setDelivery] = useState<AssignmentMessageOutcome | null>(null);
 
   const pick = (id: string) => {
     setWorkerId(id);
@@ -828,13 +853,22 @@ function AssignWorkerModal({
       });
       if (result.ok) {
         toast.success(result.message);
-        onClose();
         router.refresh();
+        if (result.delivery) setDelivery(result.delivery);
+        else onClose();
       } else {
         toast.error(result.error);
       }
     });
   };
+
+  if (delivery) {
+    return (
+      <Modal open onClose={onClose} labelledBy="assignment-delivery-title" className={MODAL_SHELL}>
+        <AssignmentDeliveryStep itemId={item.id} delivery={delivery} onDone={onClose} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal open onClose={onClose} labelledBy="assign-worker-title" className={MODAL_SHELL}>

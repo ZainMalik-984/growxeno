@@ -90,6 +90,15 @@ enum OrderItemStatus {
 /// just a name and a cost to track per Order Item. NOT a `User`: modelling an
 /// outsourced worker as one would require an email and an auth identity for
 /// someone who is a cost-tracking record, not an actor in the system.
+/// How an External Worker hears about a new task (2026-11-11). Email is sent
+/// by the app; WhatsApp is a prefilled message an admin sends with one tap.
+enum WorkerNotifyChannel {
+  NONE
+  EMAIL
+  WHATSAPP
+  BOTH
+}
+
 model OutsourcedWorker {
   id             String  @id @default(uuid()) @db.Uuid
   name           String  @db.VarChar(160)
@@ -97,6 +106,10 @@ model OutsourcedWorker {
   phone          String? @db.VarChar(32)
   whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
   notes          String? @db.Text
+
+  /// Where a new task is sent when it's assigned (owner request, 2026-11-11).
+  /// A channel without an email/number on file is skipped.
+  notifyVia WorkerNotifyChannel @default(BOTH) @map("notify_via")
 
   /// Set once this External Worker is onboarded with portal access — owner-
   /// directed, confirmed directly (2026-10-08): "External or outsourced
@@ -324,9 +337,25 @@ model OrderItem {
   /// Reports and Finance range on this instead of `updatedAt`, which moves on any edit.
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
 
-  links OrderItemLink[]
+  /// Public stats pulled from the platform for `channelLink` (owner request,
+  /// 2026-11-10; YouTube only so far, see src/lib/youtube/). The resolved
+  /// channel (UC…) or video id, its kind ("CHANNEL" | "VIDEO") and title.
+  statsSourceId   String?   @map("stats_source_id") @db.VarChar(64)
+  statsSourceKind String?   @map("stats_source_kind") @db.VarChar(16)
+  statsTitle      String?   @map("stats_title") @db.VarChar(300)
+  /// Last successful fetch.
+  statsFetchedAt  DateTime? @map("stats_fetched_at") @db.Timestamptz(6)
+  /// Last attempt, successful or not; the scheduled refresh goes by this so a
+  /// broken link is not retried on every run.
+  statsCheckedAt  DateTime? @map("stats_checked_at") @db.Timestamptz(6)
+  /// Why the last attempt failed, shown on the item. Cleared on success.
+  statsError      String?   @map("stats_error") @db.VarChar(300)
+
+  links         OrderItemLink[]
+  statSnapshots OrderItemStatSnapshot[]
 
   @@index([orderId])
+  @@index([statsCheckedAt])
   @@index([workerId, status])
   @@index([outsourcedWorkerId])
   @@index([assignedById])
@@ -401,6 +430,44 @@ model OrderItemLink {
   // so `migrate dev` no longer proposes dropping them.
   @@index([normalizedUrl(ops: raw("gin_trgm_ops"))], type: Gin, map: "order_item_links_normalized_url_trgm_idx")
   @@map("order_item_links")
+}
+
+enum StatSnapshotTrigger {
+  /// The first reading for a link: the baseline progress is measured from.
+  INITIAL
+  /// Someone pressed Refresh.
+  MANUAL
+  /// The periodic refresh (interval set in Settings).
+  SCHEDULED
+}
+
+/// One reading of a link's public stats (owner request, 2026-11-10): "the
+/// initial should be kept in the history as well so that we know how is the
+/// progress going". Append-only. `sourceId` is the channel/video the reading
+/// was for, so changing an item's link starts a fresh history instead of
+/// mixing two channels. Counts are BigInt: a popular video passes 2^31 views.
+model OrderItemStatSnapshot {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderItemId String    @map("order_item_id") @db.Uuid
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  sourceId String             @map("source_id") @db.VarChar(64)
+  trigger  StatSnapshotTrigger
+
+  subscribers BigInt?
+  views       BigInt?
+  likes       BigInt?
+  comments    BigInt?
+
+  /// Who pressed Refresh; null for automatic readings. Plain id + name, no
+  /// relation: a reading must outlive the account that triggered it.
+  triggeredById    String? @map("triggered_by_id") @db.Uuid
+  triggeredByLabel String? @map("triggered_by_label") @db.VarChar(200)
+
+  takenAt DateTime @default(now()) @map("taken_at") @db.Timestamptz(6)
+
+  @@index([orderItemId, takenAt])
+  @@map("order_item_stat_snapshots")
 }
 
 /// Internal notes (specification Section 62) — distinct from `OrderActivity`.

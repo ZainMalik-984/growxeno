@@ -10,6 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PERMISSION_CATALOG } from "../src/lib/permissions/catalog";
 import { slugify } from "../src/lib/text/slug";
+import { seedDefaultCatalog } from "./seed-catalog";
 
 /**
  * Database seed.
@@ -47,29 +48,40 @@ const ADMIN_EXCLUDED = new Set([
 ]);
 
 /**
- * An Employee sees their own assigned work and nothing financial.
+ * An Employee creates orders and hands the work to External Workers
+ * (owner-directed, confirmed directly 2026-11-04: "employee does not do any
+ * work, he's the one who'll create jobs and assign them"). This completes
+ * the redesign planned when the role was renamed from "Worker" (2026-10-08).
  *
- * Renamed from "Worker" (owner-directed, confirmed directly, 2026-10-08).
- * This permission SET is unchanged from the old Worker role for now — the
- * behavioral redesign (Employees become managers who create/assign orders
- * rather than execute them, which needs `orders.create`/`orders.assign`/
- * `outsourced_workers.view` granted here) is a later phase of the same
- * rework, tracked in the plan, not done in this rename pass.
- *
- * Note what is absent: `orders.view.all`. The Employee holds `orders.view`,
- * which resolves to the ASSIGNED scope — the difference between "can open
- * the orders page" and "can read every order in the business".
+ * Sees every order (`orders.view.all`), can create, edit and assign, and can
+ * look up and add customers. Nothing financial (`finance.*`), no users,
+ * roles or settings. Order prices and worker pay are visible to them only
+ * because creating/editing an order and assigning a worker sets them
+ * (src/lib/orders/visibility.ts).
  */
 const EMPLOYEE_PERMISSIONS = [
   "orders.view",
-  "orders.comment",
+  "orders.view.all",
+  "orders.create",
+  "orders.edit",
+  "orders.assign",
   "orders.change_status",
+  "orders.comment",
   "orders.files.view",
   "orders.files.upload",
   "orders.activity.view",
+  "customers.view",
+  "customers.create",
+  "customers.edit",
+  "services.view",
+  "categories.view",
+  "outsourced_workers.view",
+  "fiverr_accounts.view",
   "daily_stats.view",
   "employees.view",
   "employees.stats.view",
+  "inquiries.view",
+  "inquiries.manage",
 ];
 
 /**
@@ -110,8 +122,8 @@ const ROLES: RoleSeed[] = [
     name: "Employee",
     slug: "employee",
     description:
-      // Renamed from "Worker" (owner-directed, confirmed directly, 2026-10-08).
-      "Performs assigned work. Sees only their own assignments and has no financial access.",
+      // Renamed from "Worker" (2026-10-08); now creates and assigns work (2026-11-04).
+      "Creates orders and assigns the work to external workers. Sees every order; no financial access.",
     permissionKeys: EMPLOYEE_PERMISSIONS,
   },
   {
@@ -297,6 +309,10 @@ async function main(): Promise<void> {
 
     console.log("Seeding finance…");
     await seedExpenseCategories(prisma);
+
+    console.log("Seeding the default catalog…");
+    const catalog = await seedDefaultCatalog(prisma);
+    console.log(`  categories added: ${catalog.categoriesAdded}, services added: ${catalog.servicesAdded} (idempotent)`);
 
     // Last, and non-fatal: this step alone depends on the Supabase Admin API
     // (needs Node 22's native WebSocket — see docs/DEVELOPMENT.md), so a

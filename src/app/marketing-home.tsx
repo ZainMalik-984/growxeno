@@ -1,10 +1,13 @@
 "use client";
 
-import { Code2, Share2 } from "lucide-react";
-import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
-import { SiGoogleadsense, SiShopify, SiTiktok, SiYoutube } from "react-icons/si";
+import { Code2, Mail, Phone, Share2 } from "lucide-react";
+import { createContext, useContext, useState, useTransition, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { SiFacebook, SiGoogleadsense, SiInstagram, SiShopify, SiTiktok, SiWhatsapp, SiX, SiYoutube } from "react-icons/si";
 
 import { BrandWordmark } from "@/components/brand/brand-logo";
+import { submitInquiryAction } from "@/lib/inquiries/actions";
+import { HONEYPOT_FIELD } from "@/lib/inquiries/schema";
+import { DEFAULT_SITE_CONTACT, telHref, whatsappHref, type SiteContact } from "@/lib/settings/site-contact";
 
 /**
  * Ported verbatim from growxeno-project/src/routes/index.tsx, confirmed
@@ -41,7 +44,53 @@ import { BrandWordmark } from "@/components/brand/brand-logo";
  * side by side would fight that rather than fit it.
  */
 
-const EMAIL = "hello@growxeno.com";
+/**
+ * Contact details come from Settings → Website → Contact details (2026-11-04),
+ * passed in from the server page and read here through context so every
+ * section uses the same values. Phone and WhatsApp only appear when set.
+ */
+const ContactContext = createContext<SiteContact>(DEFAULT_SITE_CONTACT);
+const useContact = () => useContext(ContactContext);
+
+/**
+ * WhatsApp and social profiles as logo buttons (2026-11-04). Only the ones
+ * set in Settings appear; nothing renders when none are set. WhatsApp opens
+ * with the message from Settings already typed in.
+ */
+function SocialLinks({ tone = "light", size = "md", className = "" }: { tone?: "light" | "dark"; size?: "sm" | "md"; className?: string }) {
+  const { whatsapp, whatsappMessage, instagram, twitter, facebook } = useContact();
+  const links = [
+    whatsapp ? { label: "WhatsApp", href: whatsappHref(whatsapp, whatsappMessage), Icon: SiWhatsapp } : null,
+    instagram ? { label: "Instagram", href: instagram, Icon: SiInstagram } : null,
+    twitter ? { label: "X (Twitter)", href: twitter, Icon: SiX } : null,
+    facebook ? { label: "Facebook", href: facebook, Icon: SiFacebook } : null,
+  ].filter((link) => link !== null);
+  if (links.length === 0) return null;
+  const box = size === "sm" ? "h-7 w-7" : "h-10 w-10";
+  const icon = size === "sm" ? "h-3.5 w-3.5" : "h-[18px] w-[18px]";
+  const colors =
+    tone === "dark"
+      ? "border-navy-line text-navy-muted hover:border-navy-foreground/40 hover:text-navy-foreground"
+      : "border-input bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground";
+  return (
+    <ul className={`flex flex-wrap items-center gap-2 ${className}`}>
+      {links.map(({ label, href, Icon }) => (
+        <li key={label}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label={label}
+            title={label}
+            className={`grid ${box} place-items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${colors}`}
+          >
+            <Icon className={icon} />
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /* ---------- content (source: growxeno.com) ---------- */
 
@@ -187,8 +236,9 @@ function SectionHead({ kicker, title, sub, center }: { kicker: string; title: st
 
 /* ---------- page ---------- */
 
-export function MarketingHome() {
+export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: SiteContact }) {
   return (
+    <ContactContext.Provider value={contact}>
     <div className="gx min-h-screen">
       <Header />
       <main>
@@ -203,10 +253,12 @@ export function MarketingHome() {
       <Footer />
       <MobileCta />
     </div>
+    </ContactContext.Provider>
   );
 }
 
 function Header() {
+  const { email: EMAIL, phone } = useContact();
   const [open, setOpen] = useState(false);
   const links: [string, string][] = [["Services", "#services"], ["Why us", "#why"], ["Process", "#process"], ["FAQ", "#faq"]];
   return (
@@ -214,7 +266,17 @@ function Header() {
       <div className="hidden border-b bg-navy text-navy-muted md:block">
         <Container className="flex h-9 items-center justify-between text-xs">
           <span>Remote-first · Serving clients worldwide</span>
-          <a href={`mailto:${EMAIL}`} className="hover:text-navy-foreground transition-colors">{EMAIL}</a>
+          <span className="flex items-center gap-4">
+            {phone ? (
+              <a href={telHref(phone)} className="inline-flex items-center gap-1.5 hover:text-navy-foreground transition-colors">
+                <Phone className="h-3 w-3" aria-hidden />{phone}
+              </a>
+            ) : null}
+            <a href={`mailto:${EMAIL}`} className="inline-flex items-center gap-1.5 hover:text-navy-foreground transition-colors">
+              <Mail className="h-3 w-3" aria-hidden />{EMAIL}
+            </a>
+            <SocialLinks tone="dark" size="sm" className="gap-1.5" />
+          </span>
         </Container>
       </div>
       <Container className="flex h-16 items-center justify-between">
@@ -490,6 +552,7 @@ function Process() {
 }
 
 function Faq() {
+  const { email: EMAIL } = useContact();
   const [open, setOpen] = useState(0);
   return (
     <section id="faq" className="border-t bg-surface py-20 md:py-28">
@@ -524,12 +587,39 @@ function Faq() {
 }
 
 function Contact() {
+  const { email: EMAIL, phone, whatsapp, instagram, twitter, facebook } = useContact();
   const [service, setService] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Saved as an Inquiry (2026-11-04) — it used to open the visitor's email
+  // app and store nothing. The server validates and rate-limits it.
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const body = `Name: ${f.get("name")}\nEmail: ${f.get("email")}\nService: ${service || "Not sure yet"}\n\n${f.get("message")}`;
-    window.location.href = `mailto:${EMAIL}?subject=${encodeURIComponent(`Inquiry — ${service || "General"}`)}&body=${encodeURIComponent(body)}`;
+    if (pending) return;
+    const form = e.currentTarget;
+    const f = new FormData(form);
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await submitInquiryAction({
+          name: f.get("name"),
+          email: f.get("email"),
+          service: service && service !== "Not sure yet" ? service : "",
+          message: f.get("message"),
+          [HONEYPOT_FIELD]: f.get(HONEYPOT_FIELD),
+        });
+        if (result.ok) {
+          setSent(true);
+          form.reset();
+          setService("");
+        } else {
+          setError(result.error);
+        }
+      } catch {
+        setError(`Something went wrong. Please try again, or email us at ${EMAIL}.`);
+      }
+    });
   };
   const input = "mt-1.5 w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-[0.9375rem] outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-ring/15";
   return (
@@ -548,11 +638,37 @@ function Contact() {
             <div className="mt-10 border-t border-navy-line pt-6 text-sm">
               <p className="text-navy-muted">Prefer email?</p>
               <a href={`mailto:${EMAIL}`} className="mt-1 inline-block text-lg font-semibold hover:underline">{EMAIL}</a>
+              {phone ? (
+                <>
+                  <p className="mt-4 text-navy-muted">Or call us</p>
+                  <a href={telHref(phone)} className="mt-1 inline-flex items-center gap-2 font-semibold hover:underline">
+                    <Phone className="h-4 w-4" aria-hidden />{phone}
+                  </a>
+                </>
+              ) : null}
+              {whatsapp || instagram || twitter || facebook ? (
+                <>
+                  <p className="mt-4 text-navy-muted">Message or follow us</p>
+                  <SocialLinks tone="dark" className="mt-2" />
+                </>
+              ) : null}
               <p className="mt-4 text-navy-muted">Remote-first · Worldwide</p>
             </div>
           </div>
 
-          <form onSubmit={submit} className="bg-card p-8 md:p-12">
+          {sent ? (
+            <div className="flex flex-col items-start justify-center bg-card p-8 md:p-12" role="status">
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-accent text-accent-foreground"><Tick /></span>
+              <h3 className="mt-5 text-2xl font-semibold">Thanks — your inquiry is in.</h3>
+              <p className="mt-2 text-muted-foreground">We&apos;ll reply to the email you gave us. Need to add something? Write to <a href={`mailto:${EMAIL}`} className="font-medium text-primary hover:underline">{EMAIL}</a>.</p>
+              <button type="button" onClick={() => setSent(false)} className="mt-6 text-sm font-medium text-primary hover:underline">Send another inquiry</button>
+            </div>
+          ) : (
+          <form onSubmit={submit} className="bg-card p-8 md:p-12" aria-busy={pending}>
+            {/* Honeypot: hidden from people and screen readers; bots tend to fill it. */}
+            <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+              <label>Company<input type="text" name={HONEYPOT_FIELD} tabIndex={-1} autoComplete="off" /></label>
+            </div>
             <p className="text-sm font-semibold">What can we help with?</p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {[...services.map((s) => s.name), "Not sure yet"].map((n) => (
@@ -574,11 +690,13 @@ function Contact() {
             <label className="mt-4 block text-sm font-medium">Your goal
               <textarea required name="message" rows={4} className={`${input} resize-none`} placeholder="e.g. I want my YouTube channel to reach monetization" />
             </label>
-            <button type="submit" className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-lg bg-primary px-6 font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-              Send inquiry →
+            {error ? <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</p> : null}
+            <button type="submit" disabled={pending} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-lg bg-primary px-6 font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-70">
+              {pending ? "Sending…" : "Send inquiry →"}
             </button>
-            <p className="mt-3 text-center text-xs text-muted-foreground">Opens your email app with your message ready to send.</p>
+            <p className="mt-3 text-center text-xs text-muted-foreground">We&apos;ll reply to the email you give us.</p>
           </form>
+          )}
         </div>
       </Container>
     </section>
@@ -586,6 +704,7 @@ function Contact() {
 }
 
 function Footer() {
+  const { email: EMAIL, phone } = useContact();
   return (
     <footer className="border-t bg-surface pb-24 md:pb-0">
       <Container className="grid gap-10 py-14 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
@@ -608,9 +727,17 @@ function Footer() {
         <div>
           <p className="text-sm font-semibold">Contact</p>
           <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-            <li><a href={`mailto:${EMAIL}`} className="hover:text-foreground">{EMAIL}</a></li>
+            <li>
+              <a href={`mailto:${EMAIL}`} className="inline-flex items-center gap-2 hover:text-foreground"><Mail className="h-3.5 w-3.5" aria-hidden />{EMAIL}</a>
+            </li>
+            {phone ? (
+              <li>
+                <a href={telHref(phone)} className="inline-flex items-center gap-2 hover:text-foreground"><Phone className="h-3.5 w-3.5" aria-hidden />{phone}</a>
+              </li>
+            ) : null}
             <li>Remote-first, worldwide</li>
           </ul>
+          <SocialLinks size="sm" className="mt-4" />
           <Btn href="#contact" className="mt-5 h-10">Book a meeting</Btn>
         </div>
       </Container>
@@ -625,10 +752,15 @@ function Footer() {
 }
 
 function MobileCta() {
+  const { email: EMAIL, whatsapp, whatsappMessage } = useContact();
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur md:hidden">
       <div className="grid grid-cols-[auto_1fr] gap-2">
-        <Btn href={`mailto:${EMAIL}`} variant="outline">Email</Btn>
+        {whatsapp ? (
+          <Btn href={whatsappHref(whatsapp, whatsappMessage)} variant="outline"><SiWhatsapp className="h-4 w-4" />WhatsApp</Btn>
+        ) : (
+          <Btn href={`mailto:${EMAIL}`} variant="outline"><Mail className="h-4 w-4" aria-hidden />Email</Btn>
+        )}
         <Btn href="#contact">Book a meeting</Btn>
       </div>
     </div>

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   UserRound,
   Users,
+  MessageSquareText,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -23,11 +24,15 @@ import { StatusBadge, StatusDot } from "@/components/ui/status-dot";
 import { getAccessCounts } from "@/lib/access/queries";
 import { requireActor } from "@/lib/auth/authorize";
 import { countCustomers } from "@/lib/customers/queries";
-import { getMyWorkSummary } from "@/lib/employees/queries";
+import { getEmployeeCommission, getMyWorkSummary } from "@/lib/employees/queries";
+import { CommissionCard } from "@/components/finance/commission-card";
+import { CompactEmpty } from "@/components/ui/metric";
+import { getNewInquiriesSummary } from "@/lib/inquiries/queries";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
+const dayFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 
 /** Card surfaces shared with the New Order page: subtle border + soft layered shadow. */
@@ -53,11 +58,15 @@ export default async function DashboardPage() {
   const canSeeUsers = actor.permissions.has("users.view");
   const canSeeCrm = actor.permissions.has("customers.view");
   const canSeeWork = actor.permissions.has("orders.view");
+  const canSeeInquiries = actor.permissions.has("inquiries.view");
 
-  const [counts, customerCount, myWork] = await Promise.all([
+  const [counts, customerCount, myWork, myCommission, inquiries] = await Promise.all([
     canSeeUsers ? getAccessCounts() : null,
     canSeeCrm ? countCustomers() : null,
     canSeeWork ? getMyWorkSummary({ userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId }) : null,
+    // Null unless a commission percentage is set for this person (2026-11-04).
+    getEmployeeCommission(actor.user.id),
+    canSeeInquiries ? getNewInquiriesSummary() : null,
   ]);
 
   const firstName = (actor.user.displayName ?? actor.user.fullName).split(" ")[0];
@@ -173,6 +182,43 @@ export default async function DashboardPage() {
 
           {/* ── Side column ─────────────────────────────────────────────── */}
           <div className="min-w-0 space-y-5">
+            {inquiries ? (
+              <Card className={RAISED}>
+                <CardHeader
+                  icon={MessageSquareText}
+                  tone="indigo"
+                  title="New inquiries"
+                  description={
+                    inquiries.count === 0
+                      ? "Nothing waiting from the website."
+                      : `${inquiries.count} waiting for a reply`
+                  }
+                  actions={<CardLink href="/inquiries">View all</CardLink>}
+                />
+                {inquiries.latest.length > 0 ? (
+                  <ul className="-mt-2 divide-y divide-zinc-100">
+                    {inquiries.latest.map((inquiry) => (
+                      <li key={inquiry.id} className="py-2.5">
+                        <Link href="/inquiries" className="group block">
+                          <span className="flex items-center justify-between gap-3">
+                            <span className="truncate text-sm font-medium text-zinc-900 group-hover:underline">{inquiry.name}</span>
+                            <span className="shrink-0 text-xs text-zinc-500">{dayFormat.format(inquiry.createdAt)}</span>
+                          </span>
+                          <span className="mt-0.5 line-clamp-1 block text-xs text-zinc-500">
+                            {inquiry.service ? `${inquiry.service} · ` : ""}
+                            {inquiry.message}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <CompactEmpty icon={MessageSquareText} title="All caught up" description="New messages from the contact form show up here." />
+                )}
+              </Card>
+            ) : null}
+
+            {myCommission ? <CommissionCard commission={myCommission} title="Your commission" /> : null}
             <Card className={FLAT}>
               <CardHeader icon={UserRound} tone="indigo" title="Your account" />
               <dl className="-mt-2 divide-y divide-zinc-100">

@@ -3,7 +3,7 @@
 import { CircleAlert, ClipboardList, Clock, Loader2, PackagePlus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -115,17 +115,6 @@ export function CreateOrderForm({
   const [serverError, setServerError] = useState<string | undefined>();
 
   const fiverrAccountName = fiverrAccounts.find((a) => a.id === fiverrAccountId)?.name;
-
-  /** Services grouped by category, keeping the server's order. */
-  const serviceGroups = useMemo(() => {
-    const groups = new Map<string, ServicePickerRow[]>();
-    for (const service of services) {
-      const list = groups.get(service.categoryName) ?? [];
-      list.push(service);
-      groups.set(service.categoryName, list);
-    }
-    return [...groups.entries()];
-  }, [services]);
 
   const clearError = (key: FieldKey) => {
     if (errors[key]) setErrors((current) => withoutKeys(current, [key]));
@@ -442,7 +431,6 @@ export function CreateOrderForm({
                     index={index}
                     total={items.length}
                     services={services}
-                    serviceGroups={serviceGroups}
                     errors={itemErrors[item.key] ?? {}}
                     onChange={updateItem}
                     onDuplicate={() => duplicateItem(item)}

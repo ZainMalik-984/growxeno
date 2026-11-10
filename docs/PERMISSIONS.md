@@ -344,3 +344,18 @@ Covered now (`tests/unit/`, 41 tests passing):
 
 Still to run (needs infrastructure): RLS allow/deny, sign-in, unauthorized record access at the
 query level, and the Section 124 end-to-end workflow.
+
+**2026-11-04: the Employee role now creates and assigns work.** Owner-directed, confirmed directly ("employee
+does not do any work, he's the one who'll create jobs and assign them"), completing the redesign the
+2026-10-08 entry above deferred. Seeded Employee permissions (prisma/seed.ts `EMPLOYEE_PERMISSIONS`), added to
+the existing role in the database the same additive way the seed works (9 → 20 grants, none removed):
+`orders.view`, `orders.view.all`, `orders.create`, `orders.edit`, `orders.assign`, `orders.change_status`,
+`orders.comment`, `orders.files.view`, `orders.files.upload`, `orders.activity.view`, `customers.view`,
+`customers.create`, `customers.edit`, `services.view`, `categories.view`, `outsourced_workers.view`,
+`fiverr_accounts.view`, `daily_stats.view`, `employees.view`, `employees.stats.view`. Still no `finance.*`,
+users, roles or settings. They do see order prices and worker pay on orders, because creating/editing an
+order and assigning a worker sets them (`orderVisibility`).
+
+**2026-11-04: `inquiries.view` and `inquiries.manage` added** (module `inquiries`). Website contact-form submissions.
+Granted to Super Admin, Admin and Employee (owner request: "shown in the dashboard to admins and employees").
+Editing the public contact details uses `settings.edit`, which only Super Admin holds by default.

@@ -6,7 +6,7 @@ Action exists that is not listed here.
 
 The application exposes **no general-purpose REST or GraphQL API**. Data leaves the server in exactly
 three ways: server-rendered pages, **Server Actions** (every mutation, plus a few reads for pickers),
-and **three Route Handlers** (below). The Supabase-generated APIs (PostgREST, GraphQL, Storage,
+and **four Route Handlers** (below). The Supabase-generated APIs (PostgREST, GraphQL, Storage,
 Realtime) are closed to the browser key by RLS and are audited by `pnpm security:audit` — see
 `docs/SECURITY.md`.
 
@@ -33,16 +33,17 @@ Realtime) are closed to the browser key by RLS and are audited by `pnpm security
 | --- | --- | --- | --- |
 | `/search?q=` | GET | any signed-in, active user; **each result category is filtered by the permission that governs viewing it** (`orders.view` with its assigned-only scope, `customers.view`, `employees.view.all`, `outsourced_workers.view`, `services.view`, `categories.view`) | JSON `{ results }`, at most 5 hits per category, `Cache-Control: private, no-store`. Term must be 2–80 characters |
 | `/daily-stats/export` | GET | `daily_stats.export`, scoped like the list (own rows unless `daily_stats.view.all`) | CSV |
+| `/api/cron/youtube-stats` | GET | the scheduler only: `Authorization: Bearer $CRON_SECRET` (compared in constant time; refused when `CRON_SECRET` is unset). Public to the proxy, so a cron job without a session reaches it | JSON `{ checked, failed, skipped? }` — refreshes YouTube stats on items older than the interval in Settings (2026-11-10) |
 | `/auth/callback` | GET | anyone holding an emailed one-time link | redirect only — verifies the token, then redirects to a same-site path (`safeRedirectPath` rejects `//host`, `/\host`, control characters). Returns no data |
 
-An anonymous request to any of them is redirected to `/login` by the proxy and refused again by the
-handler itself.
+An anonymous request to any of them (except the cron route, which checks its own secret) is redirected
+to `/login` by the proxy and refused again by the handler itself.
 
 ---
 
 ## Server Actions
 
-75 actions across 11 files. "Requires" is the permission key checked before any data is touched.
+85 actions across 14 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -58,12 +59,13 @@ A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSI
 
 | Action | Requires |
 | --- | --- |
-| `assignRoleAction` | `users.edit` |
+| `assignRoleAction` | `users.edit` (only a role whose permissions the actor already holds, 2026-11-04) |
 | `removeRoleAction` | `users.edit` |
 | `setDirectPermissionAction` | `users.edit` |
 | `clearDirectPermissionAction` | `users.edit` |
 | `setRolePermissionAction` | `roles.edit` |
 | `setUserActiveAction` | `users.edit` |
+| `updateEmployeeProfileAction` | `users.edit` — name, display name, job title, phone, WhatsApp, roles, active status and commission % in one save; not your own roles/status/commission; can only give a role whose permissions you hold; lockout-guarded. Email is read-only |
 | `createRoleAction` | `roles.create` |
 | `updateRoleAction` | `roles.edit` |
 | `duplicateRoleAction` | `roles.create` |
@@ -91,7 +93,10 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | --- | --- |
 | `createCategoryAction` | `categories.create` |
 | `updateCategoryAction` | `categories.edit` |
-| `deleteCategoryAction` | `categories.delete` |
+| `deleteCategoryAction` | `categories.delete` (also removes its image file) |
+| `setCategoryImageAction` | `categories.edit` — FormData `categoryId` + `file`; PNG/JPEG/WebP by content, original ≤ 8 MB; compressed to WebP ≤ 800×800 (metadata stripped) and uploaded to Storage bucket `category-images` |
+| `removeCategoryImageAction` | `categories.edit` |
+| `setCategoryActiveAction` | `categories.edit` — deactivating switches off all its active services (marked `deactivatedByCategory`); reactivating brings back exactly those |
 
 ### Services — `src/lib/services/actions.ts`
 
@@ -113,7 +118,8 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | `updateOrderItemAction` | `orders.edit` (never changes the item deadline) |
 | `setOrderItemDeadlineAction` | `orders.edit` — sets an item's worker deadline by hand, or `deadline: null` to follow the order again |
 | `removeOrderItemAction` | `orders.edit` |
-| `assignOrderItemWorkerAction` | `orders.assign` |
+| `assignOrderItemWorkerAction` | `orders.assign` — when a worker is newly set, also emails them the task (Resend) per their "Send new tasks by" setting and returns `delivery` (email result + a prefilled `wa.me` link for the admin to send) |
+| `getAssignmentMessageAction` | `orders.assign` — "Message worker": the prefilled WhatsApp link again; `resendEmail: true` sends the email once more (logged in `message_logs`) |
 | `changeOrderItemStatusAction` | `orders.change_status` |
 | `updateOrderItemProgressAction` | `orders.change_status` — narrowed further in the service to the assigned worker (their own item only) or `orders.view.all` |
 | `cancelOrderItemWithAdjustedCostAction` | `orders.change_status` |
@@ -193,6 +199,26 @@ onto the new `finance.revenue.manage` (docs/PERMISSIONS.md) at the same time.
 | Action | Requires |
 | --- | --- |
 | `saveWorkerDeadlineSettingsAction` | `settings.edit` — saves the worker-deadline gap and rules, then recalculates the automatic deadlines of open orders' items |
+| `saveFiverrFeeSettingsAction` | `settings.edit` — the % Fiverr keeps from each Fiverr order, used for employee commission |
+| `saveYoutubeStatsSettingsAction` | `settings.edit` — turns the automatic YouTube stats refresh on/off and sets its interval (1–168 hours) |
+| `saveSiteContactAction` | `settings.edit` — email, phone and WhatsApp shown on the public home page; regenerates `/` |
+
+### YouTube stats — `src/lib/youtube/actions.ts`
+
+Reads public stats from the YouTube Data API v3 (`YOUTUBE_API_KEY`). Only the channel/video id parsed
+from the link is sent to Google; the link itself is never fetched by the server.
+
+| Action | Requires |
+| --- | --- |
+| `lookupYoutubeLinkAction` | signed in, plus `orders.create` or `orders.edit` — previews a link while an item is filled in (title, channel/video id, counts, Studio link). Saves nothing |
+| `refreshOrderItemStatsAction` | `orders.view`, narrowed in the service to items the actor can see (`orders.view.all`, or their own item). Saves a reading to the item's history; a second press within 30 s reuses the last reading |
+
+### Website inquiries — `src/lib/inquiries/actions.ts`
+
+| Action | Requires |
+| --- | --- |
+| `submitInquiryAction` | **public, no sign-in** — the home page contact form. Validated (`inquirySchema`), honeypot field, at most 3 per visitor per 10 minutes (keyed hash of the IP) |
+| `setInquiryStatusAction` | `inquiries.manage` — New / Contacted / Closed |
 
 ---
 

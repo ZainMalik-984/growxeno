@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
+import { categoryImageUrl } from "@/lib/categories/images";
 import type { ServiceMetricType } from "./metric-type";
 
 /**
@@ -19,6 +20,8 @@ export type ServiceListRow = {
   name: string;
   categoryId: string;
   categoryName: string;
+  /** The category image, if it has one (2026-11-05). */
+  categoryImageUrl: string | null;
   basePrice: string | null;
   currency: string;
   metricType: ServiceMetricType | null;
@@ -64,7 +67,7 @@ export async function listServices(options: {
         currency: true,
         metricType: true,
         isActive: true,
-        category: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true, imagePath: true } },
       },
       orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
       skip: (page - 1) * pageSize,
@@ -78,6 +81,7 @@ export async function listServices(options: {
       name: service.name,
       categoryId: service.category.id,
       categoryName: service.category.name,
+      categoryImageUrl: categoryImageUrl(service.category.imagePath),
       basePrice: service.basePrice ? service.basePrice.toString() : null,
       currency: service.currency,
       metricType: service.metricType,
@@ -157,6 +161,8 @@ export type ServicePickerRow = {
   id: string;
   name: string;
   categoryName: string;
+  /** The category logo, shown next to each option in the picker (2026-11-10). */
+  categoryImageUrl: string | null;
   basePrice: string | null;
   currency: string;
   /** Drives which structured fields the Order Item form shows — see src/lib/services/metric-type.ts. */
@@ -173,7 +179,7 @@ export async function listServicesForOrderPicker(): Promise<ServicePickerRow[]> 
       basePrice: true,
       currency: true,
       metricType: true,
-      category: { select: { name: true } },
+      category: { select: { name: true, imagePath: true } },
     },
     orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
   });
@@ -182,6 +188,7 @@ export async function listServicesForOrderPicker(): Promise<ServicePickerRow[]> 
     id: service.id,
     name: service.name,
     categoryName: service.category.name,
+    categoryImageUrl: categoryImageUrl(service.category.imagePath),
     basePrice: service.basePrice ? service.basePrice.toString() : null,
     currency: service.currency,
     metricType: service.metricType,

@@ -45,9 +45,10 @@ export async function createServiceRecord(
   return runTransaction(async (tx) => {
     const category = await tx.category.findUnique({
       where: { id: data.categoryId },
-      select: { id: true },
+      select: { id: true, name: true, isActive: true },
     });
     if (!category) throw new ServiceRejection("That category no longer exists.");
+    if (!category.isActive) throw new ServiceRejection(`${category.name} is inactive. Activate the category first.`);
 
     const service = await tx.service.create({
       data: {
@@ -85,14 +86,18 @@ export async function updateServiceRecord(
   if (!data.categoryId) return failure("Choose a category.");
 
   return runTransaction(async (tx) => {
-    const existing = await tx.service.findUnique({ where: { id: serviceId }, select: { name: true } });
+    const existing = await tx.service.findUnique({ where: { id: serviceId }, select: { name: true, isActive: true, categoryId: true } });
     if (!existing) throw new ServiceRejection("That service no longer exists.");
 
     const category = await tx.category.findUnique({
       where: { id: data.categoryId },
-      select: { id: true },
+      select: { id: true, name: true, isActive: true },
     });
     if (!category) throw new ServiceRejection("That category no longer exists.");
+    // An active service can't sit in an inactive category (2026-11-10).
+    if (existing.isActive && !category.isActive && category.id !== existing.categoryId) {
+      throw new ServiceRejection(`${category.name} is inactive. Activate it, or deactivate this service first.`);
+    }
 
     await tx.service.update({
       where: { id: serviceId },
@@ -127,14 +132,18 @@ export async function setServiceActive(
   return runTransaction(async (tx) => {
     const service = await tx.service.findUnique({
       where: { id: serviceId },
-      select: { name: true, isActive: true },
+      select: { name: true, isActive: true, category: { select: { name: true, isActive: true } } },
     });
     if (!service) throw new ServiceRejection("That service no longer exists.");
     if (service.isActive === isActive) {
       throw new ServiceRejection(`${service.name} is already ${isActive ? "active" : "inactive"}.`);
     }
+    if (isActive && !service.category.isActive) {
+      throw new ServiceRejection(`${service.category.name} is inactive. Activate the category first.`);
+    }
 
-    await tx.service.update({ where: { id: serviceId }, data: { isActive } });
+    // A change made by hand clears the "switched off with its category" mark.
+    await tx.service.update({ where: { id: serviceId }, data: { isActive, deactivatedByCategory: false } });
 
     await recordAudit(tx, {
       actorUserId: actor.user.id,

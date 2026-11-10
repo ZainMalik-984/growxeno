@@ -103,3 +103,32 @@ export function isSupabaseAdminConfigured(): boolean {
 export function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 }
+
+/**
+ * YouTube Data API v3 key (2026-11-10): reads public channel and video stats
+ * for order item links. Optional — without it the stats features say so and
+ * everything else works. Server-only; restrict the key to the YouTube Data API.
+ */
+export function getYoutubeApiKey(): string | null {
+  return process.env.YOUTUBE_API_KEY?.trim() || null;
+}
+
+/**
+ * Shared secret for scheduled jobs called over HTTP (e.g. Vercel Cron, which
+ * sends it as `Authorization: Bearer …`). Without it those endpoints refuse
+ * every call.
+ */
+export function getCronSecret(): string | null {
+  const value = process.env.CRON_SECRET?.trim();
+  return value && value.length >= 16 ? value : null;
+}
+
+/**
+ * Resend email (2026-11-11): the API key and the sender address. Null when
+ * either is missing, so email is reported as not set up instead of failing.
+ */
+export function getEmailEnv(): { apiKey: string; from: string } | null {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const from = process.env.EMAIL_FROM?.trim();
+  return apiKey && from ? { apiKey, from } : null;
+}

@@ -39,6 +39,10 @@ enum ServiceMetricType {
   VIEWS
   SUBSCRIBERS
   WATCH_HOURS
+  /// Added 2026-11-05 (owner request): followers on TikTok, X, Instagram, Facebook.
+  FOLLOWERS
+  LIKES
+  COMMENTS
 }
 
 /// A grouping of related services (specification Section 50), e.g. "Design"
@@ -48,6 +52,13 @@ model Category {
   name        String  @unique @db.VarChar(120)
   slug        String  @unique @db.VarChar(120)
   description String? @db.Text
+  /// Path of the category image inside the Supabase Storage bucket
+  /// "category-images" (2026-11-04). The public URL is built from it at read
+  /// time (src/lib/categories/images.ts), so the bucket host is never stored.
+  imagePath   String? @map("image_path") @db.VarChar(300)
+  /// Inactive categories switch off all their services (2026-11-05, owner
+  /// request); see setCategoryActive in src/lib/categories/service.ts.
+  isActive    Boolean @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -57,6 +68,7 @@ model Category {
 
   // Trigram indexes for ILIKE '%q%' search (global search, docs/DATABASE.md). Declared here — with ops: raw("gin_trgm_ops") —
   // so `migrate dev` no longer proposes dropping them.
+  @@index([isActive])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "categories_name_trgm_idx")
   @@map("categories")
 }
@@ -87,6 +99,10 @@ model Service {
   /// A service no longer offered is deactivated, not deleted, so past orders
   /// that reference it keep resolving.
   isActive Boolean @default(true) @map("is_active")
+  /// True when this service was switched off because its category was. Lets
+  /// reactivating the category bring back exactly those services, and not
+  /// ones someone had switched off by hand.
+  deactivatedByCategory Boolean @default(false) @map("deactivated_by_category")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

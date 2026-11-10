@@ -27,8 +27,10 @@ for (const dir of domains) {
 
 const doc = readFileSync(join(root, "docs/API.md"), "utf8");
 
-// The login flow is public by nature; everything else must authorize.
-const PUBLIC_BY_NATURE = new Set(["signIn", "signOut", "requestPasswordResetAction", "updatePasswordAction"]);
+// The login flow and the website contact form (submitInquiryAction, 2026-11-04 —
+// validated, honeypot, rate-limited per visitor) are public by nature;
+// everything else must authorize.
+const PUBLIC_BY_NATURE = new Set(["signIn", "signOut", "requestPasswordResetAction", "updatePasswordAction", "submitInquiryAction"]);
 const AUTH_CALLS = ["authorizeAction(", "authorizeAuthenticatedAction(", "requirePermission(", "requireActor(", "requireAllPermissions(", "requireScope("];
 
 describe("Server Actions", () => {
