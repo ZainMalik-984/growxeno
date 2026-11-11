@@ -310,6 +310,14 @@ function Header() {
               <Btn href={`mailto:${EMAIL}`} variant="outline">Email us</Btn>
               <Btn href="#contact">Book a meeting</Btn>
             </div>
+            {/* The contact bar above the header is desktop-only, so its details live here on phones. */}
+            <div className="space-y-2.5 border-t pt-4 pb-2 text-sm text-muted-foreground">
+              {phone ? (
+                <a href={telHref(phone)} className="flex items-center gap-2 hover:text-foreground"><Phone className="h-4 w-4" aria-hidden />{phone}</a>
+              ) : null}
+              <a href={`mailto:${EMAIL}`} className="flex items-center gap-2 break-all hover:text-foreground"><Mail className="h-4 w-4 shrink-0" aria-hidden />{EMAIL}</a>
+              <SocialLinks size="sm" className="pt-1" />
+            </div>
           </Container>
         </div>
       )}
@@ -364,7 +372,7 @@ function Services() {
   const [active, setActive] = useState(0);
   const s = services[active] ?? services[0]!;
   return (
-    <section id="services" className="py-20 md:py-28">
+    <section id="services" className="py-16 md:py-28">
       <Container>
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <SectionHead kicker="Services" title="Six services, held to one standard: it actually works." sub="Pick a service to see who it's for, what's included, and what you end up with." />
@@ -395,7 +403,7 @@ function Services() {
             ))}
           </div>
 
-          <article key={s.id} role="tabpanel" className="animate-fade-up rounded-2xl border bg-card p-6 shadow-panel md:p-10">
+          <article key={s.id} role="tabpanel" className="animate-fade-up rounded-2xl border bg-card p-5 shadow-panel sm:p-6 md:p-10">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-start gap-4">
                 <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
@@ -501,7 +509,18 @@ function Difference() {
             </div>
           </div>
 
-          <div className="self-start overflow-hidden rounded-2xl border border-navy-line lg:mt-24">
+          {/* Phones: one card per row, since three columns leave 2-3 words per line at 375px. */}
+          <ul className="grid gap-3 md:hidden">
+            {rows.map(([k, bad, good]) => (
+              <li key={k} className="rounded-xl border border-navy-line bg-navy-2 p-4 text-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-navy-muted">{k}</p>
+                <p className="mt-2.5 flex gap-2 text-navy-muted"><span aria-hidden className="text-destructive">✕</span><span><span className="sr-only">Common in the market: </span>{bad}</span></p>
+                <p className="mt-2 flex gap-2 font-medium"><Tick className="mt-0.5 h-4 w-4" /><span><span className="sr-only">Grow Xeno: </span>{good}</span></p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden self-start overflow-hidden rounded-2xl border border-navy-line md:block lg:mt-24">
             <div className="grid grid-cols-[0.8fr_1fr_1.2fr] bg-navy-2 text-xs font-medium uppercase tracking-wider text-navy-muted">
               <div className="p-4 md:p-5" />
               <div className="p-4 md:p-5">Common in the market</div>
@@ -523,7 +542,7 @@ function Difference() {
 
 function Process() {
   return (
-    <section id="process" className="py-20 md:py-28">
+    <section id="process" className="py-16 md:py-28">
       <Container>
         <SectionHead center kicker="How it works" title="What happens after you get in touch" sub="Four steps, start to finish. You'll always know where your order stands." />
         <ol className="relative mt-14 grid gap-4 md:grid-cols-4 md:gap-6">
@@ -555,7 +574,7 @@ function Faq() {
   const { email: EMAIL } = useContact();
   const [open, setOpen] = useState(0);
   return (
-    <section id="faq" className="border-t bg-surface py-20 md:py-28">
+    <section id="faq" className="border-t bg-surface py-16 md:py-28">
       <Container className="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:gap-16">
         <div>
           <SectionHead kicker="FAQ" title="Good to know before you reach out." />
@@ -623,10 +642,10 @@ function Contact() {
   };
   const input = "mt-1.5 w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-[0.9375rem] outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-ring/15";
   return (
-    <section id="contact" className="py-20 md:py-28">
+    <section id="contact" className="py-16 md:py-28">
       <Container>
-        <div className="grid overflow-hidden rounded-3xl border shadow-panel lg:grid-cols-[1fr_1.25fr]">
-          <div className="bg-navy p-8 text-navy-foreground md:p-12">
+        <div className="grid overflow-hidden rounded-2xl border shadow-panel sm:rounded-3xl lg:grid-cols-[1fr_1.25fr]">
+          <div className="bg-navy p-6 text-navy-foreground sm:p-8 md:p-12">
             <p className="text-sm font-medium text-navy-muted">Get started</p>
             <h2 className="mt-3 text-3xl font-semibold md:text-4xl">Tell us what you need. Get a straight quote back.</h2>
             <p className="mt-4 text-navy-muted">A channel, an account, a store or a site — describe your goal and we&apos;ll reply directly.</p>
@@ -637,7 +656,7 @@ function Contact() {
             </ul>
             <div className="mt-10 border-t border-navy-line pt-6 text-sm">
               <p className="text-navy-muted">Prefer email?</p>
-              <a href={`mailto:${EMAIL}`} className="mt-1 inline-block text-lg font-semibold hover:underline">{EMAIL}</a>
+              <a href={`mailto:${EMAIL}`} className="mt-1 inline-block break-all text-lg font-semibold hover:underline">{EMAIL}</a>
               {phone ? (
                 <>
                   <p className="mt-4 text-navy-muted">Or call us</p>
@@ -657,14 +676,14 @@ function Contact() {
           </div>
 
           {sent ? (
-            <div className="flex flex-col items-start justify-center bg-card p-8 md:p-12" role="status">
+            <div className="flex flex-col items-start justify-center bg-card p-6 sm:p-8 md:p-12" role="status">
               <span className="grid h-11 w-11 place-items-center rounded-full bg-accent text-accent-foreground"><Tick /></span>
               <h3 className="mt-5 text-2xl font-semibold">Thanks — your inquiry is in.</h3>
               <p className="mt-2 text-muted-foreground">We&apos;ll reply to the email you gave us. Need to add something? Write to <a href={`mailto:${EMAIL}`} className="font-medium text-primary hover:underline">{EMAIL}</a>.</p>
               <button type="button" onClick={() => setSent(false)} className="mt-6 text-sm font-medium text-primary hover:underline">Send another inquiry</button>
             </div>
           ) : (
-          <form onSubmit={submit} className="bg-card p-8 md:p-12" aria-busy={pending}>
+          <form onSubmit={submit} className="bg-card p-6 sm:p-8 md:p-12" aria-busy={pending}>
             {/* Honeypot: hidden from people and screen readers; bots tend to fill it. */}
             <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
               <label>Company<input type="text" name={HONEYPOT_FIELD} tabIndex={-1} autoComplete="off" /></label>
@@ -707,8 +726,8 @@ function Footer() {
   const { email: EMAIL, phone } = useContact();
   return (
     <footer className="border-t bg-surface pb-24 md:pb-0">
-      <Container className="grid gap-10 py-14 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
-        <div>
+      <Container className="grid grid-cols-2 gap-x-6 gap-y-10 py-14 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
+        <div className="col-span-2 md:col-span-1">
           <BrandWordmark className="h-11" />
           <p className="mt-4 max-w-xs text-sm text-muted-foreground">Digital growth services, run honestly. Verified before handover, supported after.</p>
         </div>
@@ -724,7 +743,7 @@ function Footer() {
             {([["Why Grow Xeno", "#why"], ["How it works", "#process"], ["FAQ", "#faq"], ["Contact", "#contact"]] as [string, string][]).map(([l, h]) => <li key={h}><a href={h} className="hover:text-foreground">{l}</a></li>)}
           </ul>
         </div>
-        <div>
+        <div className="col-span-2 md:col-span-1">
           <p className="text-sm font-semibold">Contact</p>
           <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
             <li>
