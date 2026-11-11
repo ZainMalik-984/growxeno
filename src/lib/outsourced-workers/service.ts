@@ -1,3 +1,4 @@
+import { inviteByEmail } from "@/lib/auth/invite";
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -11,7 +12,6 @@ import {
   serviceFailure as failure,
   type ServiceResult,
 } from "@/lib/db/transaction";
-import { getAppUrl } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { normalizeRate } from "./rate-input";
 import type { WorkerNotifyChannel } from "./notify-via";
@@ -216,14 +216,10 @@ export async function inviteOutsourcedWorkerToLogin(actor: Actor, workerId: stri
     return failure(error instanceof Error ? error.message : "Supabase administrative access is not configured.");
   }
 
-  const invited = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { full_name: worker.name },
-    redirectTo: `${getAppUrl()}/auth/reset-password`,
-  });
-  if (!invited.data.user) {
-    return failure(invited.error?.message ?? "Could not send the invitation.");
-  }
-  const authUserId = invited.data.user.id;
+  // Emailed by the app through Resend (2026-11-12): Supabase's own invite email failed.
+  const invited = await inviteByEmail(admin, { email, fullName: worker.name, kind: "worker" });
+  if (!invited.ok) return failure(invited.error);
+  const authUserId = invited.authUserId;
 
   const result = await runTransaction(async (tx) => {
     const profile = await tx.user.create({

@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { safeRedirectPath } from "@/lib/auth/redirect";
-import { getAppUrl, isSupabaseConfigured } from "@/lib/env";
+import { getAppUrl, getEmailEnv, isSupabaseConfigured } from "@/lib/env";
+import { sendPasswordResetEmail } from "@/lib/auth/invite";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -111,6 +113,17 @@ export async function requestPasswordResetAction(
   const parsed = requestResetSchema.safeParse({ email: formData.get("email") });
   if (!parsed.success) {
     return { fieldErrors: { email: parsed.error.issues[0]?.message } };
+  }
+
+  // Sent by the app through Resend on the branded template when it's set up
+  // (2026-11-12): Supabase's own email isn't configured for the domain.
+  if (getEmailEnv()) {
+    try {
+      await sendPasswordResetEmail(createSupabaseAdminClient(), parsed.data.email.trim().toLowerCase());
+    } catch {
+      // Same answer either way: never reveal whether the address has an account.
+    }
+    return { sent: true };
   }
 
   const supabase = await createSupabaseServerClient();

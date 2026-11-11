@@ -12,7 +12,10 @@ export type ProviderReceipt =
 export type EmailMessage = {
   to: string;
   subject: string;
+  /** Plain text. */
   body: string;
+  /** The branded HTML version (src/lib/email/layout.ts); without it the text is shown as simple HTML. */
+  html?: string;
 };
 
 export type WhatsAppMessage = {

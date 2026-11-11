@@ -6,7 +6,14 @@ import { getEmailProvider } from "@/lib/notifications/providers";
 import { wantsEmail, wantsWhatsapp } from "@/lib/outsourced-workers/notify-via";
 import { serviceLabel } from "@/lib/services/label";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
-import { acceptUrlFor, buildAssignmentMessage, whatsappUrl } from "./assignment-message";
+import { acceptUrlFor, assignmentFigures, buildAssignmentMessage, whatsappUrl } from "./assignment-message";
+import { renderedToMessage } from "@/lib/email/send";
+import { taskAssignedEmail } from "@/lib/email/templates";
+import { formatPay } from "@/lib/finance/format-pay";
+import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
+import { getSiteContact } from "@/lib/settings/queries";
+
+const deadlineFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 
 /**
  * Tells an External Worker about a task assigned to them (owner request,
@@ -35,6 +42,9 @@ export async function prepareAssignmentMessages(
       channelLink: true,
       startingCount: true,
       targetCount: true,
+      workerCost: true,
+      workerCostCurrency: true,
+      deadline: true,
       order: { select: { orderNumber: true } },
       service: { select: { name: true, metricType: true } },
       category: { select: { name: true } },
@@ -46,6 +56,11 @@ export async function prepareAssignmentMessages(
   const worker = item?.outsourcedWorker;
   if (!item || !worker) return null;
 
+  const appUrl = getAppUrl();
+  const acceptUrl = acceptUrlFor(appUrl, itemId);
+  const serviceName = serviceLabel(item.service.name, item.category.name);
+  const metricType = item.service.metricType as ServiceMetricType | null;
+  // WhatsApp keeps the short plain message; email gets the branded template (2026-11-12).
   const message = buildAssignmentMessage({
     orderNumber: item.order.orderNumber,
     serviceName: serviceLabel(item.service.name, item.category.name),
@@ -53,7 +68,20 @@ export async function prepareAssignmentMessages(
     channelLink: item.channelLink,
     startingCount: item.startingCount,
     targetCount: item.targetCount,
-    acceptUrl: acceptUrlFor(getAppUrl(), itemId),
+    acceptUrl,
+  });
+  const figures = assignmentFigures({ metricType, startingCount: item.startingCount, targetCount: item.targetCount });
+  const taskEmail = taskAssignedEmail({
+    workerName: worker.name,
+    orderNumber: item.order.orderNumber,
+    serviceName,
+    channelLink: item.channelLink,
+    figures: figures && metricType ? { unit: SERVICE_METRIC_TYPE_LABELS[metricType].toLowerCase(), need: figures.need, current: figures.current, stopAt: figures.stop } : null,
+    payLabel: item.workerCost ? formatPay(item.workerCost.toString(), item.workerCostCurrency) : null,
+    deadlineLabel: item.deadline ? `${deadlineFormat.format(item.deadline)} UTC` : null,
+    acceptUrl,
+    appUrl,
+    contactEmail: await getSiteContact().then((c) => c.email || undefined).catch(() => undefined),
   });
 
   let email: AssignmentMessageOutcome["email"];
@@ -62,7 +90,7 @@ export async function prepareAssignmentMessages(
   else if (!address) email = { status: "skipped", reason: "No email address on file." };
   else if (!options.sendEmail) email = { status: "skipped", reason: `Ready to send to ${address}.` };
   else {
-    const receipt = await getEmailProvider().sendTemplate({ to: address, subject: message.subject, body: message.text });
+    const receipt = await getEmailProvider().sendTemplate(renderedToMessage(address, taskEmail));
     await prisma.messageLog
       .create({
         data: {

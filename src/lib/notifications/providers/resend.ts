@@ -42,7 +42,7 @@ export class ResendEmailProvider implements EmailProvider {
           to: [message.to],
           subject: message.subject,
           text: message.body,
-          html: textToHtml(message.body),
+          html: message.html ?? textToHtml(message.body),
         }),
         signal: AbortSignal.timeout(15_000),
       });
