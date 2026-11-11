@@ -6,11 +6,12 @@ import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
 
 import { requirePermission } from "@/lib/auth/authorize";
-import { Card, CardHeader } from "@/components/ui/card";
+import { Card, CardHeader, PHONE_FLUSH } from "@/components/ui/card";
 import { DeadlineCountdown } from "@/components/ui/deadline";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Breadcrumbs, MetaList, Section } from "@/components/ui/page";
 import { StatusBadge, StatusDot } from "@/components/ui/status-dot";
+import { cn } from "@/lib/utils";
 import { listAssignableExpenseCategories, listExpensesForOrder, getOrderFinancials } from "@/lib/finance/queries";
 import { listAssignableFiverrAccounts } from "@/lib/fiverr-accounts/queries";
 import { formatCurrencyBreakdown } from "@/lib/finance/money";
@@ -18,6 +19,8 @@ import { isAssignedToIdentity } from "@/lib/orders/assignment";
 import { getOrderDetail, listAssignableWorkers } from "@/lib/orders/queries";
 import { CALCULATED_ORDER_STATUSES, CLOSED_ORDER_STATUSES, ORDER_STATUS_LABELS } from "@/lib/orders/state-machine";
 import { listAssignableOutsourcedWorkers } from "@/lib/outsourced-workers/queries";
+import { getWorkloads } from "@/lib/outsourced-workers/workload-queries";
+import { EMPTY_WORKLOAD } from "@/lib/outsourced-workers/workload";
 import { listServicesForOrderPicker } from "@/lib/services/queries";
 import { refreshDueItemStats } from "@/lib/youtube/stats-service";
 import { ExpenseForm } from "../../finance/expenses/expense-form";
@@ -33,9 +36,12 @@ export const metadata: Metadata = { title: "Order" };
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 
-export default async function OrderDetailPage({ params }: PageProps<"/orders/[id]">) {
+export default async function OrderDetailPage({ params, searchParams }: PageProps<"/orders/[id]">) {
   const actor = await requirePermission("orders.view");
   const { id } = await params;
+  // An item's updates opened from a notification (2026-11-11).
+  const rawUpdates = (await searchParams).updates;
+  const openUpdatesId = typeof rawUpdates === "string" && /^[0-9a-f-]{36}$/i.test(rawUpdates) ? rawUpdates : null;
 
   const canEdit = actor.permissions.has("orders.edit");
   const canCreateItems = actor.permissions.has("orders.create");
@@ -54,7 +60,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
   // One round of requests, not two: the pickers/financials only need the id and
   // permissions, so they load alongside the order (each ~200ms trip to the
   // database region adds up). Nothing is rendered before the checks below.
-  const [rawOrder, fiverrAccounts, services, outsourcedWorkers, financials, expenses, expenseCategories, expenseUsers] = await Promise.all([
+  const [rawOrder, fiverrAccounts, services, outsourcedWorkerRows, financials, expenses, expenseCategories, expenseUsers, workloads] = await Promise.all([
     getOrderDetail(id),
     canEdit ? listAssignableFiverrAccounts() : Promise.resolve([]),
     needsItemPickers ? listServicesForOrderPicker() : Promise.resolve([]),
@@ -66,7 +72,10 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
     canViewExpenses ? listExpensesForOrder(id) : Promise.resolve([]),
     canCreateExpense ? listAssignableExpenseCategories() : Promise.resolve([]),
     canCreateExpense ? listAssignableWorkers() : Promise.resolve([]),
+    // Each worker's current load, shown when choosing who to assign (2026-11-11).
+    canAssign ? getWorkloads() : Promise.resolve(new Map()),
   ]);
+  const outsourcedWorkers = outsourcedWorkerRows.map((worker) => ({ ...worker, workload: workloads.get(worker.id) ?? EMPTY_WORKLOAD }));
   if (!rawOrder) notFound();
 
   const identity = { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId };
@@ -114,13 +123,15 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
 
   return (
     <>
-      <Breadcrumbs items={[{ label: "Operations" }, { label: "Orders", href: "/orders" }, { label: `#${order.orderNumber}` }]} />
+      <div className="hidden md:block">
+        <Breadcrumbs items={[{ label: "Operations" }, { label: "Orders", href: "/orders" }, { label: `#${order.orderNumber}` }]} />
+      </div>
 
       {/* ── Header: identity + status on the left, status actions on the right ── */}
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-zinc-900">Order #{order.orderNumber}</h1>
+            <h1 className="text-xl font-semibold tracking-[-0.02em] text-zinc-900 sm:text-[22px]">Order #{order.orderNumber}</h1>
             {visibility.orderDetails || !CALCULATED_ORDER_STATUSES.includes(order.status) ? (
               <StatusBadge tone={ORDER_STATUS_TONE[order.status]} label={ORDER_STATUS_LABELS[order.status]} />
             ) : null}
@@ -200,20 +211,23 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
           the wide column. Details and the collapsed money/dates are the side. */}
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-6">
-          <Card className="p-5 sm:p-6">
-            <CardHeader
-              icon={ListChecks}
-              title="Items"
-              description="Each item moves through its own status."
-              tone="amber"
-              actions={
-                totalItemCount > 0 ? (
-                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
-                    {assignedItemCount}/{totalItemCount} assigned
-                  </span>
-                ) : undefined
-              }
-            />
+          {/* Rows run edge to edge inside the card; only the header is padded (2026-11-11). */}
+          <Card className={cn("overflow-hidden p-0 sm:p-0", PHONE_FLUSH)}>
+            <div className="px-4 pt-5 sm:px-6 [&>div]:mb-4">
+              <CardHeader
+                icon={ListChecks}
+                title="Items"
+                description="Each item moves through its own status."
+                tone="amber"
+                actions={
+                  totalItemCount > 0 ? (
+                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
+                      {assignedItemCount}/{totalItemCount} assigned
+                    </span>
+                  ) : undefined
+                }
+              />
+            </div>
             <OrderItemsPanel
               orderId={order.id}
               items={order.items}
@@ -228,11 +242,12 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
               canViewAll={canViewAll}
               canUploadOwn={canUploadOwn}
               showCosts={visibility.costs}
+              openUpdatesId={openUpdatesId}
             />
           </Card>
 
           {canViewActivity ? (
-            <Section title="Activity" description="What has happened on this order, newest first.">
+            <Section title="Activity" description="What has happened on this order, newest first." className={PHONE_FLUSH}>
               {order.activity.length === 0 ? (
                 <p className="text-[13px] text-zinc-500">No activity yet.</p>
               ) : (
@@ -267,7 +282,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/orders/[id
               "summary financials and expenses should be hidden under a dropdown").
               Not shown to workers: it lists the order's own dates (2026-11-03). */}
           {visibility.orderDetails ? (
-          <Card className="p-5 sm:p-6">
+          <Card className={cn("p-5 sm:p-6", PHONE_FLUSH)}>
             <Disclosure
               title="Summary, financials & expenses"
               description={isOpenOrder ? "Dates, revenue, costs and this order's expenses." : "Dates, revenue, costs and expenses for this order."}

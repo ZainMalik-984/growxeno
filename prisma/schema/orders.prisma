@@ -353,6 +353,7 @@ model OrderItem {
 
   links         OrderItemLink[]
   statSnapshots OrderItemStatSnapshot[]
+  updates       OrderItemUpdate[]
 
   @@index([orderId])
   @@index([statsCheckedAt])
@@ -468,6 +469,50 @@ model OrderItemStatSnapshot {
 
   @@index([orderItemId, takenAt])
   @@map("order_item_stat_snapshots")
+}
+
+/// A post in an item's updates thread (2026-11-11, owner request: "the updates
+/// should be like a chat system"): the worker, or someone on the team, reports
+/// progress with an optional new count, text and screenshots. Append-only.
+/// The author is a plain id + name, no relation, so a post outlives its account.
+model OrderItemUpdate {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderItemId String    @map("order_item_id") @db.Uuid
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  authorId    String? @map("author_id") @db.Uuid
+  authorLabel String  @map("author_label") @db.VarChar(200)
+  /// True when the author was the item's assigned worker when posting.
+  fromWorker  Boolean @default(false) @map("from_worker")
+
+  body String? @db.VarChar(2000)
+
+  /// The count this update set the item to, and what it was before. Null when the update didn't change it.
+  countValue    Int? @map("count_value")
+  previousCount Int? @map("previous_count")
+
+  /// Object paths in the private "item-updates" Storage bucket.
+  imagePaths String[] @default([]) @map("image_paths")
+
+  /// A worker asking the team for screenshots (2026-11-11, owner request), e.g.
+  /// of a channel's analytics they can't open. Open until someone on the team
+  /// answers it; the team sees a badge until then.
+  isRequest       Boolean   @default(false) @map("is_request")
+  /// "SCREENSHOTS", or "WITHDRAW" when the worker can't continue the task
+  /// (2026-11-11, owner request): the team then moves what's left to someone else.
+  requestType     String    @default("SCREENSHOTS") @map("request_type") @db.VarChar(20)
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedByLabel String?   @map("resolved_by_label") @db.VarChar(200)
+  /// How it was resolved, e.g. "600 watch hours moved to Taimoor".
+  resolutionNote  String?   @map("resolution_note") @db.VarChar(300)
+  /// On an answer: the request it answered (plain id, same table).
+  answersRequestId String? @map("answers_request_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orderItemId, createdAt])
+  @@index([isRequest, resolvedAt])
+  @@map("order_item_updates")
 }
 
 /// Internal notes (specification Section 62) — distinct from `OrderActivity`.

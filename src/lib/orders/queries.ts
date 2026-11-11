@@ -40,6 +40,8 @@ export type OrderListFilters = {
   dueToday?: boolean;
   dueThisWeek?: boolean;
   hasLinks?: boolean;
+  /** Orders with a screenshot request waiting for the team (2026-11-11). */
+  screenshotRequests?: boolean;
   linkQuery?: string;
   amountMin?: string;
   amountMax?: string;
@@ -75,6 +77,10 @@ export type OrderListItemRow = {
   /** What the assigned worker is paid. Redacted by redactOrderListItems. */
   workerCost: string | null;
   workerCostCurrency: string;
+  /** A screenshot request on this item is waiting for the team (2026-11-11). */
+  hasOpenRequest: boolean;
+  /** The worker said they can't continue; waiting for the team to reassign. */
+  hasWithdrawRequest: boolean;
 };
 
 export type OrderListRow = {
@@ -131,6 +137,8 @@ function buildOrderListWhere(
     };
   }
   if (filters.hasLinks) itemFilter.links = { ...itemFilter.links, some: { ...itemFilter.links?.some } };
+  // Any request waiting for the team: screenshots or "can't continue" (2026-11-11).
+  if (filters.screenshotRequests) itemFilter.updates = { some: { isRequest: true, resolvedAt: null } };
   const hasItemFilter = Object.keys(itemFilter).length > 0;
 
   const and: Prisma.OrderWhereInput[] = [];
@@ -293,6 +301,7 @@ export async function listOrders(
           service: { select: { name: true, metricType: true, category: { select: { name: true } } } },
           worker: { select: { id: true, fullName: true } },
           outsourcedWorker: { select: { id: true, name: true } },
+          updates: { where: { isRequest: true, resolvedAt: null }, select: { id: true, requestType: true, authorLabel: true, body: true, createdAt: true }, take: 5 },
         },
         orderBy: { createdAt: "asc" },
       })
@@ -317,6 +326,8 @@ export async function listOrders(
       channelTitle: item.statsTitle,
       workerCost: item.workerCost ? item.workerCost.toString() : null,
       workerCostCurrency: item.workerCostCurrency,
+      hasOpenRequest: item.updates.some((u) => u.requestType === "SCREENSHOTS"),
+      hasWithdrawRequest: item.updates.some((u) => u.requestType === "WITHDRAW"),
     };
     const existing = itemsByOrderId.get(item.orderId);
     if (existing) existing.push(row);
@@ -377,6 +388,12 @@ export type OrderItemRow = {
   links: OrderItemLinkRow[];
   /** Public YouTube stats for the link, null for other platforms (2026-11-10). */
   stats: ItemStats | null;
+  /** Posts in the item's updates thread (2026-11-11). */
+  updateCount: number;
+  /** A screenshot request on this item is waiting for the team. */
+  hasOpenRequest: boolean;
+  /** The worker said they can't continue (2026-11-11); waiting for the team. */
+  withdrawRequest: { id: string; authorLabel: string; reason: string | null; createdAt: Date } | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -494,6 +511,8 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
           worker: { select: { id: true, fullName: true } },
           outsourcedWorker: { select: { id: true, name: true } },
           links: { select: { id: true, url: true, domain: true, label: true }, orderBy: { createdAt: "asc" } },
+          _count: { select: { updates: true } },
+          updates: { where: { isRequest: true, resolvedAt: null }, select: { id: true, requestType: true, authorLabel: true, body: true, createdAt: true }, take: 5 },
           statsSourceId: true,
           statsSourceKind: true,
           statsTitle: true,
@@ -567,6 +586,12 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
       assignedAt: item.assignedAt,
       finishedAt: item.finishedAt,
       links: item.links,
+      updateCount: item._count.updates,
+      hasOpenRequest: item.updates.some((u) => u.requestType === "SCREENSHOTS"),
+      withdrawRequest: (() => {
+        const w = item.updates.find((u) => u.requestType === "WITHDRAW");
+        return w ? { id: w.id, authorLabel: w.authorLabel, reason: w.body, createdAt: w.createdAt } : null;
+      })(),
       stats:
         platformOf(item.category.name) === "youtube" && item.channelLink
           ? {

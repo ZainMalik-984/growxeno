@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { Ban, Camera, ChevronRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
@@ -8,7 +8,7 @@ import { DeadlineCountdown } from "@/components/ui/deadline";
 import { AcceptItemsButton } from "./accept-items-button";
 
 import { ProgressBar } from "@/components/ui/progress-bar";
-import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
+import { StatusBadge, StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { Table, TableWrap, TBody, TH, THead, TD, TR } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,7 @@ export type OrdersTableItem = {
   statusLabel: string;
   statusTone: StatusTone;
   metricLabel: string | null;
+  startingCount: number | null;
   currentCount: number | null;
   targetCount: number | null;
 };
@@ -58,6 +59,10 @@ export type OrdersTableRow = {
   progressPercent: number | null;
   /** Distinct client channels across this row's visible items. */
   channels: ChannelLink[];
+  /** Screenshot requests waiting for the team on this order (team view only, 2026-11-11). */
+  openRequests: number;
+  /** Items whose worker can't continue, waiting to be reassigned (team view only). */
+  withdrawRequests: number;
   items: OrdersTableItem[];
 };
 
@@ -88,7 +93,14 @@ export function OrdersTable({
   const th = cn(EDGE, "border-zinc-200/80 bg-zinc-50/80 py-2.5 text-zinc-500");
 
   return (
-    <TableWrap>
+    <>
+    {/* Phones: one card per order (2026-11-11), since the table is ~970px wide. */}
+    <ul className="divide-y divide-zinc-100 md:hidden">
+      {rows.map((order) => (
+        <OrderCard key={order.id} order={order} showCustomer={showCustomer} showAmount={showAmount} />
+      ))}
+    </ul>
+    <TableWrap className="hidden md:block">
       <Table className="min-w-[720px]">
         <caption className="sr-only">Orders</caption>
         <THead>
@@ -161,6 +173,8 @@ export function OrdersTable({
                     ) : (
                       <StatusDot tone={order.statusTone} label={order.statusLabel} />
                     )}
+                    {order.withdrawRequests > 0 ? <WithdrawBadge className="mt-1" /> : null}
+                    {order.openRequests > 0 ? <RequestBadge count={order.openRequests} className="mt-1" /> : null}
                   </TD>
                   <TD className={cn(EDGE, "whitespace-nowrap py-3")}>
                     {order.deadline ? (
@@ -228,6 +242,126 @@ export function OrdersTable({
         </TBody>
       </Table>
     </TableWrap>
+    </>
+  );
+}
+
+/** "120 / 1,000 watch hours delivered · now 775": what was delivered since the start, as the progress bar measures it. */
+function DeliveredLine({ item }: { item: OrdersTableItem }) {
+  const start = Math.max(0, item.startingCount ?? 0);
+  const delivered = Math.max(0, (item.currentCount ?? start) - start);
+  const required = Math.max(0, (item.targetCount ?? 0) - start);
+  return (
+    <p className="mt-1 text-xs tabular-nums text-zinc-600">
+      <span className="font-semibold text-zinc-900">{delivered.toLocaleString("en-US")}</span> / {required.toLocaleString("en-US")} {item.metricLabel} delivered
+      {item.currentCount !== null ? <span className="text-zinc-400"> · now {item.currentCount.toLocaleString("en-US")}</span> : null}
+    </p>
+  );
+}
+
+/**
+ * One order on a phone. The whole card opens the order (a stretched link under
+ * the content); the channel link and Accept sit above it so they stay tappable.
+ */
+function OrderCard({ order, showCustomer, showAmount }: { order: OrdersTableRow; showCustomer: boolean; showAmount: boolean }) {
+  const acceptable = order.items.filter((item) => item.canAccept);
+  const first = order.items[0];
+  const services = order.items.length > 1 ? `${first?.serviceName ?? "Items"} +${order.items.length - 1} more` : (first?.serviceName ?? null);
+  const metric = order.items.length === 1 && first?.metricLabel && first.targetCount !== null ? first : null;
+  const channel = order.channels[0];
+
+  return (
+    <li className="relative px-4 py-4 transition-colors active:bg-zinc-50">
+      <Link href={`/orders/${order.id}`} className="absolute inset-0" aria-label={`Open order #${order.orderNumber}`} />
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-xs text-zinc-500">
+            <span className="font-semibold tabular-nums text-zinc-900">#{order.orderNumber}</span>
+            {showCustomer && order.customerName ? <span className="truncate">{order.customerName}</span> : null}
+          </p>
+          {services ? <p className="mt-0.5 truncate text-[13px] text-zinc-600">{services}</p> : null}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <StatusBadge tone={order.statusTone} label={order.statusLabel} className="px-2 py-0.5" />
+          {order.withdrawRequests > 0 ? <WithdrawBadge /> : null}
+          {order.openRequests > 0 ? <RequestBadge count={order.openRequests} /> : null}
+        </div>
+      </div>
+
+      {channel ? (
+        <div className="relative mt-2.5 flex min-w-0 items-center gap-1.5">
+          <ChannelAnchor channel={channel} className="max-w-full text-sm" />
+          {order.channels.length > 1 ? (
+            <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[11px] font-medium text-zinc-600">+{order.channels.length - 1}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {order.progressPercent !== null ? (
+        <div className="mt-3">
+          <div className="flex items-center gap-2.5">
+            <ProgressBar percent={order.progressPercent} className="flex-1" />
+            <span className="tabular text-xs font-semibold text-zinc-700">{order.progressPercent}%</span>
+          </div>
+          {metric ? <DeliveredLine item={metric} /> : null}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="min-w-0 text-xs text-zinc-500">
+          {order.deadline ? (
+            <DeadlineCountdown deadline={order.deadline} finished={order.finished} showDate={false} />
+          ) : (
+            <span>
+              {order.itemCount} {order.itemCount === 1 ? "item" : "items"}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {showAmount && order.amountLabel ? (
+            <span className="text-sm font-semibold tabular-nums text-zinc-900">{order.amountLabel}</span>
+          ) : null}
+          {acceptable.length > 0 ? (
+            <AcceptItemsButton
+              itemIds={acceptable.map((item) => item.id)}
+              label={acceptable.length > 1 ? `Accept ${acceptable.length}` : "Accept"}
+              className="relative h-9 px-3.5"
+            />
+          ) : null}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** A worker can't continue and what's left isn't reassigned yet (2026-11-11). */
+function WithdrawBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-200",
+        className,
+      )}
+    >
+      <Ban aria-hidden="true" className="size-3.5" />
+      Can&apos;t continue
+    </span>
+  );
+}
+
+/** A worker asked for screenshots and nobody has answered yet (2026-11-11). */
+function RequestBadge({ count, className }: { count: number; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200",
+        className,
+      )}
+    >
+      <Camera aria-hidden="true" className="size-3.5" />
+      {count === 1 ? "Screenshots requested" : `${count} screenshot requests`}
+    </span>
   );
 }
 

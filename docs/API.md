@@ -6,7 +6,7 @@ Action exists that is not listed here.
 
 The application exposes **no general-purpose REST or GraphQL API**. Data leaves the server in exactly
 three ways: server-rendered pages, **Server Actions** (every mutation, plus a few reads for pickers),
-and **four Route Handlers** (below). The Supabase-generated APIs (PostgREST, GraphQL, Storage,
+and **five Route Handlers** (below). The Supabase-generated APIs (PostgREST, GraphQL, Storage,
 Realtime) are closed to the browser key by RLS and are audited by `pnpm security:audit` — see
 `docs/SECURITY.md`.
 
@@ -34,6 +34,7 @@ Realtime) are closed to the browser key by RLS and are audited by `pnpm security
 | `/search?q=` | GET | any signed-in, active user; **each result category is filtered by the permission that governs viewing it** (`orders.view` with its assigned-only scope, `customers.view`, `employees.view.all`, `outsourced_workers.view`, `services.view`, `categories.view`) | JSON `{ results }`, at most 5 hits per category, `Cache-Control: private, no-store`. Term must be 2–80 characters |
 | `/daily-stats/export` | GET | `daily_stats.export`, scoped like the list (own rows unless `daily_stats.view.all`) | CSV |
 | `/api/cron/youtube-stats` | GET | the scheduler only: `Authorization: Bearer $CRON_SECRET` (compared in constant time; refused when `CRON_SECRET` is unset). Public to the proxy, so a cron job without a session reaches it | JSON `{ checked, failed, skipped? }` — refreshes YouTube stats on items older than the interval in Settings (2026-11-10) |
+| `/api/item-updates/[updateId]/[index]` | GET | a signed-in user who can see the order item the update was posted on (`orders.view.all`, or the item's own worker) | the screenshot (WebP) from the private `item-updates` bucket, `Cache-Control: private`. 404 when it doesn't exist **or** the viewer may not see it, so it never confirms an image exists (2026-11-11) |
 | `/auth/callback` | GET | anyone holding an emailed one-time link | redirect only — verifies the token, then redirects to a same-site path (`safeRedirectPath` rejects `//host`, `/\host`, control characters). Returns no data |
 
 An anonymous request to any of them (except the cron route, which checks its own secret) is redirected
@@ -43,7 +44,7 @@ to `/login` by the proxy and refused again by the handler itself.
 
 ## Server Actions
 
-85 actions across 14 files. "Requires" is the permission key checked before any data is touched.
+91 actions across 15 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -123,6 +124,7 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | `changeOrderItemStatusAction` | `orders.change_status` |
 | `updateOrderItemProgressAction` | `orders.change_status` — narrowed further in the service to the assigned worker (their own item only) or `orders.view.all` |
 | `cancelOrderItemWithAdjustedCostAction` | `orders.change_status` |
+| `reassignRemainderAction` | `orders.assign` and `orders.create` — a worker said they can't continue (open "WITHDRAW" request): in one transaction marks their item completed with its target cut to what was delivered (cancelled if nothing was), paid for that part, creates a new item with the same service, link, links and deadline starting where the old one stopped, assigns it to another active worker, closes the request and notifies everyone on the order; then emails / prepares WhatsApp for the new worker (2026-11-11) |
 | `addOrderItemLinkAction` | `orders.edit`, `orders.files.upload` |
 | `removeOrderItemLinkAction` | `orders.edit` |
 | `addOrderNoteAction` | `orders.comment` |
@@ -219,6 +221,19 @@ from the link is sent to Google; the link itself is never fetched by the server.
 | --- | --- |
 | `submitInquiryAction` | **public, no sign-in** — the home page contact form. Validated (`inquirySchema`), honeypot field, at most 3 per visitor per 10 minutes (keyed hash of the IP) |
 | `setInquiryStatusAction` | `inquiries.manage` — New / Contacted / Closed |
+
+### Order item updates — `src/lib/order-updates/actions.ts`
+
+A chat-style thread on each order item (2026-11-11): text, an optional new count, and up to four
+screenshots, stored in the private `item-updates` Storage bucket and served by `GET /api/item-updates/[updateId]/[index]` after the same access check.
+
+| Action | Requires |
+| --- | --- |
+| `getItemUpdatesAction` | `orders.view`, narrowed in the service to items the actor can see (`orders.view.all`, or their own item). Returns the thread; image addresses point at `/api/item-updates/…` |
+| `postItemUpdateAction` | `orders.view`, then per item: the team (`orders.view.all`) may post and set the count on any item; the assigned worker (with `orders.change_status`) may post on their own item unless cancelled, and set the count once accepted. FormData; screenshots checked by their bytes, compressed to WebP, metadata stripped. With `answersRequestId` (team only, needs text or a screenshot) it answers a screenshot request and closes it; a request already answered is refused |
+| `requestScreenshotsAction` | `orders.view`, then only the item's assigned worker (with `orders.change_status`, item not cancelled). Optional message; one open request per item. Notifies the team (2026-11-11) |
+| `requestWithdrawAction` | `orders.view`, then only the item's assigned worker (with `orders.change_status`) on a pending, processing or refill item. Optional reason; one open request per item; nothing on the item changes until the team acts. Notifies the team (2026-11-11) |
+| `keepWithWorkerAction` | `orders.assign` — closes a "can't continue" request without changes (the worker carries on) and tells them |
 
 ---
 

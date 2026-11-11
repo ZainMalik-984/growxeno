@@ -1,10 +1,12 @@
 "use client";
 
-import { AlarmClock, CalendarDays, CalendarRange, Link2, Search, SlidersHorizontal, X } from "lucide-react";
+import { AlarmClock, CalendarDays, CalendarRange, Camera, Link2, Search, SlidersHorizontal, X } from "lucide-react";
+
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 
 import { Input } from "@/components/ui/input";
+import { Modal, SHEET_CLASS } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 
 const DEBOUNCE_MS = 300;
@@ -13,7 +15,7 @@ const ORDER_SOURCES = ["FIVERR", "EXTERNAL"] as const;
 /** Filters that live behind "More filters" — counted on its button so hidden filters are never forgotten. */
 const PANEL_KEYS = ["source", "customer", "worker", "outsourcedWorker", "service", "category", "assigned", "link"] as const;
 /** Everything "Clear all" resets. `view` and `size` are display choices, not filters, so they stay. */
-const ALL_FILTER_KEYS = [...PANEL_KEYS, "q", "status", "overdue", "due", "dueToday", "dueThisWeek", "hasLinks", "amountMin", "amountMax"];
+const ALL_FILTER_KEYS = [...PANEL_KEYS, "q", "status", "overdue", "due", "dueToday", "dueThisWeek", "hasLinks", "screenshots", "amountMin", "amountMax"];
 
 /** Field chrome matching the New Order page. */
 const CONTROL =
@@ -37,10 +39,13 @@ export function OrderFilterBar({
   services,
   categories,
   showSource = true,
+  showRequests = false,
 }: {
   initialSearch: string;
   /** False for workers: an order's source is not theirs to see (2026-11-03). */
   showSource?: boolean;
+  /** The team's "Screenshots requested" quick filter (2026-11-11). */
+  showRequests?: boolean;
   customers: readonly PickerOption[];
   workers: readonly PickerOption[];
   outsourcedWorkers: readonly PickerOption[];
@@ -108,82 +113,36 @@ export function OrderFilterBar({
   const has = (key: string) => searchParams.get(key) === "1";
   const overdueOn = has("overdue") || get("due") === "overdue";
   const anyFilter = ALL_FILTER_KEYS.some((key) => searchParams.has(key));
+  const sheetCount = ALL_FILTER_KEYS.filter((key) => key !== "q" && key !== "status" && key !== "due" && searchParams.has(key)).length + (get("due") === "overdue" && !has("overdue") ? 1 : 0);
+  // Phones: filters live in a bottom sheet (2026-11-11).
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  return (
-    <div
-      className="rounded-[12px] border border-zinc-200/80 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-4"
-      aria-busy={isPending}
-    >
-      <div className="flex flex-wrap items-center gap-2.5">
-        <div className="relative min-w-0 flex-[1_1_16rem]">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400"
-          />
-          <label htmlFor="order-search" className="sr-only">
-            Search orders, customers, links…
-          </label>
-          <Input
-            id="order-search"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search orders, customers, links…"
-            className={cn(CONTROL, "pl-9")}
-          />
-        </div>
-
-
-        <button
-          type="button"
-          onClick={() => setExpanded((current) => !current)}
-          aria-expanded={expanded}
-          aria-controls="order-more-filters"
-          className={cn(
-            "inline-flex h-10 items-center gap-2 rounded-[8px] border px-3.5 text-[13px] font-medium transition",
-            expanded || panelCount > 0
-              ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/70"
-              : "border-zinc-200 bg-white text-zinc-700 shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 hover:bg-zinc-50",
-          )}
-        >
-          <SlidersHorizontal aria-hidden="true" className="size-4" />
-          {expanded ? "Fewer filters" : "More filters"}
-          {panelCount > 0 ? (
-            <span className="grid min-w-5 place-items-center rounded-full bg-indigo-600 px-1.5 text-[11px] font-semibold leading-5 text-white">
-              {panelCount}
-            </span>
-          ) : null}
-        </button>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Chip icon={<AlarmClock className="size-3.5" />} label="Overdue" pressed={overdueOn} tone="red" onToggle={(v) => setParam("overdue", v)} />
-        <Chip icon={<CalendarDays className="size-3.5" />} label="Due today" pressed={has("dueToday")} onToggle={(v) => setParam("dueToday", v)} />
+  const chips = (
+    <>
+      <Chip icon={<AlarmClock className="size-3.5" />} label="Overdue" pressed={overdueOn} tone="red" onToggle={(v) => setParam("overdue", v)} />
+      <Chip icon={<CalendarDays className="size-3.5" />} label="Due today" pressed={has("dueToday")} onToggle={(v) => setParam("dueToday", v)} />
+      <Chip
+        icon={<CalendarRange className="size-3.5" />}
+        label="Due this week"
+        pressed={has("dueThisWeek")}
+        onToggle={(v) => setParam("dueThisWeek", v)}
+      />
+      <Chip icon={<Link2 className="size-3.5" />} label="Has links" pressed={has("hasLinks")} onToggle={(v) => setParam("hasLinks", v)} />
+      {showRequests ? (
         <Chip
-          icon={<CalendarRange className="size-3.5" />}
-          label="Due this week"
-          pressed={has("dueThisWeek")}
-          onToggle={(v) => setParam("dueThisWeek", v)}
+          icon={<Camera className="size-3.5" />}
+          label="Worker requests"
+          pressed={has("screenshots")}
+          tone="amber"
+          onToggle={(v) => setParam("screenshots", v)}
         />
-        <Chip icon={<Link2 className="size-3.5" />} label="Has links" pressed={has("hasLinks")} onToggle={(v) => setParam("hasLinks", v)} />
+      ) : null}
+    </>
+  );
 
-        {anyFilter ? (
-          <button
-            type="button"
-            onClick={clearAll}
-            className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-[13px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
-          >
-            <X aria-hidden="true" className="size-3.5" />
-            Clear all
-          </button>
-        ) : null}
-      </div>
-
-      {expanded ? (
-        <div
-          id="order-more-filters"
-          className="mt-4 grid animate-fade-up gap-4 rounded-[10px] border border-zinc-200/80 bg-zinc-50/80 p-4 [animation-duration:200ms] motion-reduce:animate-none sm:grid-cols-2 lg:grid-cols-4"
-        >
+  function panelFields(prefix: string) {
+    return (
+      <>
           <Picker show={showSource} label="Source" value={get("source")} onChange={(v) => setParam("source", v)}>
             {ORDER_SOURCES.map((source) => (
               <option key={source} value={source}>
@@ -243,11 +202,11 @@ export function OrderFilterBar({
           </Picker>
 
           <div className="min-w-0 space-y-1.5">
-            <label htmlFor="order-link-query" className="block text-[13px] font-medium text-zinc-800">
+            <label htmlFor={`${prefix}-order-link-query`} className="block text-[13px] font-medium text-zinc-800">
               Link / domain contains
             </label>
             <Input
-              id="order-link-query"
+              id={`${prefix}-order-link-query`}
               key={get("link")}
               defaultValue={get("link")}
               onBlur={(event) => setParam("link", event.target.value.trim() || undefined)}
@@ -258,9 +217,136 @@ export function OrderFilterBar({
               className={CONTROL}
             />
           </div>
+      </>
+    );
+  }
+
+  const searchBox = (id: string) => (
+    <div className="relative min-w-0 flex-[1_1_16rem]">
+      <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+      <label htmlFor={id} className="sr-only">
+        Search orders, customers, links…
+      </label>
+      <Input
+        id={id}
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search orders, customers, links…"
+        className={cn(CONTROL, "pl-9")}
+      />
+    </div>
+  );
+
+  return (
+    <>
+    <div className="flex items-center gap-2 md:hidden" aria-busy={isPending}>
+      {searchBox("order-search-mobile")}
+      <button
+        type="button"
+        onClick={() => setSheetOpen(true)}
+        aria-haspopup="dialog"
+        className={cn(
+          "inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] border px-3.5 text-sm font-medium transition",
+          sheetCount > 0 ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-zinc-200 bg-white text-zinc-700",
+        )}
+      >
+        <SlidersHorizontal aria-hidden="true" className="size-4" />
+        Filter
+        {sheetCount > 0 ? (
+          <span className="grid min-w-5 place-items-center rounded-full bg-indigo-600 px-1.5 text-[11px] font-semibold leading-5 text-white">
+            {sheetCount}
+          </span>
+        ) : null}
+      </button>
+    </div>
+
+    <Modal open={sheetOpen} onClose={() => setSheetOpen(false)} labelledBy="order-filter-sheet-title" className={SHEET_CLASS}>
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-100 bg-white px-5 py-4">
+        <span aria-hidden="true" className="absolute left-1/2 top-1.5 h-1 w-10 -translate-x-1/2 rounded-full bg-zinc-200" />
+        <h2 id="order-filter-sheet-title" className="text-[15px] font-semibold text-zinc-900">
+          Filters
+        </h2>
+        <button type="button" onClick={() => setSheetOpen(false)} aria-label="Close filters" className="grid size-9 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100">
+          <X aria-hidden="true" className="size-4" />
+        </button>
+      </div>
+      <div className="space-y-5 px-5 py-5">
+        <div>
+          <p className="mb-2 text-[13px] font-medium text-zinc-800">Quick filters</p>
+          <div className="flex flex-wrap gap-2">{chips}</div>
+        </div>
+        <div className="grid gap-4">{panelFields("sheet")}</div>
+      </div>
+      <div className="sticky bottom-0 flex items-center gap-3 border-t border-zinc-100 bg-white px-5 py-4">
+        <button type="button" onClick={clearAll} disabled={!anyFilter} className="h-11 rounded-[10px] px-4 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-40">
+          Clear all
+        </button>
+        <button
+          type="button"
+          onClick={() => setSheetOpen(false)}
+          className="h-11 flex-1 rounded-[10px] bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700"
+        >
+          {isPending ? "Updating…" : "Show results"}
+        </button>
+      </div>
+    </Modal>
+
+    <div
+      className="hidden rounded-[12px] border border-zinc-200/80 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-4 md:block"
+      aria-busy={isPending}
+    >
+      <div className="flex flex-wrap items-center gap-2.5">
+        {searchBox("order-search")}
+
+
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          aria-controls="order-more-filters"
+          className={cn(
+            "inline-flex h-10 items-center gap-2 rounded-[8px] border px-3.5 text-[13px] font-medium transition",
+            expanded || panelCount > 0
+              ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/70"
+              : "border-zinc-200 bg-white text-zinc-700 shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 hover:bg-zinc-50",
+          )}
+        >
+          <SlidersHorizontal aria-hidden="true" className="size-4" />
+          {expanded ? "Fewer filters" : "More filters"}
+          {panelCount > 0 ? (
+            <span className="grid min-w-5 place-items-center rounded-full bg-indigo-600 px-1.5 text-[11px] font-semibold leading-5 text-white">
+              {panelCount}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {chips}
+
+        {anyFilter ? (
+          <button
+            type="button"
+            onClick={clearAll}
+            className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-[13px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            <X aria-hidden="true" className="size-3.5" />
+            Clear all
+          </button>
+        ) : null}
+      </div>
+
+      {expanded ? (
+        <div
+          id="order-more-filters"
+          className="mt-4 grid animate-fade-up gap-4 rounded-[10px] border border-zinc-200/80 bg-zinc-50/80 p-4 [animation-duration:200ms] motion-reduce:animate-none sm:grid-cols-2 lg:grid-cols-4"
+        >
+          {panelFields("panel")}
         </div>
       ) : null}
     </div>
+    </>
   );
 }
 
@@ -306,7 +392,7 @@ function Chip({
   label: string;
   pressed: boolean;
   onToggle: (value: boolean) => void;
-  tone?: "indigo" | "red";
+  tone?: "indigo" | "red" | "amber";
 }) {
   return (
     <button
@@ -319,7 +405,9 @@ function Chip({
         pressed
           ? tone === "red"
             ? "border-red-200 bg-red-50 text-red-700"
-            : "border-indigo-200 bg-indigo-50 text-indigo-700"
+            : tone === "amber"
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-indigo-200 bg-indigo-50 text-indigo-700"
           : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900",
       )}
     >

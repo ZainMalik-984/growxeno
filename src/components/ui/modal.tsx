@@ -60,3 +60,11 @@ export function Modal({
     </dialog>
   );
 }
+
+/**
+ * A bottom sheet on phones (full width, rounded top, anchored to the bottom),
+ * a centred popup from `sm` up (2026-11-11). Pass as Modal's `className`.
+ */
+export const SHEET_CLASS =
+  "mx-0 mb-0 mt-auto max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-[20px] border border-zinc-200 bg-white p-0 text-ink shadow-xl shadow-zinc-900/10 backdrop:bg-zinc-950/30 " +
+  "sm:m-auto sm:max-w-lg sm:rounded-[16px]";

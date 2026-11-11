@@ -130,6 +130,15 @@ Until the bucket exists, saving an image shows "Image storage isn't set up yet" 
 host, and raises the Server Action body limit to 9 MB for the upload (originals up to 8 MB; what is stored is a compressed WebP, well under the bucket's 2 MB limit). Restart `pnpm dev` after changing
 `NEXT_PUBLIC_SUPABASE_URL`, since `next.config.ts` reads it at start.
 
+## Supabase Storage — order item update screenshots (2026-11-11)
+
+Screenshots posted in an order item's updates thread go to a **private** bucket named `item-updates`.
+Nothing to set up: the first screenshot ever posted creates it (private, 4 MB per file, WebP only) using
+`SUPABASE_SECRET_KEY`. Files are uploaded and read only through the server: the browser loads each one from
+`/api/item-updates/…`, which checks the viewer may see the item first, so no Supabase address reaches the
+browser. Do not make this bucket public, and add no Storage policies: these screenshots can show a client's
+private analytics.
+
 ## YouTube stats (2026-11-10)
 
 With `YOUTUBE_API_KEY` set, YouTube order items show their channel's subscribers or their video's

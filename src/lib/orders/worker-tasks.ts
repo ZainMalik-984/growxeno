@@ -40,6 +40,12 @@ export type WorkerTask = {
   /** Latest public YouTube numbers for the link, when read. */
   stats: { subscribers: number | null; views: number | null; likes: number | null; comments: number | null; at: Date } | null;
   links: { id: string; url: string; label: string | null }[];
+  /** Posts in the task's updates thread (2026-11-11). */
+  updateCount: number;
+  /** The worker's screenshot request is waiting for the team. */
+  hasOpenRequest: boolean;
+  /** The worker said they can't continue; the team hasn't reassigned it yet. */
+  hasWithdrawRequest: boolean;
 };
 
 const MAX_TASKS = 500;
@@ -107,6 +113,8 @@ export async function listWorkerTasks(
         service: { select: { name: true, metricType: true } },
         category: { select: { name: true } },
         links: { select: { id: true, url: true, label: true }, orderBy: { createdAt: "asc" } },
+        _count: { select: { updates: true } },
+        updates: { where: { isRequest: true, resolvedAt: null }, select: { id: true, requestType: true, authorLabel: true, body: true, createdAt: true }, take: 5 },
         statSnapshots: {
           select: { sourceId: true, subscribers: true, views: true, likes: true, comments: true, takenAt: true },
           orderBy: { takenAt: "desc" },
@@ -158,6 +166,9 @@ export async function listWorkerTasks(
             }
           : null,
       links: item.links,
+      updateCount: item._count.updates,
+      hasOpenRequest: item.updates.some((u) => u.requestType === "SCREENSHOTS"),
+      hasWithdrawRequest: item.updates.some((u) => u.requestType === "WITHDRAW"),
     };
   });
 

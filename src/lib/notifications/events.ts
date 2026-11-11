@@ -20,6 +20,7 @@ export const NOTIFICATION_EVENT_LABELS: Record<NotificationEvent, string> = {
   ORDER_OVERDUE: "Order overdue",
   PAYMENT_DUE: "Payment due",
   ORDER_ITEM_STOP_WORK_REQUESTED: "Stop work requested",
+  ORDER_ITEM_UPDATE_POSTED: "Task update posted",
 };
 
 /**
@@ -44,6 +45,7 @@ const DEFAULTS: Record<NotificationEvent, Record<NotificationChannel, boolean>> 
   ORDER_OVERDUE: { IN_APP: true, EMAIL: false, WHATSAPP: false },
   PAYMENT_DUE: { IN_APP: true, EMAIL: false, WHATSAPP: false },
   ORDER_ITEM_STOP_WORK_REQUESTED: { IN_APP: true, EMAIL: false, WHATSAPP: false },
+  ORDER_ITEM_UPDATE_POSTED: { IN_APP: true, EMAIL: false, WHATSAPP: false },
 };
 
 export function getDefaultPreference(event: NotificationEvent, channel: NotificationChannel): boolean {

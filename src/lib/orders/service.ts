@@ -11,6 +11,8 @@ import {
   type TransactionClient,
 } from "@/lib/db/transaction";
 import { emitNotificationEvent } from "@/lib/notifications/service";
+import { notifyEveryoneOnItem } from "@/lib/order-updates/service";
+import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { isAssignedToIdentity } from "./assignment";
 import { computeAssignmentCost } from "./rate";
 import {
@@ -1037,5 +1039,188 @@ export async function addOrderNote(
     await logActivity(tx, orderId, actor, "order.note_added", `Added a note to order #${order.orderNumber}`);
 
     return { id: note.id };
+  });
+}
+
+
+/**
+ * Moves what's left of a task to another worker (2026-11-11, owner request):
+ * the worker said they can't continue (a "WITHDRAW" request, see
+ * src/lib/order-updates/service.ts), e.g. after 400 of 1,000 subscribers.
+ * In one transaction:
+ *   1. the old item is marked COMPLETED with its target cut to what was
+ *      delivered (500 of 1,000 → a done item of 500), paid for that part
+ *      (the admin confirms or edits the amount); with nothing delivered it is
+ *      cancelled instead;
+ *   2. a new item is created with the same service, link, links, worker
+ *      deadline and target, STARTING where the old one stopped (so it asks for
+ *      the remaining 600), and assigned to the new worker at the given cost;
+ *   3. the request is closed with a note of what happened, the order's
+ *      activity and audit log record it, and everyone on the order is told.
+ * The caller then emails / prepares WhatsApp for the new worker, as for any assignment.
+ */
+export async function reassignRemainder(
+  actor: Actor,
+  input: {
+    requestId: string;
+    outsourcedWorkerId: string;
+    cost: string;
+    costCurrency: string;
+    /** What the worker who gave up is paid for the part they did. */
+    previousWorkerCost: string;
+  },
+): Promise<ServiceResult<{ newItemId: string }>> {
+  return runTransaction(async (tx) => {
+    const request = await tx.orderItemUpdate.findUnique({
+      where: { id: input.requestId },
+      select: { isRequest: true, requestType: true, resolvedAt: true, orderItemId: true, authorLabel: true },
+    });
+    if (!request || !request.isRequest || request.requestType !== "WITHDRAW") throw new ServiceRejection("That request no longer exists.");
+    if (request.resolvedAt) throw new ServiceRejection("That request was already handled.");
+
+    const item = await tx.orderItem.findUnique({
+      where: { id: request.orderItemId },
+      select: {
+        id: true,
+        orderId: true,
+        serviceId: true,
+        categoryId: true,
+        description: true,
+        channelLink: true,
+        startingCount: true,
+        currentCount: true,
+        targetCount: true,
+        deadline: true,
+        deadlineOverridden: true,
+        status: true,
+        workerCost: true,
+        workerCostCurrency: true,
+        outsourcedWorkerId: true,
+        statsSourceId: true,
+        statsSourceKind: true,
+        statsTitle: true,
+        statsFetchedAt: true,
+        order: { select: { orderNumber: true, deadline: true } },
+        service: { select: { name: true, metricType: true, category: { select: { name: true } } } },
+        outsourcedWorker: { select: { name: true, userId: true } },
+        links: { select: { url: true, normalizedUrl: true, domain: true, path: true, label: true } },
+      },
+    });
+    if (!item) throw new ServiceRejection("That item no longer exists.");
+    if (!["PENDING", "PROCESSING", "REFILL"].includes(item.status)) throw new ServiceRejection("This task is already finished or cancelled.");
+    if (!item.order.deadline) throw new ServiceRejection("Set the order deadline before assigning a worker.");
+    if (input.outsourcedWorkerId === item.outsourcedWorkerId) throw new ServiceRejection("Choose a different worker for what's left.");
+
+    const worker = await tx.outsourcedWorker.findUnique({ where: { id: input.outsourcedWorkerId }, select: { name: true, isActive: true, userId: true } });
+    if (!worker || !worker.isActive) throw new ServiceRejection("That outsourced worker is not active.");
+
+    const name = serviceLabel(item.service.name, item.service.category.name);
+    const unit = item.service.metricType ? SERVICE_METRIC_TYPE_LABELS[item.service.metricType as ServiceMetricType].toLowerCase() : null;
+    const start = Math.max(0, item.startingCount ?? 0);
+    const now = item.currentCount ?? start;
+    const done = Math.max(0, now - start);
+    const left = Math.max(0, (item.targetCount ?? 0) - now);
+    const previousName = item.outsourcedWorker?.name ?? request.authorLabel;
+    const cost = input.cost.trim() || null;
+    const costCurrency = (input.costCurrency.trim() || "PKR").toUpperCase();
+    const previousCost = input.previousWorkerCost.trim() || "0";
+
+    // 1. The old item (owner request, 2026-11-12): COMPLETED at what was
+    //    delivered. Its target becomes the count it reached (500 of 1,000 →
+    //    a done item of 500), paid for that part. With nothing delivered there
+    //    is nothing to complete, so it is cancelled instead (unless a count
+    //    exists for it, a metric-less item counts as nothing delivered).
+    const completed = item.service.metricType !== null && done > 0;
+    await tx.orderItem.update({
+      where: { id: item.id },
+      data: completed
+        ? { status: "DONE", targetCount: now, finishedAt: new Date(), workerCost: previousCost }
+        : { status: "CANCELLED", finishedAt: new Date(), workerCost: previousCost },
+    });
+
+    // 2. The new item: same work, starting where the old one stopped.
+    const created = await tx.orderItem.create({
+      data: {
+        orderId: item.orderId,
+        serviceId: item.serviceId,
+        categoryId: item.categoryId,
+        description: item.description,
+        channelLink: item.channelLink,
+        startingCount: now,
+        currentCount: now,
+        targetCount: item.targetCount,
+        deadline: item.deadline,
+        deadlineOverridden: item.deadlineOverridden,
+        statsSourceId: item.statsSourceId,
+        statsSourceKind: item.statsSourceKind,
+        statsTitle: item.statsTitle,
+        statsFetchedAt: item.statsFetchedAt,
+        outsourcedWorkerId: input.outsourcedWorkerId,
+        assignedById: actor.user.id,
+        assignedAt: new Date(),
+        workerCost: cost,
+        workerCostCurrency: costCurrency,
+        links: { create: item.links.map((link) => ({ url: link.url, normalizedUrl: link.normalizedUrl, domain: link.domain, path: link.path, label: link.label })) },
+      },
+      select: { id: true },
+    });
+
+    // 3. Close the request and record it.
+    const moved = unit ? `${left.toLocaleString("en-US")} ${unit} moved to ${worker.name}` : `Moved to ${worker.name}`;
+    await tx.orderItemUpdate.update({
+      where: { id: input.requestId },
+      data: { resolvedAt: new Date(), resolvedByLabel: actor.user.fullName.slice(0, 200), resolutionNote: moved.slice(0, 300) },
+    });
+
+    const summary = unit
+      ? `${actor.user.fullName} marked ${previousName}'s part of "${name}" on order #${item.order.orderNumber} ${completed ? `completed at ${done.toLocaleString("en-US")} ${unit}` : "cancelled (nothing delivered)"} and moved the remaining ${left.toLocaleString("en-US")} ${unit} to ${worker.name}`
+      : `${actor.user.fullName} moved "${name}" on order #${item.order.orderNumber} from ${previousName} to ${worker.name}`;
+    await logActivity(tx, item.orderId, actor, "order_item.reassigned_remainder", summary);
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "order_item.reassigned_remainder",
+      entityType: "Order",
+      entityId: item.orderId,
+      summary: `${summary}. ${previousName} paid ${previousCost} ${item.workerCostCurrency} (was ${item.workerCost?.toString() ?? "unset"}); ${worker.name} at ${cost ?? "no cost"} ${costCurrency}.`,
+      previousValue: { itemId: item.id, status: item.status, targetCount: item.targetCount, workerCost: item.workerCost?.toString() ?? null },
+      newValue: {
+        itemId: item.id,
+        status: completed ? "DONE" : "CANCELLED",
+        targetCount: completed ? now : item.targetCount,
+        workerCost: previousCost,
+        newItemId: created.id,
+        outsourcedWorkerId: input.outsourcedWorkerId,
+        cost,
+        costCurrency,
+      },
+    });
+
+    // Tell everyone on the order (and the worker who gave up), then the new worker their task.
+    await notifyEveryoneOnItem(tx, actor, { id: item.id, orderId: item.orderId, workerId: null, outsourcedWorker: item.outsourcedWorker }, {
+      title: `Reassigned: ${name} · #${item.order.orderNumber}`,
+      message: `${actor.user.fullName}: ${moved}.`,
+    });
+    if (worker.userId && worker.userId !== actor.user.id) {
+      await emitNotificationEvent(
+        tx,
+        "ORDER_ASSIGNED",
+        [
+          {
+            userId: worker.userId,
+            title: `New task: ${name}`,
+            message: unit
+              ? `You've been assigned ${left.toLocaleString("en-US")} ${unit} of "${name}" on order #${item.order.orderNumber}. Accept it to get started.`
+              : `You've been assigned "${name}" on order #${item.order.orderNumber}. Accept it to get started.`,
+            entityType: "Order",
+            entityId: item.orderId,
+            actionUrl: `/orders?open=${created.id}`,
+          },
+        ],
+        { orderId: item.orderId, orderItemId: created.id },
+      );
+    }
+    await refreshOrderStatus(tx, item.orderId, actor);
+    return { newItemId: created.id };
   });
 }

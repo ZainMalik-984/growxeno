@@ -11,13 +11,34 @@ const changeStatus = vi.fn<(input: { itemId: string; status: string }) => Promis
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-const updateProgress = vi.fn<(input: { itemId: string; currentCount: number }) => Promise<{ ok: true; message: string }>>(async () => ({
-  ok: true,
-  message: "ok",
-}));
 vi.mock("@/lib/orders/actions", () => ({
   changeOrderItemStatusAction: (input: { itemId: string; status: string }) => changeStatus(input),
-  updateOrderItemProgressAction: (input: { itemId: string; currentCount: number }) => updateProgress(input),
+}));
+const getUpdates = vi.fn(async (input: { itemId: string }) => ({
+  ok: true as const,
+  thread: {
+    itemId: input.itemId,
+    orderNumber: 7,
+    serviceName: "Youtube · Subscribers",
+    metricLabel: "subscribers",
+    currentCount: 1500,
+    startingCount: 1000,
+    targetCount: 6000,
+    canPost: true,
+    canSetCount: true,
+    canAsk: true,
+    canAnswer: false,
+    openRequest: null,
+    canWithdraw: true,
+    openWithdraw: null,
+    updates: [],
+  },
+}));
+vi.mock("@/lib/order-updates/actions", () => ({
+  getItemUpdatesAction: (input: { itemId: string }) => getUpdates(input),
+  postItemUpdateAction: vi.fn(),
+  requestScreenshotsAction: vi.fn(),
+  requestWithdrawAction: vi.fn(),
 }));
 
 const { WorkerTasksTable } = await import("@/app/(app)/orders/worker-tasks-table");
@@ -50,7 +71,10 @@ function row(overrides: Partial<WorkerTaskRow>): WorkerTaskRow {
     isRefill: false,
     canAccept: true,
     canComplete: false,
-    canUpdateProgress: false,
+    canPostUpdate: true,
+    updateCount: 0,
+    hasOpenRequest: false,
+    hasWithdrawRequest: false,
     assignedAt: new Date(Date.now() - 3 * 3_600_000),
     finishedAt: null,
     deadline: new Date(Date.now() + 86_400_000),
@@ -74,14 +98,19 @@ function row(overrides: Partial<WorkerTaskRow>): WorkerTaskRow {
   };
 }
 
+/** The desktop table; the same tasks also render as phone cards, hidden by CSS from `md` up. */
+const table = () => within(screen.getByRole("table"));
+/** The phone card list (the first list on the page). */
+const cards = () => within(screen.getAllByRole("list")[0]!);
+
 describe("WorkerTasksTable", () => {
   it("shows the channel name with its link, when it was given, and no deadline column", () => {
     render(<WorkerTasksTable rows={[row({})]} />);
-    expect(screen.getByText("MrBeast")).toBeInTheDocument();
-    expect(screen.getByText("youtube.com/@MrBeast")).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Given" })).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "Deadline" })).toBeNull();
-    expect(screen.getByText(/(2h 59m|3h 0m) ago/)).toBeInTheDocument();
+    expect(table().getByText("MrBeast")).toBeInTheDocument();
+    expect(table().getByText("youtube.com/@MrBeast")).toBeInTheDocument();
+    expect(table().getByRole("columnheader", { name: "Given" })).toBeInTheDocument();
+    expect(table().queryByRole("columnheader", { name: "Deadline" })).toBeNull();
+    expect(table().getByText(/(2h 59m|3h 0m) ago/)).toBeInTheDocument();
   });
 
   it("offers Accept on a pending task and Complete (with a confirm) on a processing one", async () => {
@@ -94,53 +123,114 @@ describe("WorkerTasksTable", () => {
         ]}
       />,
     );
-    await user.click(screen.getByRole("button", { name: /^Accept$/ }));
+    await user.click(table().getByRole("button", { name: /^Accept$/ }));
     expect(changeStatus).toHaveBeenCalledWith({ itemId: "a", status: "PROCESSING" });
 
-    await user.click(screen.getByRole("button", { name: /Complete/ }));
+    await user.click(table().getByRole("button", { name: /Complete/ }));
     expect(changeStatus).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole("button", { name: /Confirm/ }));
+    await user.click(table().getByRole("button", { name: /Confirm/ }));
     expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "b", status: "DONE" });
   });
 
-  it("lets the worker update the current count on an accepted task", async () => {
+  it("opens the task's updates from a prominent Post update button, with the count so far", async () => {
     const user = userEvent.setup();
-    render(<WorkerTasksTable rows={[row({ id: "p", canAccept: false, canComplete: true, canUpdateProgress: true })]} />);
-    await user.click(screen.getByRole("button", { name: /Update/ }));
-    const input = screen.getByLabelText("Current subscribers");
-    expect(input).toHaveValue("1500");
-    await user.clear(input);
-    await user.type(input, "2,350");
-    await user.click(screen.getByRole("button", { name: /Save/ }));
-    expect(updateProgress).toHaveBeenCalledWith({ itemId: "p", currentCount: 2350 });
+    render(<WorkerTasksTable rows={[row({ id: "p", canAccept: false, canComplete: true, updateCount: 3 })]} />);
+    const button = table().getByRole("button", { name: /Post update/ });
+    expect(button).toHaveTextContent("3");
+    await user.click(button);
+    expect(getUpdates).toHaveBeenCalledWith({ itemId: "p" });
+    expect(await screen.findByLabelText("Subscribers now")).toBeInTheDocument();
+  });
+
+  it("offers Ask for screenshots, and shows when a request is waiting", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "s" })]} />);
+    await user.click(table().getByRole("button", { name: /Ask for screenshots/ }));
+    expect(screen.getByRole("heading", { name: "Ask for screenshots", hidden: true })).toBeInTheDocument();
+    unmount();
+    render(<WorkerTasksTable rows={[row({ id: "s", hasOpenRequest: true })]} />);
+    expect(table().queryByRole("button", { name: /Ask for screenshots/ })).toBeNull();
+    expect(table().getByText("Screenshots requested")).toBeInTheDocument();
+    expect(cards().getByText("Screenshots requested")).toBeInTheDocument();
+  });
+
+  it("offers Can't continue on an open task, and shows when it's waiting", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "w", progressPercent: 40, delivered: 400, required: 1000 })]} />);
+    await user.click(table().getByRole("button", { name: /Can't continue/ }));
+    expect(screen.getByRole("heading", { name: "Can't continue this task?", hidden: true })).toBeInTheDocument();
+    unmount();
+    render(<WorkerTasksTable rows={[row({ id: "w", hasWithdrawRequest: true })]} />);
+    expect(table().getByText("Waiting for reassignment")).toBeInTheDocument();
+    expect(cards().getByText("Waiting for reassignment")).toBeInTheDocument();
+  });
+
+  it("shows Updates (read only) when the worker can't post", () => {
+    render(<WorkerTasksTable rows={[row({ canPostUpdate: false, canAccept: false })]} />);
+    expect(table().getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
+  });
+
+  it("opens a task's updates straight away from a notification link", async () => {
+    render(<WorkerTasksTable rows={[row({ id: "n" })]} openUpdatesId="n" />);
+    expect(getUpdates).toHaveBeenCalledWith({ itemId: "n" });
+    expect(await screen.findByLabelText("Subscribers now")).toBeInTheDocument();
   });
 
   it("shows progress as delivered out of required, not the channel's total", () => {
     render(<WorkerTasksTable rows={[row({})]} />);
-    const cell = screen.getByText(/subscribers delivered/).closest("span")!;
+    const cell = table().getByText(/subscribers delivered/).closest("span")!;
     expect(cell).toHaveTextContent("500 / 5,000 subscribers delivered");
-    expect(screen.getByText("Now at 1,500")).toBeInTheDocument();
+    expect(table().getByText("Now at 1,500")).toBeInTheDocument();
     expect(screen.queryByText(/1,500 \/ 6,000/)).toBeNull();
   });
 
-  it("hides Update on a pending task", () => {
-    render(<WorkerTasksTable rows={[row({})]} />);
-    expect(screen.queryByRole("button", { name: /Update/ })).toBeNull();
-  });
 
   it("links watch hours to YouTube Studio", () => {
     render(<WorkerTasksTable rows={[row({ serviceName: "Youtube · Watch Hours", isWatchHours: true, studioUrl: STUDIO })]} />);
-    expect(screen.getByRole("link", { name: /Studio/ })).toHaveAttribute("href", STUDIO);
+    expect(table().getByRole("link", { name: /Studio/ })).toHaveAttribute("href", STUDIO);
   });
 
   it("opens the task's details in a popup", async () => {
     const user = userEvent.setup();
     render(<WorkerTasksTable rows={[row({})]} />);
-    await user.click(screen.getByRole("button", { name: /Details/ }));
+    await user.click(table().getByRole("button", { name: /Details/ }));
     const dialog = screen.getByRole("dialog", { hidden: true });
     expect(within(dialog).getByText("Use the slow drip.")).toBeInTheDocument();
     expect(within(dialog).getByText("500 of 5,000 subscribers delivered.")).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Open order page", hidden: true })).toHaveAttribute("href", "/orders/order-1");
+  });
+
+  describe("on a phone", () => {
+    it("shows a card per task with delivered progress, pay and a full-width Accept", async () => {
+      const user = userEvent.setup();
+      render(<WorkerTasksTable rows={[row({ id: "m" })]} />);
+      const card = cards();
+      expect(card.getByText("Youtube · Subscribers")).toBeInTheDocument();
+      expect(card.getByText("MrBeast")).toBeInTheDocument();
+      expect(card.getByText(/subscribers delivered/).closest("p")).toHaveTextContent("500 / 5,000 subscribers delivered · now 1,500");
+      expect(card.getByText("250.00 PKR")).toBeInTheDocument();
+      expect(card.getByText(/Given (2h 59m|3h 0m) ago/)).toBeInTheDocument();
+      await user.click(card.getByRole("button", { name: /^Accept$/ }));
+      expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "m", status: "PROCESSING" });
+    });
+
+    it("opens the details when the card is tapped", async () => {
+      const user = userEvent.setup();
+      render(<WorkerTasksTable rows={[row({})]} />);
+      await user.click(cards().getByRole("button", { name: /Details for Youtube · Subscribers, order #7/ }));
+      const dialog = screen.getByRole("dialog", { hidden: true });
+      expect(within(dialog).getByText("Use the slow drip.")).toBeInTheDocument();
+    });
+
+    it("shows Complete on an accepted task and the Studio link for watch hours", () => {
+      render(
+        <WorkerTasksTable
+          rows={[row({ statusLabel: "Processing", canAccept: false, canComplete: true, isWatchHours: true, studioUrl: STUDIO })]}
+        />,
+      );
+      expect(cards().getByRole("button", { name: /Complete/ })).toBeInTheDocument();
+      expect(cards().getByRole("link", { name: /Studio/ })).toHaveAttribute("href", STUDIO);
+    });
   });
 
   describe("opened from an accept link", () => {

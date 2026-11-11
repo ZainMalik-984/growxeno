@@ -1,270 +1,298 @@
 import type { Metadata } from "next";
-import { ITEM_STATUS_TONE } from "@/lib/orders/status-tone";
-import { DeadlineCountdown } from "@/components/ui/deadline";
 import Link from "next/link";
-import {
-  AlarmClock,
-  ArrowUpRight,
-  CircleCheck,
-  CircleDashed,
-  ClipboardList,
-  Inbox,
-  KeyRound,
-  type LucideIcon,
-  ShieldCheck,
-  UserRound,
-  Users,
-  MessageSquareText,
-} from "lucide-react";
+import { ArrowRight, CircleCheck, Hourglass, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Card, CardHeader } from "@/components/ui/card";
-import { PageHeader } from "@/components/ui/page";
-import { StatusBadge, StatusDot } from "@/components/ui/status-dot";
+import { buttonVariants } from "@/components/ui/button";
+import { PHONE_FLUSH } from "@/components/ui/card";
+import { DeadlineCountdown } from "@/components/ui/deadline";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-dot";
+import { CommissionCard } from "@/components/finance/commission-card";
+import type { OrderStatus } from "@/generated/prisma/client";
 import { getAccessCounts } from "@/lib/access/queries";
 import { requireActor } from "@/lib/auth/authorize";
 import { countCustomers } from "@/lib/customers/queries";
+import { getBusinessOverview, thisMonthRangeUtc, type AttentionRow } from "@/lib/dashboard/queries";
 import { getEmployeeCommission, getMyWorkSummary } from "@/lib/employees/queries";
-import { CommissionCard } from "@/components/finance/commission-card";
-import { CompactEmpty } from "@/components/ui/metric";
+import { formatPay } from "@/lib/finance/format-pay";
+import { getFinanceSummary, getWorkerEarnings } from "@/lib/finance/queries";
 import { getNewInquiriesSummary } from "@/lib/inquiries/queries";
+import { ORDER_STATUS_LABELS, ORDER_STATUS_VALUES, ORDER_ITEM_STATUS_LABELS } from "@/lib/orders/state-machine";
+import { ITEM_STATUS_TONE, ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
+import { orderVisibility } from "@/lib/orders/visibility";
+import { listWorkerTasks, type WorkerTask } from "@/lib/orders/worker-tasks";
+import { getWorkload } from "@/lib/outsourced-workers/workload-queries";
+import { WorkloadLines } from "@/components/orders/workload";
+import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
+import { formatDuration } from "@/lib/time/countdown";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
+const todayFormat = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 const dayFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
-
-/** Card surfaces shared with the New Order page: subtle border + soft layered shadow. */
-const RAISED = "border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-12px_rgba(16,24,40,0.12)] sm:p-6";
-const FLAT = "border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-6";
+const assignedFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+const numberFormat = new Intl.NumberFormat("en-US");
 
 /**
- * Dashboard.
+ * Dashboard (redesigned 2026-11-11, owner request: "this looks unprofessional").
  *
- * Specification Section 86 (general) and Section 43 (Worker Dashboard
- * specifically): this page answers "what requires my attention right now?".
- * "Your work" is item-level and personal to the signed-in actor — shown to
- * anyone holding `orders.view`, not only an Employee-role user (renamed
- * from "Worker", owner-directed, confirmed directly 2026-10-08), since an
- * Admin can be assigned items too. The admin-only cards stay gated by their
- * own permissions exactly as before.
- *
- * Visual language matches the New Order page (2026-11-03, owner-directed):
- * a tinted workspace with raised white cards and a right-hand column.
+ * Two views, chosen by what the person can see:
+ *   - Anyone who sees every order gets the business: open orders, what needs
+ *     attention (overdue, unassigned, not accepted), recent orders, this
+ *     month's money and orders by status.
+ *   - An External Worker (or anyone who only sees their own items) gets their
+ *     work: tasks with progress, what's due, and what they've earned and are
+ *     still owed.
+ * The old "Your account / Effective permissions" card is gone: that belongs in
+ * the account menu, not on the first page of the day.
  */
 export default async function DashboardPage() {
   const actor = await requireActor();
-  const canSeeUsers = actor.permissions.has("users.view");
-  const canSeeCrm = actor.permissions.has("customers.view");
-  const canSeeWork = actor.permissions.has("orders.view");
-  const canSeeInquiries = actor.permissions.has("inquiries.view");
+  const has = (key: string) => actor.permissions.has(key);
+  const visibility = orderVisibility(has);
+  const canSeeOrders = has("orders.view");
+  const isBusinessView = canSeeOrders && visibility.allItems;
+  const identity = { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId };
+  const canSeeMoney = has("finance.revenue.view");
+  const canSeeProfit = has("finance.profit.view");
 
-  const [counts, customerCount, myWork, myCommission, inquiries] = await Promise.all([
-    canSeeUsers ? getAccessCounts() : null,
-    canSeeCrm ? countCustomers() : null,
-    canSeeWork ? getMyWorkSummary({ userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId }) : null,
-    // Null unless a commission percentage is set for this person (2026-11-04).
+  const [overview, myWork, workerTasks, earnings, month, inquiries, customerCount, access, commission, workload] = await Promise.all([
+    isBusinessView ? getBusinessOverview({ showCustomers: visibility.parties, showAmounts: visibility.prices }) : null,
+    canSeeOrders ? getMyWorkSummary(identity) : null,
+    canSeeOrders && !isBusinessView ? listWorkerTasks(identity, { view: "active" }) : null,
+    actor.outsourcedWorkerId ? getWorkerEarnings({ outsourcedWorkerId: actor.outsourcedWorkerId }) : null,
+    isBusinessView && canSeeMoney ? getFinanceSummary(thisMonthRangeUtc()) : null,
+    has("inquiries.view") ? getNewInquiriesSummary(3) : null,
+    has("customers.view") ? countCustomers() : null,
+    has("users.view") ? getAccessCounts() : null,
     getEmployeeCommission(actor.user.id),
-    canSeeInquiries ? getNewInquiriesSummary() : null,
+    actor.outsourcedWorkerId ? getWorkload(actor.outsourcedWorkerId) : null,
   ]);
 
   const firstName = (actor.user.displayName ?? actor.user.fullName).split(" ")[0];
+  const canCreate = has("orders.create");
+  const renderedAt = new Date();
 
   return (
     <>
-      <PageHeader
-        title={`Good day, ${firstName}`}
-        description="Here's what needs your attention."
-      />
-
-      <div className="">
-        {myWork ? (
-          <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:mb-6">
-            <StatTile icon={Inbox} label="New" value={myWork.newCount} tone="indigo" hint="Waiting to start" />
-            <StatTile icon={CircleDashed} label="Active" value={myWork.activeCount} tone="sky" hint="Assigned or in progress" />
-            <StatTile
-              icon={AlarmClock}
-              label="Due today"
-              value={myWork.dueTodayCount}
-              tone={myWork.dueTodayCount > 0 ? "amber" : "zinc"}
-              hint="Deadline today (UTC)"
-            />
-            <StatTile
-              icon={AlarmClock}
-              label="Overdue"
-              value={myWork.overdueCount}
-              tone={myWork.overdueCount > 0 ? "red" : "zinc"}
-              hint={myWork.overdueCount > 0 ? "Past their deadline" : "Nothing late"}
-            />
-          </div>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <p className="text-[13px] text-zinc-500">{todayFormat.format(renderedAt)}</p>
+          <h1 className="mt-0.5 text-xl font-semibold tracking-[-0.02em] text-zinc-900 sm:text-[22px]">Welcome back, {firstName}</h1>
+        </div>
+        {isBusinessView && canCreate ? (
+          <Link href="/orders/new" className={buttonVariants({ variant: "accent", className: "h-9 rounded-[8px] px-3.5 text-[13px] font-semibold" })}>
+            <Plus aria-hidden="true" />
+            New order
+          </Link>
+        ) : canSeeOrders ? (
+          <Link href="/orders" className={buttonVariants({ variant: "secondary", className: "h-9 rounded-[8px] px-3.5 text-[13px] font-semibold" })}>
+            {isBusinessView ? "All orders" : "Open my tasks"}
+            <ArrowRight aria-hidden="true" />
+          </Link>
         ) : null}
+      </header>
 
-        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:gap-6">
-          {/* ── Main column ─────────────────────────────────────────────── */}
-          <div className="min-w-0 space-y-5">
-            {myWork ? (
-              <>
-                <Card className={RAISED}>
-                  <CardHeader
-                    icon={ClipboardList}
-                    tone="indigo"
-                    title="Your work"
-                    description="Soonest deadline first."
-                    actions={<CardLink href="/orders">All orders</CardLink>}
-                  />
+      {overview ? (
+        <KpiStrip
+          items={[
+            { label: "Open orders", value: overview.openOrders, hint: "Not yet delivered", href: "/orders" },
+            {
+              label: "Unassigned",
+              value: overview.unassignedItems,
+              hint: overview.unassignedItems === 1 ? "item needs a worker" : "items need a worker",
+              href: "/orders?assigned=0",
+              tone: overview.unassignedItems > 0 ? "amber" : undefined,
+            },
+            {
+              label: "Overdue",
+              value: overview.overdueItems,
+              hint: overview.overdueItems > 0 ? "items past their deadline" : "Nothing late",
+              href: "/orders?overdue=1",
+              tone: overview.overdueItems > 0 ? "red" : undefined,
+            },
+            { label: "Due this week", value: overview.dueThisWeekItems, hint: "items", href: "/orders?dueThisWeek=1" },
+          ]}
+        />
+      ) : myWork ? (
+        <KpiStrip
+          items={[
+            { label: "To accept", value: myWork.newCount, hint: "New tasks", href: "/orders?task=pending", tone: myWork.newCount > 0 ? "indigo" : undefined },
+            { label: "In progress", value: myWork.activeCount, hint: "Accepted or refill", href: "/orders?task=processing" },
+            { label: "Due today", value: myWork.dueTodayCount, hint: "Deadline today (UTC)", href: "/orders", tone: myWork.dueTodayCount > 0 ? "amber" : undefined },
+            {
+              label: "Overdue",
+              value: myWork.overdueCount,
+              hint: myWork.overdueCount > 0 ? "Past the deadline" : "Nothing late",
+              href: "/orders",
+              tone: myWork.overdueCount > 0 ? "red" : undefined,
+            },
+          ]}
+        />
+      ) : null}
 
-                  {myWork.attention.length > 0 ? (
-                    <ul className="-mx-2 divide-y divide-zinc-100">
-                      {myWork.attention.map((item) => (
-                        <li key={item.itemId}>
-                          <Link
-                            href={`/orders/${item.orderId}`}
-                            className="group flex flex-col gap-2 rounded-[8px] px-2 py-3 transition-colors hover:bg-zinc-50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                          >
-                            <span className="flex min-w-0 items-center gap-3">
-                              <span className="shrink-0 rounded-[6px] bg-zinc-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-zinc-600">
-                                #{item.orderNumber}
-                              </span>
-                              <span className="truncate text-sm font-medium text-zinc-900 group-hover:underline">
-                                {item.serviceName}
-                              </span>
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-6">
+          {overview ? (
+            <>
+              <Panel title="Needs attention" description="Workers who can't continue or need screenshots, overdue, unassigned, or not accepted after a day." action={<PanelLink href="/orders">All orders</PanelLink>}>
+                {overview.attention.length > 0 ? (
+                  <ul className="divide-y divide-zinc-100">
+                    {overview.attention.map((row) => (
+                      <AttentionItem key={row.itemId} row={row} now={renderedAt.getTime()} />
+                    ))}
+                  </ul>
+                ) : (
+                  <AllClear text="Nothing is overdue, unassigned or waiting to be accepted." />
+                )}
+              </Panel>
+
+              <Panel title="Recent orders" action={<PanelLink href="/orders">View all</PanelLink>}>
+                {overview.recentOrders.length > 0 ? (
+                  <ul className="divide-y divide-zinc-100">
+                    {overview.recentOrders.map((order) => (
+                      <li key={order.id}>
+                        <Link href={`/orders/${order.id}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 sm:px-5">
+                          <span className="w-10 shrink-0 text-sm font-semibold tabular-nums text-zinc-900">#{order.orderNumber}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-zinc-800">{order.customerName ?? `${order.itemCount} ${order.itemCount === 1 ? "item" : "items"}`}</span>
+                            <span className="block text-xs text-zinc-500">
+                              {dayFormat.format(order.createdAt)}
+                              {order.customerName ? ` · ${order.itemCount} ${order.itemCount === 1 ? "item" : "items"}` : ""}
                             </span>
-                            <span className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-                              {item.deadline ? (
-                                <DeadlineCountdown deadline={item.deadline} showDate={false} />
-                              ) : (
-                                <span className="text-xs text-zinc-500">No deadline</span>
-                              )}
-                              <StatusBadge tone={ITEM_STATUS_TONE[item.status]} label={item.statusLabel} className="whitespace-nowrap" />
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <EmptyState icon={CircleCheck} title="You're all caught up" text="No open work is assigned to you right now." />
-                  )}
-                </Card>
-
-                {myWork.recentlyCompleted.length > 0 ? (
-                  <Card className={FLAT}>
-                    <CardHeader icon={CircleCheck} tone="emerald" title="Recently completed" description="Your latest finished items." />
-                    <ul className="-mx-2 divide-y divide-zinc-100">
-                      {myWork.recentlyCompleted.map((item) => (
-                        <li key={item.itemId}>
-                          <Link
-                            href={`/orders/${item.orderId}`}
-                            className="group flex items-center justify-between gap-4 rounded-[8px] px-2 py-2.5 transition-colors hover:bg-zinc-50"
-                          >
-                            <span className="flex min-w-0 items-center gap-3">
-                              <span className="shrink-0 text-xs font-medium tabular-nums text-zinc-500">#{item.orderNumber}</span>
-                              <span className="truncate text-sm text-zinc-800 group-hover:underline">{item.serviceName}</span>
-                            </span>
-                            <span className="shrink-0 text-xs tabular-nums text-zinc-500">{dateFormat.format(item.completedAt)} UTC</span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </Card>
-                ) : null}
-              </>
-            ) : (
-              <Card className={RAISED}>
-                <EmptyState
-                  icon={ClipboardList}
-                  title="Welcome to Grow Xeno"
-                  text="Use the sidebar to open the areas you have access to."
-                />
-              </Card>
-            )}
-          </div>
-
-          {/* ── Side column ─────────────────────────────────────────────── */}
-          <div className="min-w-0 space-y-5">
-            {inquiries ? (
-              <Card className={RAISED}>
-                <CardHeader
-                  icon={MessageSquareText}
-                  tone="indigo"
-                  title="New inquiries"
-                  description={
-                    inquiries.count === 0
-                      ? "Nothing waiting from the website."
-                      : `${inquiries.count} waiting for a reply`
-                  }
-                  actions={<CardLink href="/inquiries">View all</CardLink>}
-                />
-                {inquiries.latest.length > 0 ? (
-                  <ul className="-mt-2 divide-y divide-zinc-100">
-                    {inquiries.latest.map((inquiry) => (
-                      <li key={inquiry.id} className="py-2.5">
-                        <Link href="/inquiries" className="group block">
-                          <span className="flex items-center justify-between gap-3">
-                            <span className="truncate text-sm font-medium text-zinc-900 group-hover:underline">{inquiry.name}</span>
-                            <span className="shrink-0 text-xs text-zinc-500">{dayFormat.format(inquiry.createdAt)}</span>
                           </span>
-                          <span className="mt-0.5 line-clamp-1 block text-xs text-zinc-500">
-                            {inquiry.service ? `${inquiry.service} · ` : ""}
-                            {inquiry.message}
+                          <span className="flex shrink-0 flex-col items-end gap-1">
+                            <StatusBadge tone={ORDER_STATUS_TONE[order.status]} label={ORDER_STATUS_LABELS[order.status]} className="px-2 py-0.5" />
+                            {order.amountLabel ? <span className="text-xs font-medium tabular-nums text-zinc-700">{order.amountLabel}</span> : null}
                           </span>
                         </Link>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <CompactEmpty icon={MessageSquareText} title="All caught up" description="New messages from the contact form show up here." />
+                  <p className="px-5 py-8 text-center text-[13px] text-zinc-500">No orders yet.</p>
                 )}
-              </Card>
-            ) : null}
+              </Panel>
+            </>
+          ) : null}
 
-            {myCommission ? <CommissionCard commission={myCommission} title="Your commission" /> : null}
-            <Card className={FLAT}>
-              <CardHeader icon={UserRound} tone="indigo" title="Your account" />
-              <dl className="-mt-2 divide-y divide-zinc-100">
-                <InfoRow label="Status">
-                  <StatusDot tone={actor.user.isActive ? "done" : "danger"} label={actor.user.isActive ? "Active" : "Inactive"} />
-                </InfoRow>
-                <InfoRow label="Roles">
-                  {actor.user.roleNames.length > 0 ? actor.user.roleNames.join(", ") : <span className="text-zinc-500">None assigned</span>}
-                </InfoRow>
-                <InfoRow label="Effective permissions">
-                  <span className="tabular-nums">{actor.permissions.granted.size}</span>
-                </InfoRow>
-                <InfoRow label="Email">
-                  <span className="break-all">{actor.user.email}</span>
-                </InfoRow>
-              </dl>
-            </Card>
+          {workerTasks ? (
+            <Panel title="Your tasks" description="Oldest first. Open one to update progress." action={<PanelLink href="/orders">All tasks</PanelLink>}>
+              {workerTasks.tasks.length > 0 ? (
+                <ul className="divide-y divide-zinc-100">
+                  {workerTasks.tasks.slice(0, 6).map((task) => (
+                    <TaskItem key={task.id} task={task} now={renderedAt.getTime()} />
+                  ))}
+                </ul>
+              ) : (
+                <AllClear text="No open tasks right now. New ones show up here as soon as they're assigned." />
+              )}
+            </Panel>
+          ) : null}
 
-            {counts ? (
-              <Card className={FLAT}>
-                <CardHeader
-                  icon={ShieldCheck}
-                  tone="amber"
-                  title="Access control"
-                  actions={<CardLink href="/settings/users">Manage</CardLink>}
-                />
-                <div className="-mt-1 grid grid-cols-2 gap-2">
-                  <MiniStat label="Active users" value={counts.activeUsers} />
-                  <MiniStat label="Inactive users" value={counts.inactiveUsers} />
-                  <MiniStat label="Roles" value={counts.roles} icon={KeyRound} />
-                  <MiniStat label="Direct overrides" value={counts.directOverrides} />
-                </div>
-              </Card>
-            ) : null}
+          {/* An admin who is also assigned work still sees it, below the business. */}
+          {overview && myWork && myWork.attention.length > 0 ? (
+            <Panel title="Assigned to you" description="Soonest deadline first.">
+              <ul className="divide-y divide-zinc-100">
+                {myWork.attention.map((item) => (
+                  <li key={item.itemId}>
+                    <Link href={`/orders/${item.orderId}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 sm:px-5">
+                      <span className="w-10 shrink-0 text-sm font-semibold tabular-nums text-zinc-900">#{item.orderNumber}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-zinc-800">{item.serviceName}</span>
+                      {item.deadline ? <DeadlineCountdown deadline={item.deadline} showDate={false} /> : null}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
 
-            {customerCount !== null ? (
-              <Card className={FLAT}>
-                <CardHeader icon={Users} tone="emerald" title="Customers" actions={<CardLink href="/customers">Manage</CardLink>} />
-                <div className="-mt-1 flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold tracking-tight tabular-nums text-zinc-900">{customerCount}</span>
-                  <span className="text-[13px] text-zinc-500">in the CRM</span>
-                </div>
-              </Card>
-            ) : null}
-          </div>
+          {!isBusinessView && myWork && myWork.recentlyCompleted.length > 0 ? (
+            <Panel title="Recently completed">
+              <ul className="divide-y divide-zinc-100">
+                {myWork.recentlyCompleted.map((item) => (
+                  <li key={item.itemId}>
+                    <Link href={`/orders/${item.orderId}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 sm:px-5">
+                      <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-emerald-600" />
+                      <span className="min-w-0 flex-1 truncate text-sm text-zinc-800">{item.serviceName}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-zinc-500">
+                        #{item.orderNumber} · {dayFormat.format(item.completedAt)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+
+          {!canSeeOrders ? (
+            <Panel title="Welcome to Grow Xeno">
+              <p className="px-5 pb-5 text-[13px] text-zinc-500">Use the menu to open the areas you have access to.</p>
+            </Panel>
+          ) : null}
         </div>
+
+        <aside className="min-w-0 space-y-6">
+          {workload ? (
+            <Panel title="Your workload" description="Across your active tasks: delivered, and what's left.">
+              <WorkloadLines workload={workload} className="px-4 pb-5 sm:px-5" />
+            </Panel>
+          ) : null}
+          {earnings ? <EarningsPanel earnings={earnings} tasks={workerTasks?.tasks ?? []} /> : null}
+
+          {month ? (
+            <Panel title="This month" description={`${month.recognizedOrderCount} ${month.recognizedOrderCount === 1 ? "order" : "orders"} delivered`} action={<PanelLink href="/finance">Finance</PanelLink>}>
+              <dl className="space-y-3 px-4 pb-5 sm:px-5">
+                <MoneyRow label="Revenue" values={month.revenueByCurrency} strong />
+                <MoneyRow label="Worker cost" values={month.workerCostByCurrency} />
+                <MoneyRow label="Expenses" values={month.expensesByCurrency} />
+                {canSeeProfit ? <MoneyRow label="Profit" values={month.profitByCurrency} strong tone="emerald" /> : null}
+              </dl>
+            </Panel>
+          ) : null}
+
+          {overview ? <StatusBreakdown counts={overview.ordersByStatus} /> : null}
+
+          {inquiries ? (
+            <Panel
+              title="New inquiries"
+              description={inquiries.count === 0 ? "Nothing waiting from the website." : `${inquiries.count} waiting for a reply`}
+              action={<PanelLink href="/inquiries">View all</PanelLink>}
+            >
+              {inquiries.latest.length > 0 ? (
+                <ul className="divide-y divide-zinc-100">
+                  {inquiries.latest.map((inquiry) => (
+                    <li key={inquiry.id}>
+                      <Link href="/inquiries" className="block px-4 py-3 transition-colors hover:bg-zinc-50 sm:px-5">
+                        <span className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm font-medium text-zinc-900">{inquiry.name}</span>
+                          <span className="shrink-0 text-xs text-zinc-500">{dayFormat.format(inquiry.createdAt)}</span>
+                        </span>
+                        <span className="mt-0.5 line-clamp-1 block text-xs text-zinc-500">
+                          {inquiry.service ? `${inquiry.service} · ` : ""}
+                          {inquiry.message}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </Panel>
+          ) : null}
+
+          {customerCount !== null || access ? (
+            <Panel title="At a glance">
+              <dl className="grid grid-cols-2 divide-x divide-zinc-100 border-t border-zinc-100">
+                {customerCount !== null ? <Glance label="Customers" value={customerCount} href="/customers" /> : null}
+                {access ? <Glance label="Active users" value={access.activeUsers} href="/settings/users" /> : null}
+              </dl>
+            </Panel>
+          ) : null}
+
+          {commission ? <CommissionCard commission={commission} title="Your commission" /> : null}
+        </aside>
       </div>
     </>
   );
@@ -272,90 +300,283 @@ export default async function DashboardPage() {
 
 // ── Pieces ────────────────────────────────────────────────────────────────
 
-type TileTone = "indigo" | "sky" | "amber" | "red" | "zinc";
+const SURFACE = "rounded-[12px] border border-zinc-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-14px_rgba(16,24,40,0.12)]";
 
-const TILE_TONE: Record<TileTone, { chip: string; value: string; ring: string }> = {
-  indigo: { chip: "bg-indigo-50 text-indigo-600", value: "text-zinc-900", ring: "" },
-  sky: { chip: "bg-sky-50 text-sky-600", value: "text-zinc-900", ring: "" },
-  amber: { chip: "bg-amber-50 text-amber-600", value: "text-amber-700", ring: "ring-1 ring-inset ring-amber-200/70" },
-  red: { chip: "bg-red-50 text-red-600", value: "text-red-600", ring: "ring-1 ring-inset ring-red-200/70" },
-  zinc: { chip: "bg-zinc-100 text-zinc-500", value: "text-zinc-900", ring: "" },
-};
-
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-  tone,
-  hint,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: number;
-  tone: TileTone;
-  hint: string;
-}) {
-  const t = TILE_TONE[tone];
+/** A titled white panel; the body decides its own padding so lists can run edge to edge. */
+function Panel({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div
-      className={cn(
-        "rounded-[12px] border border-zinc-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-14px_rgba(16,24,40,0.12)] sm:p-5",
-        t.ring,
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-zinc-600">{label}</span>
-        <span className={cn("grid size-8 place-items-center rounded-[8px]", t.chip)}>
-          <Icon aria-hidden="true" className="size-4" />
-        </span>
+    <section className={cn(SURFACE, PHONE_FLUSH, "overflow-hidden")}>
+      <div className="flex items-start justify-between gap-3 px-4 pb-3 pt-4 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold text-zinc-900">{title}</h2>
+          {description ? <p className="mt-0.5 text-[13px] text-zinc-500">{description}</p> : null}
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
-      <p className={cn("mt-3 text-3xl font-semibold tracking-tight tabular-nums", t.value)}>{value}</p>
-      <p className="mt-1 text-xs text-zinc-500">{hint}</p>
-    </div>
+      {children}
+    </section>
   );
 }
 
-function CardLink({ href, children }: { href: string; children: ReactNode }) {
+function PanelLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[13px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
-    >
+    <Link href={href} className="inline-flex h-8 items-center gap-1 rounded-[8px] px-2 text-[13px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50">
       {children}
-      <ArrowUpRight aria-hidden="true" className="size-3.5" />
+      <ArrowRight aria-hidden="true" className="size-3.5" />
     </Link>
   );
 }
 
-function InfoRow({ label, children }: { label: string; children: ReactNode }) {
+type KpiTone = "red" | "amber" | "indigo";
+
+const KPI_TONE: Record<KpiTone, string> = {
+  red: "text-red-600",
+  amber: "text-amber-600",
+  indigo: "text-indigo-600",
+};
+
+/** The headline numbers as one strip, each a link to the matching list. 2×2 on a phone, 4 across from lg. */
+function KpiStrip({ items }: { items: Array<{ label: string; value: number; hint: string; href: string; tone?: KpiTone }> }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 text-[13px]">
-      <dt className="shrink-0 text-zinc-500">{label}</dt>
-      <dd className="min-w-0 text-right font-medium text-zinc-900">{children}</dd>
+    <section aria-label="Summary" className={cn(SURFACE, PHONE_FLUSH, "grid grid-cols-2 overflow-hidden lg:grid-cols-4")}>
+      {items.map((item, index) => (
+        <Link
+          key={item.label}
+          href={item.href}
+          className={cn(
+            "group px-4 py-4 transition-colors hover:bg-zinc-50 sm:px-5",
+            index % 2 === 1 && "border-l border-zinc-100",
+            index >= 2 && "border-t border-zinc-100 lg:border-t-0",
+            index === 2 && "lg:border-l",
+          )}
+        >
+          <p className="text-[13px] font-medium text-zinc-500">{item.label}</p>
+          <p className={cn("mt-1 text-[28px] font-semibold leading-none tracking-tight tabular-nums", item.tone ? KPI_TONE[item.tone] : "text-zinc-900")}>
+            {numberFormat.format(item.value)}
+          </p>
+          <p className="mt-1.5 truncate text-xs text-zinc-500">{item.hint}</p>
+        </Link>
+      ))}
+    </section>
+  );
+}
+
+const REASON: Record<AttentionRow["reason"], { label: string; className: string }> = {
+  withdraw: { label: "Can't continue", className: "bg-red-50 text-red-700 ring-red-200" },
+  screenshots: { label: "Screenshots requested", className: "bg-amber-50 text-amber-800 ring-amber-200" },
+  overdue: { label: "Overdue", className: "bg-red-50 text-red-700 ring-red-200/70" },
+  unassigned: { label: "Unassigned", className: "bg-amber-50 text-amber-800 ring-amber-200/70" },
+  not_accepted: { label: "Not accepted", className: "bg-indigo-50 text-indigo-700 ring-indigo-200/70" },
+};
+
+/** `now` is when the page was rendered, so the "late" / "ago" text is stable. */
+function AttentionItem({ row, now }: { row: AttentionRow; now: number }) {
+  const reason = REASON[row.reason];
+  const detail =
+    row.reason === "overdue" && row.deadline
+      ? `${formatDuration(now - row.deadline.getTime())} late`
+      : row.reason === "not_accepted" && row.assignedAt
+        ? `Assigned ${formatDuration(now - row.assignedAt.getTime())} ago`
+        : row.deadline
+          ? null
+          : "No deadline";
+  return (
+    <li>
+      <Link
+        href={row.reason === "screenshots" ? `/orders/${row.orderId}?updates=${row.itemId}` : row.reason === "withdraw" ? `/orders/${row.orderId}#item-${row.itemId}` : `/orders/${row.orderId}`}
+        className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 sm:items-center sm:px-5"
+      >
+        <span className="w-10 shrink-0 pt-px text-sm font-semibold tabular-nums text-zinc-900">#{row.orderNumber}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm text-zinc-800">{row.serviceName}</span>
+          <span className="mt-0.5 block truncate text-xs text-zinc-500">
+            {row.workerName ?? "No worker yet"}
+            {detail ? ` · ${detail}` : null}
+          </span>
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-1">
+          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", reason.className)}>{reason.label}</span>
+          {row.reason !== "overdue" && row.deadline ? <DeadlineCountdown deadline={row.deadline} showDate={false} /> : null}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+/** One of the worker's own tasks: what it is, the channel, delivered / needed, and when it's due. */
+function TaskItem({ task, now }: { task: WorkerTask; now: number }) {
+  const start = Math.max(0, task.startingCount ?? 0);
+  const required = task.targetCount !== null ? Math.max(0, task.targetCount - start) : null;
+  const delivered = Math.max(0, (task.currentCount ?? start) - start);
+  const percent = required ? Math.min(100, Math.round((delivered / required) * 100)) : null;
+  const unit = task.metricType ? SERVICE_METRIC_TYPE_LABELS[task.metricType].toLowerCase() : null;
+  return (
+    <li>
+      <Link href={`/orders/${task.orderId}`} className="block px-4 py-3.5 transition-colors hover:bg-zinc-50 sm:px-5">
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium text-zinc-900">{task.serviceName}</span>
+            <span className="block truncate text-xs text-zinc-500">
+              #{task.orderNumber}
+              {task.channelTitle ? ` · ${task.channelTitle}` : ""}
+            </span>
+          </span>
+          <StatusBadge tone={ITEM_STATUS_TONE[task.status]} label={ORDER_ITEM_STATUS_LABELS[task.status]} className="shrink-0 px-2 py-0.5" />
+        </span>
+        {percent !== null && required !== null && unit ? (
+          <span className="mt-2.5 block">
+            <span className="flex items-center gap-2.5">
+              <ProgressBar percent={percent} className="flex-1" />
+              <span className="tabular w-9 text-right text-xs font-semibold text-zinc-700">{percent}%</span>
+            </span>
+            <span className="mt-1 block text-xs tabular-nums text-zinc-500">
+              {numberFormat.format(delivered)} / {numberFormat.format(required)} {unit} delivered
+            </span>
+          </span>
+        ) : null}
+        <span className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          {/* When it was given, not time left (owner request, 2026-11-11). */}
+          {task.assignedAt ? (
+            <span className="inline-flex items-center gap-1.5 text-xs tabular-nums text-zinc-500">
+              <Hourglass aria-hidden="true" className="size-3.5" />
+              Assigned {formatDuration(now - task.assignedAt.getTime())} ago
+              <span className="text-zinc-400">· {assignedFormat.format(task.assignedAt)} UTC</span>
+            </span>
+          ) : (
+            <span className="text-xs text-zinc-500">Not assigned yet</span>
+          )}
+          {task.workerCost ? <span className="text-xs font-semibold tabular-nums text-emerald-700">{formatPay(task.workerCost, task.workerCostCurrency)}</span> : null}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+/** A worker's money: what they're still owed, what they've earned and been paid, and what open tasks will add. */
+function EarningsPanel({
+  earnings,
+  tasks,
+}: {
+  earnings: { earnedByCurrency: Record<string, number>; paidByCurrency: Record<string, number>; outstandingByCurrency: Record<string, number> };
+  tasks: WorkerTask[];
+}) {
+  const inProgress: Record<string, number> = {};
+  for (const task of tasks) {
+    if (!task.workerCost) continue;
+    inProgress[task.workerCostCurrency] = (inProgress[task.workerCostCurrency] ?? 0) + Number(task.workerCost);
+  }
+  const owed = Object.entries(earnings.outstandingByCurrency).filter(([, amount]) => amount !== 0);
+  return (
+    <Panel title="Your earnings" description="From finished tasks, before and after payment.">
+      <div className="px-4 pb-5 sm:px-5">
+        <p className="text-[13px] font-medium text-zinc-500">To be paid</p>
+        <p className="mt-1 text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-zinc-900">
+          {owed.length > 0 ? owed.map(([currency, amount]) => formatPay(amount, currency)).join(" + ") : "Nothing owed"}
+        </p>
+        <dl className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
+          <MoneyRow label="Earned" values={earnings.earnedByCurrency} />
+          <MoneyRow label="Paid" values={earnings.paidByCurrency} />
+          <MoneyRow label="In open tasks" values={inProgress} muted />
+        </dl>
+      </div>
+    </Panel>
+  );
+}
+
+function MoneyRow({
+  label,
+  values,
+  strong,
+  muted,
+  tone,
+}: {
+  label: string;
+  values: Record<string, number>;
+  strong?: boolean;
+  muted?: boolean;
+  tone?: "emerald";
+}) {
+  const entries = Object.entries(values);
+  return (
+    <div className="flex items-baseline justify-between gap-4 text-[13px]">
+      <dt className="text-zinc-500">{label}</dt>
+      <dd
+        className={cn(
+          "text-right tabular-nums",
+          strong ? "font-semibold" : "font-medium",
+          tone === "emerald" ? "text-emerald-700" : muted ? "text-zinc-500" : "text-zinc-900",
+        )}
+      >
+        {entries.length > 0 ? entries.map(([currency, amount]) => formatPay(amount, currency)).join(" + ") : "—"}
+      </dd>
     </div>
   );
 }
 
-function MiniStat({ label, value, icon: Icon }: { label: string; value: number; icon?: LucideIcon }) {
+const BAR_COLOR: Record<StatusTone, string> = {
+  neutral: "bg-zinc-300",
+  active: "bg-blue-500",
+  progress: "bg-indigo-500",
+  review: "bg-amber-400",
+  ready: "bg-teal-500",
+  done: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+};
+
+/** Every order by status: one stacked bar and a list of the statuses that have any. */
+function StatusBreakdown({ counts }: { counts: Partial<Record<OrderStatus, number>> }) {
+  const rows = ORDER_STATUS_VALUES.map((status) => ({ status, count: counts[status] ?? 0 })).filter((row) => row.count > 0);
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
   return (
-    <div className="rounded-[10px] bg-zinc-50 px-3 py-2.5 ring-1 ring-inset ring-zinc-200/70">
-      <p className="flex items-center gap-1.5 text-xs text-zinc-500">
-        {Icon ? <Icon aria-hidden="true" className="size-3" /> : null}
-        {label}
-      </p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-900">{value}</p>
-    </div>
+    <Panel title="Orders by status" description={`${total} ${total === 1 ? "order" : "orders"} in total`}>
+      {total > 0 ? (
+        <div className="px-4 pb-4 sm:px-5">
+          <div className="flex h-2 overflow-hidden rounded-full bg-zinc-100" aria-hidden="true">
+            {rows.map((row) => (
+              <span key={row.status} className={BAR_COLOR[ORDER_STATUS_TONE[row.status]]} style={{ width: `${(row.count / total) * 100}%` }} />
+            ))}
+          </div>
+          <ul className="mt-3 space-y-1">
+            {rows.map((row) => (
+              <li key={row.status}>
+                <Link href={`/orders?status=${row.status}`} className="-mx-2 flex items-center justify-between gap-3 rounded-[6px] px-2 py-1.5 text-[13px] hover:bg-zinc-50">
+                  <span className="flex items-center gap-2 text-zinc-700">
+                    <span aria-hidden="true" className={cn("size-2 rounded-full", BAR_COLOR[ORDER_STATUS_TONE[row.status]])} />
+                    {ORDER_STATUS_LABELS[row.status]}
+                  </span>
+                  <span className="font-medium tabular-nums text-zinc-900">{row.count}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="px-5 pb-5 text-[13px] text-zinc-500">No orders yet.</p>
+      )}
+    </Panel>
   );
 }
 
-function EmptyState({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
+function Glance({ label, value, href }: { label: string; value: number; href: string }) {
   return (
-    <div className="flex flex-col items-center rounded-[10px] border border-dashed border-zinc-200 px-6 py-10 text-center">
-      <span className="grid size-10 place-items-center rounded-full bg-emerald-50 text-emerald-600">
-        <Icon aria-hidden="true" className="size-5" />
+    <Link href={href} className="block px-4 py-3.5 transition-colors hover:bg-zinc-50 sm:px-5">
+      <dt className="text-xs text-zinc-500">{label}</dt>
+      <dd className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-900">{numberFormat.format(value)}</dd>
+    </Link>
+  );
+}
+
+function AllClear({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-3 border-t border-zinc-100 px-4 py-6 sm:px-5">
+      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-600">
+        <CircleCheck aria-hidden="true" className="size-[18px]" />
       </span>
-      <p className="mt-3 text-sm font-medium text-zinc-900">{title}</p>
-      <p className="mt-1 text-[13px] text-zinc-500">{text}</p>
+      <div>
+        <p className="text-sm font-medium text-zinc-900">All clear</p>
+        <p className="text-[13px] text-zinc-500">{text}</p>
+      </div>
     </div>
   );
 }

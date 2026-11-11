@@ -54,3 +54,10 @@ export function CardHeader({
     </div>
   );
 }
+
+/**
+ * Phones (below md): a card runs edge to edge, with no side border, rounding or
+ * shadow, so the page isn't padding around a card around more padding (2026-11-11).
+ * The page's own side padding is 16px (`px-4`), which this cancels.
+ */
+export const PHONE_FLUSH = "max-md:-mx-4 max-md:rounded-none max-md:border-x-0 max-md:shadow-none";

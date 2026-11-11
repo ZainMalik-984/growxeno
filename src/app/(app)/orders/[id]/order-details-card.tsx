@@ -5,8 +5,9 @@ import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DeadlineCountdown } from "@/components/ui/deadline";
-import { Card, CardHeader } from "@/components/ui/card";
+import { Card, CardHeader, PHONE_FLUSH } from "@/components/ui/card";
 import type { OrderDetail } from "@/lib/orders/queries";
+import { cn } from "@/lib/utils";
 import { OrderProfileForm } from "./order-profile-form";
 
 /**
@@ -46,7 +47,7 @@ export function OrderDetailsCard({
   const [editing, setEditing] = useState(false);
 
   return (
-    <Card className="p-5 sm:p-6">
+    <Card className={cn("p-5 sm:p-6", PHONE_FLUSH)}>
       <CardHeader
         icon={ClipboardList}
         tone="indigo"

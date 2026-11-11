@@ -20,6 +20,7 @@ import {
   setOrderItemDeadline,
   updateOrderItem,
   updateOrderItemProgress,
+  reassignRemainder,
 } from "./service";
 import { readStatsAfterSave } from "@/lib/youtube/stats-service";
 import { prepareAssignmentMessages, type AssignmentMessageOutcome } from "./assignment-notify";
@@ -441,3 +442,33 @@ export async function addOrderNoteAction(input: unknown): Promise<ActionResult> 
   return { ok: true, message: "Note added." };
 }
 
+
+const reassignRemainderSchema = z.object({
+  requestId: uuid,
+  outsourcedWorkerId: uuid,
+  cost: z.union([moneyString, z.literal("")]),
+  costCurrency: z.string().trim().length(3, "Choose a currency."),
+  previousWorkerCost: moneyString,
+});
+
+/**
+ * The worker couldn't continue (2026-11-11): cancels their item with what
+ * they're owed for the part done, and gives what's left to another worker as
+ * a new item. Then tells the new worker by email / WhatsApp like any assignment.
+ */
+export async function reassignRemainderAction(
+  input: unknown,
+): Promise<{ ok: true; message: string; newItemId: string; delivery: AssignmentMessageOutcome | null } | { ok: false; error: string }> {
+  const parsed = reassignRemainderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+  const auth = await authorizeAction("orders.assign");
+  if (!auth.ok) return { ok: false, error: auth.message };
+  if (!auth.actor.permissions.has("orders.create")) return { ok: false, error: "You don't have permission to add order items." };
+
+  const result = await reassignRemainder(auth.actor, parsed.data);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath("/orders", "layout");
+  revalidatePath("/dashboard");
+  const delivery = await prepareAssignmentMessages(result.data.newItemId, { sendEmail: true }).catch(() => null);
+  return { ok: true, message: "Done. Their part is marked completed, and what's left is a new item for the new worker.", newItemId: result.data.newItemId, delivery };
+}

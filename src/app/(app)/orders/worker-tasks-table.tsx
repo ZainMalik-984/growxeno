@@ -7,15 +7,24 @@ import { useState } from "react";
 import { SiYoutube } from "react-icons/si";
 
 import { DeadlineCountdown, formatDeadlineDate, useNowMinute } from "@/components/ui/deadline";
-import { Modal } from "@/components/ui/modal";
+import { Modal, SHEET_CLASS } from "@/components/ui/modal";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
+import { StatusBadge, StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { formatDuration } from "@/lib/time/countdown";
 import { cn } from "@/lib/utils";
 import { AcceptItemsButton } from "./accept-items-button";
 import { CompleteTaskButton } from "./complete-task-button";
-import { UpdateProgressControl } from "./update-progress-control";
+import {
+  AskScreenshotsDialog,
+  AskScreenshotsTrigger,
+  CantContinueDialog,
+  CantContinueTrigger,
+  clearUpdatesParam,
+  ItemUpdatesSheet,
+  progressSentence,
+  UpdatesTrigger,
+} from "@/components/orders/item-updates";
 
 /**
  * The orders list as an External Worker sees it (owner request, 2026-11-03:
@@ -43,8 +52,14 @@ export type WorkerTaskRow = {
   isRefill: boolean;
   canAccept: boolean;
   canComplete: boolean;
-  /** The worker may record the current count (accepted metric tasks, 2026-11-11). */
-  canUpdateProgress: boolean;
+  /** The worker may post in the task's updates thread (2026-11-11): anything but a cancelled task. */
+  canPostUpdate: boolean;
+  /** Posts in the updates thread so far. */
+  updateCount: number;
+  /** The worker's screenshot request is waiting for the team (2026-11-11). */
+  hasOpenRequest: boolean;
+  /** The worker said they can't continue; the team hasn't reassigned it yet. */
+  hasWithdrawRequest: boolean;
   assignedAt: Date | null;
   finishedAt: Date | null;
   deadline: Date | null;
@@ -71,16 +86,37 @@ const numberFormat = new Intl.NumberFormat("en-US");
 export function WorkerTasksTable({
   rows,
   focus = null,
+  openUpdatesId = null,
 }: {
   rows: WorkerTaskRow[];
   /** A task opened from its accept link (2026-11-11): its popup opens on load, in the short form. */
   focus?: WorkerTaskRow | null;
+  /** A task whose updates open on load (from a notification). */
+  openUpdatesId?: string | null;
 }) {
   const th = cn(EDGE, "border-zinc-200/80 bg-zinc-50/80 py-2.5 text-zinc-500");
   const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(focus?.id ?? null);
   const [compact, setCompact] = useState(focus !== null);
   const open = rows.find((row) => row.id === openId) ?? (focus && focus.id === openId ? focus : null);
+  // One updates sheet for the whole list (a task shows as a card and a table row).
+  const [updatesId, setUpdatesId] = useState<string | null>(openUpdatesId);
+  // "Ask for screenshots" popup (2026-11-11).
+  const [askFor, setAskFor] = useState<WorkerTaskRow | null>(null);
+  // "Can't continue" popup (2026-11-11).
+  const [giveUp, setGiveUp] = useState<WorkerTaskRow | null>(null);
+  const cantContinue = (task: WorkerTaskRow) => {
+    setOpenId(null);
+    setGiveUp(task);
+  };
+  const askScreenshots = (task: WorkerTaskRow) => {
+    setOpenId(null);
+    setAskFor(task);
+  };
+  const openUpdates = (id: string) => {
+    setOpenId(null);
+    setUpdatesId(id);
+  };
 
   const openDetails = (id: string) => {
     setCompact(false);
@@ -99,7 +135,14 @@ export function WorkerTasksTable({
 
   return (
     <>
-      <TableWrap>
+      {/* Phones: one card per task with its action full width (2026-11-11). */}
+      <ul className="divide-y divide-zinc-100 md:hidden">
+        {rows.map((task) => (
+          <TaskCard key={task.id} task={task} onOpen={() => openDetails(task.id)} onUpdates={() => openUpdates(task.id)} onAsk={() => askScreenshots(task)} onCantContinue={() => cantContinue(task)} />
+        ))}
+      </ul>
+
+      <TableWrap className="hidden md:block">
         <Table className="min-w-[1080px]">
           <caption className="sr-only">Your tasks</caption>
           <THead>
@@ -165,6 +208,13 @@ export function WorkerTasksTable({
                 </TD>
                 <TD className={cn(EDGE, "whitespace-nowrap py-3 text-right")}>
                   <div className="inline-flex items-center gap-1.5">
+                    <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={() => openUpdates(task.id)} className="h-8 px-3" />
+                    {task.canPostUpdate ? (
+                      <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={() => askScreenshots(task)} className="h-8 px-2.5" />
+                    ) : null}
+                    {task.canPostUpdate && !task.finished ? (
+                      <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={() => cantContinue(task)} className="h-8 px-2.5" />
+                    ) : null}
                     {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} className="h-8 px-3" /> : null}
                     {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-8 px-3" /> : null}
                     <button
@@ -187,17 +237,133 @@ export function WorkerTasksTable({
         open={open !== null}
         onClose={close}
         labelledBy="task-details-title"
-        className="m-auto w-full max-w-lg rounded-[16px] border border-zinc-200 bg-white p-0 shadow-xl shadow-zinc-900/10 backdrop:bg-zinc-950/30"
+        className={SHEET_CLASS}
       >
         {open ? (
           compact ? (
             <TaskSummary task={open} onClose={close} onShowAll={() => setCompact(false)} />
           ) : (
-            <TaskDetails task={open} onClose={close} />
+            <TaskDetails task={open} onClose={close} onUpdates={() => openUpdates(open.id)} onAsk={() => askScreenshots(open)} onCantContinue={() => cantContinue(open)} />
           )
         ) : null}
       </Modal>
+
+      {updatesId ? (
+        <ItemUpdatesSheet
+          itemId={updatesId}
+          onClose={() => {
+            setUpdatesId(null);
+            clearUpdatesParam(router.replace);
+          }}
+        />
+      ) : null}
+
+      {askFor ? <AskScreenshotsDialog itemId={askFor.id} serviceName={askFor.serviceName} onClose={() => setAskFor(null)} /> : null}
+      {giveUp ? (
+        <CantContinueDialog
+          itemId={giveUp.id}
+          serviceName={giveUp.serviceName}
+          progress={progressSentence(giveUp, giveUp.metricLabel)}
+          onClose={() => setGiveUp(null)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** One task on a phone: tap anywhere to see details; Accept / Complete full width at the bottom. */
+function TaskCard({
+  task,
+  onOpen,
+  onUpdates,
+  onAsk,
+  onCantContinue,
+}: {
+  task: WorkerTaskRow;
+  onOpen: () => void;
+  onUpdates: () => void;
+  onAsk: () => void;
+  onCantContinue: () => void;
+}) {
+  return (
+    <li className="relative px-4 py-4 transition-colors active:bg-zinc-50">
+      <button type="button" onClick={onOpen} className="absolute inset-0" aria-label={`Details for ${task.serviceName}, order #${task.orderNumber}`} />
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[15px] font-semibold text-zinc-900">{task.serviceName}</p>
+          <p className="text-xs tabular-nums text-zinc-500">Order #{task.orderNumber}</p>
+        </div>
+        <StatusBadge tone={task.statusTone} label={task.statusLabel} className="shrink-0 px-2 py-0.5" />
+      </div>
+
+      {task.channel ? (
+        <div className="relative mt-2.5">
+          <ChannelCell task={task} />
+        </div>
+      ) : null}
+
+      {task.progressPercent !== null ? (
+        <div className="mt-3">
+          <div className="flex items-center gap-2.5">
+            <ProgressBar percent={task.progressPercent} className="flex-1" />
+            <span className="tabular text-xs font-semibold text-zinc-700">{task.progressPercent}%</span>
+          </div>
+          {task.metricLabel && task.delivered !== null && task.required !== null ? (
+            <p className="mt-1 text-xs tabular-nums text-zinc-600">
+              <span className="font-semibold text-zinc-900">{numberFormat.format(task.delivered)}</span> / {numberFormat.format(task.required)}{" "}
+              {task.metricLabel} delivered
+              {task.currentCount !== null ? <span className="text-zinc-400"> · now {numberFormat.format(task.currentCount)}</span> : null}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <GivenAgo assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} />
+        <div className="flex items-center gap-2">
+          {task.studioUrl ? (
+            <a
+              href={task.studioUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="relative inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-medium text-indigo-600 ring-1 ring-inset ring-indigo-200/70"
+            >
+              <BarChart3 aria-hidden="true" className="size-3.5" />
+              Studio
+              <span className="sr-only">(YouTube Studio analytics, opens in a new tab)</span>
+            </a>
+          ) : null}
+          {task.earningsLabel ? <Earnings label={task.earningsLabel} /> : null}
+        </div>
+      </div>
+
+      {/* Post update sits beside the next step, both full size (2026-11-11). */}
+      <div className={cn("relative mt-3 grid gap-2", (task.canAccept || task.canComplete) && "grid-cols-2")}>
+        <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} className="h-11 w-full text-sm" />
+        {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} size="md" className="h-11 w-full text-sm" /> : null}
+        {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-11 w-full text-sm" /> : null}
+      </div>
+      {task.canPostUpdate ? (
+        <div className="relative mt-2 grid grid-cols-2 gap-2">
+          <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} className={cn("h-10 w-full", task.finished && "col-span-2")} />
+          {!task.finished ? <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={onCantContinue} className="h-10 w-full" /> : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** "Given 3h ago" on one line, for the phone card. */
+function GivenAgo({ assignedAt, finishedAt }: { assignedAt: Date | null; finishedAt: Date | null }) {
+  const now = useNowMinute();
+  if (!assignedAt || now === null) return <span />;
+  const start = new Date(assignedAt).getTime();
+  return (
+    <span className="inline-flex items-center gap-1 text-xs tabular-nums text-zinc-500">
+      <Hourglass aria-hidden="true" className="size-3" />
+      {finishedAt ? `Took ${formatDuration(new Date(finishedAt).getTime() - start)}` : `Given ${formatDuration(now - start)} ago`}
+    </span>
   );
 }
 
@@ -268,15 +434,6 @@ function ProgressCell({ task }: { task: WorkerTaskRow }) {
             <span className="block text-[11px] tabular-nums text-zinc-500">Now at {numberFormat.format(task.currentCount)}</span>
           ) : null}
         </>
-      ) : null}
-      {task.canUpdateProgress && task.metricLabel ? (
-        <UpdateProgressControl
-          itemId={task.id}
-          currentCount={task.currentCount}
-          targetCount={task.targetCount}
-          metricLabel={task.metricLabel}
-          className="mt-1"
-        />
       ) : null}
     </div>
   );
@@ -369,7 +526,19 @@ function SummaryFigure({ label, value, unit, strong }: { label: string; value: n
 }
 
 /** Everything about one task, in the popup. */
-function TaskDetails({ task, onClose }: { task: WorkerTaskRow; onClose: () => void }) {
+function TaskDetails({
+  task,
+  onClose,
+  onUpdates,
+  onAsk,
+  onCantContinue,
+}: {
+  task: WorkerTaskRow;
+  onClose: () => void;
+  onUpdates: () => void;
+  onAsk: () => void;
+  onCantContinue: () => void;
+}) {
   const { delivered, required } = task;
 
   return (
@@ -420,15 +589,6 @@ function TaskDetails({ task, onClose }: { task: WorkerTaskRow; onClose: () => vo
               <Figure label="Required" value={required} />
               <Figure label="Now at" value={task.currentCount} />
             </dl>
-            {task.canUpdateProgress && task.metricLabel ? (
-              <UpdateProgressControl
-                itemId={task.id}
-                currentCount={task.currentCount}
-                targetCount={task.targetCount}
-                metricLabel={task.metricLabel}
-                className="mt-2.5"
-              />
-            ) : null}
             {delivered !== null && required !== null && task.metricLabel ? (
               <p className="mt-2 text-xs text-zinc-600">
                 {numberFormat.format(delivered)} of {numberFormat.format(required)} {task.metricLabel} delivered.
@@ -486,10 +646,15 @@ function TaskDetails({ task, onClose }: { task: WorkerTaskRow; onClose: () => vo
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 px-6 py-4">
-        <Link href={`/orders/${task.orderId}`} className="text-[13px] font-medium text-zinc-600 hover:text-zinc-900 hover:underline">
-          Open order page
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href={`/orders/${task.orderId}`} className="text-[13px] font-medium text-zinc-600 hover:text-zinc-900 hover:underline">
+            Open order page
+          </Link>
+          {task.canPostUpdate && !task.finished ? <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={onCantContinue} className="h-8 px-2" /> : null}
+        </div>
         <div className="flex items-center gap-2">
+          {task.canPostUpdate ? <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} /> : null}
+          <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} />
           {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} /> : null}
           {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} /> : null}
         </div>

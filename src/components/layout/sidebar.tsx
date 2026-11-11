@@ -27,7 +27,10 @@ import { cn } from "@/lib/utils";
 
 const OPEN_GROUPS_STORAGE_KEY = "bm.sidebar.openGroups";
 
-export function Sidebar({ sections }: { sections: readonly NavSection[] }) {
+/** A count shown on a link, e.g. screenshot requests waiting on Orders (2026-11-11). Clicking it opens `href`. */
+export type SidebarBadge = { count: number; href: string; label: string };
+
+export function Sidebar({ sections, badges = {} }: { sections: readonly NavSection[]; badges?: Readonly<Record<string, SidebarBadge>> }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -103,7 +106,7 @@ export function Sidebar({ sections }: { sections: readonly NavSection[] }) {
 
         <div className="flex-1 space-y-5 overflow-y-auto px-3 py-4 [scrollbar-width:thin]">
           {sections.map((section) => (
-            <SidebarSection key={section.label} section={section} pathname={pathname} search={searchParams} />
+            <SidebarSection key={section.label} section={section} pathname={pathname} search={searchParams} badges={badges} />
           ))}
         </div>
       </nav>
@@ -115,10 +118,12 @@ function SidebarSection({
   section,
   pathname,
   search,
+  badges,
 }: {
   section: NavSection;
   pathname: string;
   search: URLSearchParams;
+  badges: Readonly<Record<string, SidebarBadge>>;
 }) {
   return (
     <div>
@@ -129,7 +134,7 @@ function SidebarSection({
             {item.children && item.children.length > 0 ? (
               <SidebarGroup node={item} pathname={pathname} search={search} />
             ) : (
-              <SidebarLink node={item} active={isNavNodeActive(item, pathname)} />
+              <SidebarLink node={item} active={isNavNodeActive(item, pathname)} badge={badges[item.href]} />
             )}
           </li>
         ))}
@@ -152,7 +157,22 @@ function NavIcon({ node, active, emphasised }: { node: NavNode; active: boolean;
   );
 }
 
-function SidebarLink({ node, active }: { node: NavNode; active: boolean }) {
+function SidebarLink({ node, active, badge }: { node: NavNode; active: boolean; badge?: SidebarBadge }) {
+  if (badge && badge.count > 0) {
+    return (
+      <div className="relative">
+        <SidebarLink node={node} active={active} />
+        <Link
+          href={badge.href}
+          title={badge.label}
+          aria-label={badge.label}
+          className="absolute right-2 top-1/2 grid min-w-5 -translate-y-1/2 place-items-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold leading-5 text-white hover:bg-amber-600"
+        >
+          {badge.count}
+        </Link>
+      </div>
+    );
+  }
   return (
     <Link
       href={node.href}

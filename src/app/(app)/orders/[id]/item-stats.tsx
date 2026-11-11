@@ -108,9 +108,9 @@ export function ItemStatsPanel({
   };
 
   return (
-    <div className="mt-3 rounded-[12px] border border-zinc-200/80 bg-zinc-50/60 p-3.5">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <SiYoutube aria-hidden="true" className="size-4 shrink-0 text-[#FF0000]" />
+    <div>
+      <div className="flex items-start gap-3">
+        <SiYoutube aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[#FF0000]" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium text-zinc-900">
             {stats.title ? (
@@ -121,11 +121,11 @@ export function ItemStatsPanel({
               "YouTube stats"
             )}
           </p>
-          <p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
             {stats.sourceId ? (
-              <span className="inline-flex items-center gap-1">
-                {isChannel ? "Channel ID" : "Video ID"}
-                <code className="rounded bg-white px-1 font-mono text-[11px] text-zinc-700 ring-1 ring-inset ring-zinc-200">{stats.sourceId}</code>
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                <span className="shrink-0">{isChannel ? "Channel ID" : "Video ID"}</span>
+                <code className="truncate rounded bg-zinc-100 px-1 font-mono text-[11px] text-zinc-700">{stats.sourceId}</code>
                 <button type="button" onClick={copyId} aria-label={`Copy ${isChannel ? "channel" : "video"} ID`} className="text-zinc-400 hover:text-zinc-700">
                   {copied ? <Check aria-hidden="true" className="size-3.5 text-emerald-600" /> : <Copy aria-hidden="true" className="size-3.5" />}
                 </button>
@@ -138,7 +138,7 @@ export function ItemStatsPanel({
           type="button"
           onClick={refresh}
           disabled={pending}
-          className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-700 shadow-[0_1px_1px_rgba(16,24,40,0.04)] hover:bg-zinc-50 disabled:opacity-60"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-700 shadow-[0_1px_1px_rgba(16,24,40,0.04)] hover:bg-zinc-50 disabled:opacity-60"
         >
           <RefreshCw aria-hidden="true" className={cn("size-3.5", pending && "animate-spin")} />
           {pending ? "Refreshing…" : "Refresh"}
@@ -153,25 +153,21 @@ export function ItemStatsPanel({
       ) : null}
 
       {latest ? (
-        <dl className={cn("mt-3 grid gap-2", keys.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        <dl className={cn("mt-3 grid divide-x divide-zinc-200/80 rounded-[10px] bg-zinc-50 ring-1 ring-inset ring-zinc-200/70", keys.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {keys.map((key) => {
             const value = latest[key];
             const start = first?.[key] ?? null;
             const change = value !== null && start !== null && readings.length > 1 ? value - start : null;
             return (
-              <div
-                key={key}
-                className={cn(
-                  "rounded-[8px] bg-white px-3 py-2 ring-1 ring-inset",
-                  key === primary ? "ring-indigo-200 shadow-[0_1px_2px_rgba(79,70,229,0.08)]" : "ring-zinc-200/80",
-                )}
-              >
-                <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">{STAT_LABELS[key]}</dt>
-                <dd className="mt-0.5 text-[15px] font-semibold tabular-nums text-zinc-900">
+              <div key={key} className="min-w-0 px-3 py-2.5">
+                <dt className={cn("truncate text-[11px] font-medium uppercase tracking-wide", key === primary ? "text-indigo-600" : "text-zinc-500")}>
+                  {STAT_LABELS[key]}
+                </dt>
+                <dd className="mt-0.5 text-base font-semibold tabular-nums text-zinc-900">
                   {value !== null ? numberFormat.format(value) : <span className="text-[13px] font-normal text-zinc-400">Hidden</span>}
                 </dd>
                 {change !== null ? (
-                  <dd className={cn("text-xs tabular-nums", change > 0 ? "text-emerald-700" : change < 0 ? "text-red-600" : "text-zinc-500")}>
+                  <dd className={cn("truncate text-xs tabular-nums", change > 0 ? "text-emerald-700" : change < 0 ? "text-red-600" : "text-zinc-500")}>
                     {signed(change)} since start
                   </dd>
                 ) : null}

@@ -57,6 +57,8 @@ enum NotificationEvent {
   /// on, and they must be told to stop. Outbox-only — an outsourced worker
   /// has no User row, so this never produces an in-app Notification.
   ORDER_ITEM_STOP_WORK_REQUESTED
+  /// Someone posted in an order item's updates thread (2026-11-11).
+  ORDER_ITEM_UPDATE_POSTED
 
   @@map("notification_event")
 }

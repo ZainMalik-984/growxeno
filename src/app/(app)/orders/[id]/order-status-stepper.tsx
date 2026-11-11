@@ -25,7 +25,7 @@ export function OrderStatusStepper({ status }: { status: OrderStatus }) {
   const automatic = CALCULATED_ORDER_STATUSES.includes(status);
 
   return (
-    <div className="rounded-[12px] border border-zinc-200/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:px-6">
+    <div className="rounded-[12px] border border-zinc-200/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)] max-md:-mx-4 max-md:rounded-none max-md:border-x-0 max-md:shadow-none sm:px-6">
       {isCancelled ? (
         <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
           <CircleSlash aria-hidden="true" className="size-3.5" />
@@ -33,7 +33,27 @@ export function OrderStatusStepper({ status }: { status: OrderStatus }) {
         </p>
       ) : null}
 
-      <ol aria-label="Order progress" className="flex items-start overflow-x-auto pb-1 [scrollbar-width:thin]">
+      {/* Phones: one line and a segmented bar instead of seven circles that scroll sideways (2026-11-11). */}
+      {!isCancelled && currentIndex >= 0 ? (
+        <div className="sm:hidden">
+          <p className="flex items-baseline justify-between gap-3 text-[13px]">
+            <span className="font-semibold text-zinc-900">{STEPS[currentIndex]!.label}</span>
+            <span className="text-xs tabular-nums text-zinc-500">
+              Step {currentIndex + 1} of {STEPS.length}
+            </span>
+          </p>
+          <div aria-hidden="true" className="mt-2 grid grid-cols-7 gap-1">
+            {STEPS.map((step, index) => (
+              <span key={step.status} className={cn("h-1.5 rounded-full", index <= currentIndex ? "bg-indigo-500" : "bg-zinc-200")} />
+            ))}
+          </div>
+          {currentIndex < STEPS.length - 1 ? (
+            <p className="mt-1.5 text-xs text-zinc-500">Next: {STEPS[currentIndex + 1]!.label}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <ol aria-label="Order progress" className="hidden items-start overflow-x-auto pb-1 [scrollbar-width:thin] sm:flex">
         {STEPS.map((step, index) => {
           const done = !isCancelled && currentIndex > index;
           const current = !isCancelled && currentIndex === index;
@@ -78,7 +98,7 @@ export function OrderStatusStepper({ status }: { status: OrderStatus }) {
       </ol>
 
       {automatic ? (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500">
+        <p className="mt-2 hidden items-center gap-1.5 text-xs text-zinc-500 sm:flex">
           <Zap aria-hidden="true" className="size-3.5 text-indigo-500" />
           Updates on its own as items are assigned, accepted and done. Delivered and Finalized are set by hand.
         </p>

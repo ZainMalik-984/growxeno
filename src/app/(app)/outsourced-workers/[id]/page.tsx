@@ -11,6 +11,8 @@ import { requirePermission } from "@/lib/auth/authorize";
 import { formatCurrencyBreakdown } from "@/lib/finance/money";
 import { getWorkerEarnings } from "@/lib/finance/queries";
 import { getOutsourcedWorkerDetail } from "@/lib/outsourced-workers/queries";
+import { getWorkload } from "@/lib/outsourced-workers/workload-queries";
+import { WorkloadLines } from "@/components/orders/workload";
 import { listAssignableServices } from "@/lib/services/queries";
 import { cn } from "@/lib/utils";
 import { OutsourcedWorkerActivationControl } from "./outsourced-worker-activation-control";
@@ -49,10 +51,11 @@ export default async function OutsourcedWorkerDetailPage({
   const canEdit = actor.permissions.has("outsourced_workers.edit");
   const canViewEarnings = actor.permissions.has("finance.worker_payments.view");
   // One round of requests: earnings and the service list only need the id.
-  const [worker, earnings, services] = await Promise.all([
+  const [worker, earnings, services, workload] = await Promise.all([
     getOutsourcedWorkerDetail(id),
     canViewEarnings ? getWorkerEarnings({ outsourcedWorkerId: id }) : Promise.resolve(null),
     canEdit ? listAssignableServices() : Promise.resolve([]),
+    getWorkload(id),
   ]);
   if (!worker) notFound();
 
@@ -129,6 +132,26 @@ export default async function OutsourcedWorkerDetailPage({
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-6">
+          {/* What they're working on now, per unit (2026-11-11). */}
+          <Card className="p-5 sm:p-6">
+            <CardHeader
+              icon={ListChecks}
+              tone="indigo"
+              title="Current workload"
+              description="Pending, processing and refill tasks. Delivered out of what was asked, and what's left."
+              actions={
+                <Link
+                  href={`/orders?outsourcedWorker=${worker.id}`}
+                  className="inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                >
+                  Their orders
+                  <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                </Link>
+              }
+            />
+            <WorkloadLines workload={workload} />
+          </Card>
+
           <Card className="p-5 sm:p-6">
             <CardHeader
               icon={BadgeDollarSign}
