@@ -403,7 +403,7 @@ function Services() {
             ))}
           </div>
 
-          <article key={s.id} role="tabpanel" className="animate-fade-up rounded-2xl border bg-card p-5 shadow-panel sm:p-6 md:p-10">
+          <article key={s.id} role="tabpanel" className="animate-fade-up sm:rounded-2xl sm:border sm:bg-card sm:p-6 sm:shadow-panel md:p-10">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-start gap-4">
                 <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
@@ -416,13 +416,13 @@ function Services() {
               </div>
               <Btn href="#contact" className="h-10">Get a quote</Btn>
             </div>
-            <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">{s.summary}</p>
+            <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">{s.summary}</p>
 
-            <div className="mt-8 grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2">
+            <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:mt-8 sm:rounded-xl">
               {s.target.map(([k, v]) => (
-                <div key={k} className="bg-surface p-5">
+                <div key={k} className="bg-surface p-3.5 sm:p-5">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{k}</p>
-                  <p className="mt-1.5 text-2xl font-semibold tabular-nums">{v}</p>
+                  <p className="mt-1 text-base font-semibold tabular-nums sm:mt-1.5 sm:text-2xl">{v}</p>
                 </div>
               ))}
             </div>
@@ -464,9 +464,9 @@ function Audience() {
       <Container>
         <div className="grid gap-10 lg:grid-cols-[1fr_2fr] lg:gap-16">
           <SectionHead kicker="Who we work with" title="Built for people turning attention into income." />
-          <div className="grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2">
+          <div className="grid gap-px overflow-hidden border-y bg-border sm:grid-cols-2 sm:rounded-xl sm:border">
             {groups.map(([t, d, tag]) => (
-              <div key={t} className="bg-background p-6">
+              <div key={t} className="bg-surface py-5 sm:bg-background sm:p-6">
                 <p className="text-xs font-medium text-primary">{tag}</p>
                 <h3 className="mt-2 text-lg font-semibold">{t}</h3>
                 <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">{d}</p>
@@ -488,20 +488,20 @@ function Difference() {
     ["Transparency", "Vague promises", "Delivery checked against what was promised"],
   ];
   return (
-    <section id="why" className="bg-navy py-20 text-navy-foreground md:py-28">
+    <section id="why" className="bg-navy py-16 text-navy-foreground md:py-28">
       <Container>
         <div className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:gap-16">
           <div>
             <p className="text-sm font-medium text-navy-muted">Why Grow Xeno</p>
             <h2 className="mt-3 text-3xl font-semibold md:text-[2.5rem] md:leading-[1.1]">Scams are common in this space. Accountability isn&apos;t.</h2>
             <p className="mt-5 text-lg text-navy-muted">That&apos;s the bar we hold ourselves to on every order. Here&apos;s what it means in practice.</p>
-            <div className="mt-8 grid gap-4">
+            <div className="mt-8 grid gap-5 sm:gap-4">
               {[
                 ["Transparent, verified delivery", "No anonymous handoffs. Checked before it's yours — not after you've paid and gone quiet."],
                 ["Real people, direct communication", "Questions get answered, not auto-replied."],
                 ["Support after delivery", "If something needs adjusting afterwards, we're still here."],
               ].map(([t, d]) => (
-                <div key={t} className="flex gap-4 rounded-xl border border-navy-line bg-navy-2 p-5">
+                <div key={t} className="flex gap-4 sm:rounded-xl sm:border sm:border-navy-line sm:bg-navy-2 sm:p-5">
                   <Tick className="mt-0.5 h-5 w-5" />
                   <div><p className="font-semibold">{t}</p><p className="mt-1 text-sm text-navy-muted">{d}</p></div>
                 </div>
@@ -509,10 +509,10 @@ function Difference() {
             </div>
           </div>
 
-          {/* Phones: one card per row, since three columns leave 2-3 words per line at 375px. */}
-          <ul className="grid gap-3 md:hidden">
+          {/* Phones: a divided list, since three columns leave 2-3 words per line at 375px. */}
+          <ul className="divide-y divide-navy-line border-y border-navy-line md:hidden">
             {rows.map(([k, bad, good]) => (
-              <li key={k} className="rounded-xl border border-navy-line bg-navy-2 p-4 text-sm">
+              <li key={k} className="py-4 text-sm">
                 <p className="text-xs font-medium uppercase tracking-wider text-navy-muted">{k}</p>
                 <p className="mt-2.5 flex gap-2 text-navy-muted"><span aria-hidden className="text-destructive">✕</span><span><span className="sr-only">Common in the market: </span>{bad}</span></p>
                 <p className="mt-2 flex gap-2 font-medium"><Tick className="mt-0.5 h-4 w-4" /><span><span className="sr-only">Grow Xeno: </span>{good}</span></p>
@@ -545,12 +545,12 @@ function Process() {
     <section id="process" className="py-16 md:py-28">
       <Container>
         <SectionHead center kicker="How it works" title="What happens after you get in touch" sub="Four steps, start to finish. You'll always know where your order stands." />
-        <ol className="relative mt-14 grid gap-4 md:grid-cols-4 md:gap-6">
+        <ol className="relative mt-10 grid gap-6 md:mt-14 md:grid-cols-4">
           <div aria-hidden className="absolute left-0 right-0 top-5 hidden h-px bg-border md:block" />
           {steps.map((s, i) => (
             <li key={s.t} className="relative flex gap-4 md:block">
               <span className="relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-primary bg-background text-sm font-semibold text-primary">{i + 1}</span>
-              <div className="flex-1 rounded-xl border bg-card p-5 md:mt-6">
+              <div className="flex-1 pt-0.5 md:mt-6 md:rounded-xl md:border md:bg-card md:p-5">
                 <p className="text-xs font-medium text-primary">{s.when}</p>
                 <h3 className="mt-1.5 font-semibold">{s.t}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.d}</p>
@@ -558,7 +558,7 @@ function Process() {
             </li>
           ))}
         </ol>
-        <div className="mt-12 flex flex-col items-center justify-between gap-4 rounded-2xl bg-surface p-6 text-center sm:flex-row sm:text-left md:p-8">
+        <div className="-mx-5 mt-12 flex flex-col items-center justify-between gap-4 bg-surface px-5 py-8 text-center sm:mx-0 sm:rounded-2xl sm:p-6 sm:flex-row sm:text-left md:p-8">
           <div>
             <p className="font-semibold">Step one takes a couple of minutes.</p>
             <p className="text-sm text-muted-foreground">Tell us your goal and we&apos;ll come back with a straight quote.</p>
@@ -578,23 +578,23 @@ function Faq() {
       <Container className="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:gap-16">
         <div>
           <SectionHead kicker="FAQ" title="Good to know before you reach out." />
-          <div className="mt-8 rounded-xl border bg-background p-5">
+          <div className="mt-6 sm:mt-8 sm:rounded-xl sm:border sm:bg-background sm:p-5">
             <p className="font-semibold">Have a different question?</p>
             <p className="mt-1 text-sm text-muted-foreground">You&apos;ll get an answer from a real person.</p>
             <a href={`mailto:${EMAIL}`} className="mt-3 inline-block text-sm font-medium text-primary hover:underline">{EMAIL} →</a>
           </div>
         </div>
-        <div className="divide-y rounded-2xl border bg-background">
+        <div className="divide-y border-y sm:rounded-2xl sm:border sm:bg-background">
           {faqs.map(([q, a], i) => {
             const isOpen = open === i;
             return (
               <div key={q}>
-                <button onClick={() => setOpen(isOpen ? -1 : i)} aria-expanded={isOpen} className="flex w-full items-center justify-between gap-6 p-5 text-left font-medium transition-colors hover:text-primary md:p-6">
+                <button onClick={() => setOpen(isOpen ? -1 : i)} aria-expanded={isOpen} className="flex w-full items-center justify-between gap-6 py-5 text-left font-medium transition-colors hover:text-primary sm:p-5 md:p-6">
                   {q}
                   <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-muted-foreground transition-transform ${isOpen ? "rotate-45 border-primary text-primary" : ""}`} aria-hidden>+</span>
                 </button>
                 <div className={`grid transition-[grid-template-rows] duration-300 ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-                  <div className="overflow-hidden"><p className="px-5 pb-6 leading-relaxed text-muted-foreground md:px-6">{a}</p></div>
+                  <div className="overflow-hidden"><p className="pb-6 leading-relaxed text-muted-foreground sm:px-5 md:px-6">{a}</p></div>
                 </div>
               </div>
             );
@@ -640,11 +640,11 @@ function Contact() {
       }
     });
   };
-  const input = "mt-1.5 w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-[0.9375rem] outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-ring/15";
+  const input = "mt-1.5 w-full rounded-md sm:rounded-lg border border-input bg-background px-3.5 py-2.5 text-[0.9375rem] outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-ring/15";
   return (
     <section id="contact" className="py-16 md:py-28">
       <Container>
-        <div className="grid overflow-hidden rounded-2xl border shadow-panel sm:rounded-3xl lg:grid-cols-[1fr_1.25fr]">
+        <div className="-mx-5 grid overflow-hidden sm:mx-0 sm:rounded-3xl sm:border sm:shadow-panel lg:grid-cols-[1fr_1.25fr]">
           <div className="bg-navy p-6 text-navy-foreground sm:p-8 md:p-12">
             <p className="text-sm font-medium text-navy-muted">Get started</p>
             <h2 className="mt-3 text-3xl font-semibold md:text-4xl">Tell us what you need. Get a straight quote back.</h2>
@@ -696,7 +696,7 @@ function Contact() {
                   key={n}
                   onClick={() => setService(service === n ? "" : n)}
                   aria-pressed={service === n}
-                  className={`rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${service === n ? "border-primary bg-accent font-medium text-accent-foreground" : "border-input hover:border-foreground/30"}`}
+                  className={`rounded-md border px-3 py-2.5 text-left text-sm transition-colors sm:rounded-lg ${service === n ? "border-primary bg-accent font-medium text-accent-foreground" : "border-input hover:border-foreground/30"}`}
                 >
                   {n}
                 </button>
@@ -710,7 +710,7 @@ function Contact() {
               <textarea required name="message" rows={4} className={`${input} resize-none`} placeholder="e.g. I want my YouTube channel to reach monetization" />
             </label>
             {error ? <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</p> : null}
-            <button type="submit" disabled={pending} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-lg bg-primary px-6 font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-70">
+            <button type="submit" disabled={pending} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-md bg-primary sm:rounded-lg px-6 font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-70">
               {pending ? "Sending…" : "Send inquiry →"}
             </button>
             <p className="mt-3 text-center text-xs text-muted-foreground">We&apos;ll reply to the email you give us.</p>
