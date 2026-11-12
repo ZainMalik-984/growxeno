@@ -137,7 +137,8 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
             ) : null}
             {/* Notes stay a top-left, open-when-needed button (confirmed directly,
                 2026-10-01) — now in the title row instead of fixed over the page. */}
-            <OrderNotesButton orderId={order.id} notes={order.internalNotes} canComment={canComment} />
+            {/* Internal notes are the team's (2026-11-12 access review). */}
+            {visibility.orderDetails ? <OrderNotesButton orderId={order.id} notes={order.internalNotes} canComment={canComment} /> : null}
           </div>
           {visibility.orderDetails ? (
           <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-zinc-500">
@@ -229,6 +230,8 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
               />
             </div>
             <OrderItemsPanel
+              // Remount when a notification opens another item's updates on this same page (2026-11-12).
+              key={openUpdatesId ?? "none"}
               orderId={order.id}
               items={order.items}
               services={services}

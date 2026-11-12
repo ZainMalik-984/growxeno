@@ -169,7 +169,7 @@ export async function getItemUpdatesThread(actor: Actor, itemId: string): Promis
       targetCount: item.targetCount,
       canPost: access.canPost,
       canSetCount: access.canSetCount,
-      canAsk: isWorker && access.canPost && open === null,
+      canAsk: isWorker && access.canPost && open === null && WITHDRAWABLE.has(item.status),
       canAnswer: access.isTeam,
       openRequest: open ? { id: open.id, authorLabel: open.authorLabel, body: open.body } : null,
       canWithdraw: isWorker && access.canPost && openWithdraw === null && WITHDRAWABLE.has(item.status),
@@ -346,7 +346,12 @@ type ItemForNotice = { id: string; orderId: string; workerId: string | null; out
  * this item's own worker. Workers on the order's other items are not, and
  * neither is the person who posted.
  */
-export async function notifyEveryoneOnItem(tx: TransactionClient, actor: Actor, item: ItemForNotice, notice: { title: string; message: string }) {
+export async function notifyEveryoneOnItem(
+  tx: TransactionClient,
+  actor: Actor,
+  item: ItemForNotice,
+  notice: { title: string; message: string; /** What the item's worker sees instead, when it differs. */ workerMessage?: string },
+) {
   const recipients = updateRecipients({
     teamUserIds: await listActiveUserIdsWithPermission(tx, "orders.view.all"),
     itemWorkerUserIds: [item.outsourcedWorker?.userId ?? null, item.workerId],
@@ -359,7 +364,7 @@ export async function notifyEveryoneOnItem(tx: TransactionClient, actor: Actor, 
     recipients.map((recipient) => ({
       userId: recipient.userId,
       title: notice.title,
-      message: notice.message,
+      message: recipient.isItemWorker && notice.workerMessage ? notice.workerMessage : notice.message,
       entityType: "Order",
       entityId: item.orderId,
       // The worker's link opens their task list; the team's opens the order page.
@@ -380,7 +385,9 @@ export async function requestScreenshots(actor: Actor, input: { itemId: string; 
 
   const access = await loadAccess(actor, input.itemId);
   if (!access) return failure("That item isn't available to you.");
-  if (!access.isAssignedWorker || !access.canPost) return failure("Only the worker on this task can ask for screenshots.");
+  if (!access.isAssignedWorker || !access.canPost) {
+    return failure(access.item.status === "PENDING" && access.isAssignedWorker ? "Accept the task first." : "Only the worker on this task can ask for screenshots.");
+  }
 
   const { item } = access;
   const name = serviceLabel(item.service.name, item.service.category.name);
@@ -420,7 +427,7 @@ export async function requestScreenshots(actor: Actor, input: { itemId: string; 
 }
 
 /** A worker can give up a task they haven't finished. */
-const WITHDRAWABLE = new Set(["PENDING", "PROCESSING", "REFILL"]);
+const WITHDRAWABLE = new Set(["PROCESSING", "REFILL"]);
 
 /**
  * "I can't continue this" (2026-11-11, owner request): the worker on a task
@@ -437,7 +444,7 @@ export async function requestWithdraw(actor: Actor, input: { itemId: string; rea
   if (!access) return failure("That item isn't available to you.");
   if (!access.isAssignedWorker || !access.canPost) return failure("Only the worker on this task can say they can't continue.");
   const { item } = access;
-  if (!WITHDRAWABLE.has(item.status)) return failure("This task is already finished.");
+  if (!WITHDRAWABLE.has(item.status)) return failure(item.status === "PENDING" ? "Accept or reject the task first." : "This task is already finished.");
 
   const name = serviceLabel(item.service.name, item.service.category.name);
   const unit = item.service.metricType ? SERVICE_METRIC_TYPE_LABELS[item.service.metricType as ServiceMetricType].toLowerCase() : null;

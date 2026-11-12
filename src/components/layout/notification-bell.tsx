@@ -89,7 +89,14 @@ export function NotificationBell({
       </button>
 
       {open ? (
-        <div id="notification-panel" role="region" aria-label="Notifications" className="absolute right-0 z-50 mt-1 w-80 border border-line bg-canvas shadow-sm">
+        <div
+          id="notification-panel"
+          role="region"
+          aria-label="Notifications"
+          // Phones: full width under the top bar, so it never runs off the left edge (2026-11-12).
+          // From sm up: a 320px panel under the bell, as before.
+          className="fixed inset-x-2 top-14 z-50 overflow-hidden rounded-[12px] border border-line bg-canvas shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-1 sm:w-80 sm:rounded-none sm:shadow-sm"
+        >
           <div className="flex items-center justify-between border-b border-line-soft px-3 py-2">
             <p className="text-[13px] font-medium text-ink">Notifications</p>
             {initialUnreadCount > 0 ? (
@@ -104,7 +111,7 @@ export function NotificationBell({
             ) : null}
           </div>
 
-          <ul className="max-h-96 overflow-y-auto">
+          <ul className="max-h-[60dvh] overflow-y-auto sm:max-h-96">
             {items.length === 0 ? (
               <li className="px-3 py-6 text-center text-[13px] text-ink-faint">Nothing yet.</li>
             ) : (
@@ -115,7 +122,11 @@ export function NotificationBell({
                       {item.actionUrl ? (
                         <Link
                           href={item.actionUrl}
-                          onClick={() => setOpen(false)}
+                          onClick={() => {
+                            setOpen(false);
+                            // Opening it reads it (2026-11-12); the next navigation updates the count.
+                            if (!item.isRead) void markNotificationReadAction({ id: item.id }).catch(() => undefined);
+                          }}
                           className="block truncate text-[13px] font-medium text-ink hover:underline"
                         >
                           {item.title}

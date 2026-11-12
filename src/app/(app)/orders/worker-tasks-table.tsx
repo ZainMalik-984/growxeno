@@ -15,6 +15,7 @@ import { formatDuration } from "@/lib/time/countdown";
 import { cn } from "@/lib/utils";
 import { AcceptItemsButton } from "./accept-items-button";
 import { CompleteTaskButton } from "./complete-task-button";
+import { RejectTaskButton } from "./reject-task-button";
 import {
   AskScreenshotsDialog,
   AskScreenshotsTrigger,
@@ -208,15 +209,24 @@ export function WorkerTasksTable({
                 </TD>
                 <TD className={cn(EDGE, "whitespace-nowrap py-3 text-right")}>
                   <div className="inline-flex items-center gap-1.5">
-                    <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={() => openUpdates(task.id)} className="h-8 px-3" />
-                    {task.canPostUpdate ? (
-                      <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={() => askScreenshots(task)} className="h-8 px-2.5" />
-                    ) : null}
-                    {task.canPostUpdate && !task.finished ? (
-                      <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={() => cantContinue(task)} className="h-8 px-2.5" />
-                    ) : null}
-                    {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} className="h-8 px-3" /> : null}
-                    {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-8 px-3" /> : null}
+                    {/* Not accepted yet: only Accept and Reject (2026-11-12). */}
+                    {task.canAccept ? (
+                      <>
+                        <AcceptItemsButton itemIds={[task.id]} className="h-8 px-3" />
+                        <RejectTaskButton itemId={task.id} serviceName={task.serviceName} className="h-8 px-3" />
+                      </>
+                    ) : (
+                      <>
+                        <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={() => openUpdates(task.id)} className="h-8 px-3" />
+                        {task.canPostUpdate && !task.finished ? (
+                          <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={() => askScreenshots(task)} className="h-8 px-2.5" />
+                        ) : null}
+                        {task.canPostUpdate && !task.finished ? (
+                          <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={() => cantContinue(task)} className="h-8 px-2.5" />
+                        ) : null}
+                        {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-8 px-3" /> : null}
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => openDetails(task.id)}
@@ -338,18 +348,27 @@ function TaskCard({
         </div>
       </div>
 
-      {/* Post update sits beside the next step, both full size (2026-11-11). */}
-      <div className={cn("relative mt-3 grid gap-2", (task.canAccept || task.canComplete) && "grid-cols-2")}>
-        <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} className="h-11 w-full text-sm" />
-        {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} size="md" className="h-11 w-full text-sm" /> : null}
-        {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-11 w-full text-sm" /> : null}
-      </div>
-      {task.canPostUpdate ? (
-        <div className="relative mt-2 grid grid-cols-2 gap-2">
-          <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} className={cn("h-10 w-full", task.finished && "col-span-2")} />
-          {!task.finished ? <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={onCantContinue} className="h-10 w-full" /> : null}
+      {task.canAccept ? (
+        // Not accepted yet: only Accept and Reject (2026-11-12).
+        <div className="relative mt-3 grid grid-cols-2 gap-2">
+          <AcceptItemsButton itemIds={[task.id]} size="md" className="h-11 w-full text-sm" />
+          <RejectTaskButton itemId={task.id} serviceName={task.serviceName} className="h-11 w-full text-sm" />
         </div>
-      ) : null}
+      ) : (
+        <>
+          {/* Post update sits beside the next step, both full size (2026-11-11). */}
+          <div className={cn("relative mt-3 grid gap-2", task.canComplete && "grid-cols-2")}>
+            <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} className="h-11 w-full text-sm" />
+            {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-11 w-full text-sm" /> : null}
+          </div>
+          {task.canPostUpdate && !task.finished ? (
+            <div className="relative mt-2 grid grid-cols-2 gap-2">
+              <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} className="h-10 w-full" />
+              <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={onCantContinue} className="h-10 w-full" />
+            </div>
+          ) : null}
+        </>
+      )}
     </li>
   );
 }
@@ -504,6 +523,7 @@ function TaskSummary({ task, onClose, onShowAll }: { task: WorkerTaskRow; onClos
           Show all details
         </button>
         <div className="flex items-center gap-2">
+          {task.canAccept ? <RejectTaskButton itemId={task.id} serviceName={task.serviceName} /> : null}
           {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} size="md" /> : null}
           {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} /> : null}
           {!task.canAccept && !task.canComplete ? <span className="text-xs text-zinc-500">{task.statusLabel}</span> : null}
@@ -650,13 +670,23 @@ function TaskDetails({
           <Link href={`/orders/${task.orderId}`} className="text-[13px] font-medium text-zinc-600 hover:text-zinc-900 hover:underline">
             Open order page
           </Link>
-          {task.canPostUpdate && !task.finished ? <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={onCantContinue} className="h-8 px-2" /> : null}
+          {task.canPostUpdate && !task.finished && !task.canAccept ? (
+            <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={onCantContinue} className="h-8 px-2" />
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {task.canPostUpdate ? <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} /> : null}
-          <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} />
-          {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} /> : null}
-          {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} /> : null}
+          {task.canAccept ? (
+            <>
+              <RejectTaskButton itemId={task.id} serviceName={task.serviceName} />
+              <AcceptItemsButton itemIds={[task.id]} />
+            </>
+          ) : (
+            <>
+              {task.canPostUpdate && !task.finished ? <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} /> : null}
+              <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} />
+              {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} /> : null}
+            </>
+          )}
         </div>
       </div>
     </div>

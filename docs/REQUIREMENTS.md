@@ -1607,3 +1607,21 @@ rates, and the two existing workers are real data).
 - Active = pending, processing, refill. Per unit (never mixing units): tasks, delivered / required, remaining, % — the owner's example (watch hours 1,000/1,500/2,000/2,500/3,000, 500 done on each) reads "5 active · 2,500 / 10,000 delivered · 7,500 left".
 - Shown on the worker's page (**Current workload**, with a link to their orders), on their own dashboard (**Your workload**), and under each worker when assigning or reassigning ("3 active · 2,500/10,000 watch hours (7,500 left)" for the item's unit, or "Free · no active tasks").
 - Evidence: `tests/unit/workload.test.ts` (5), new component tests for Can't continue (popup, waiting state, thread card and resolution, list badge); all tests pass.
+
+**2026-11-12 — Invited people stay inactive until they set a password (owner request).** Migration `20261112110000_invite_pending` (`users.invite_pending`, `users.invited_at`).
+- Inviting a worker (portal access) or a team member creates the profile **inactive** with `invitePending`; setting the password from the invite link (`updatePasswordAction`) switches on only a pending invite, never someone an admin deactivated.
+- Worker page: "Invite pending" (tile and Portal access) with when it was sent and **Resend invitation** (`resendOutsourcedWorkerInviteAction`, a fresh one-time link on the same branded email; the set-password page still greets them as new). "Has portal access" only after the password is set. Settings → Users shows "Invite pending" instead of "Inactive".
+- Data: Zain Ul Abideen (invited 11 Nov, never signed in) marked pending.
+- Evidence: `tests/component/worker-login-control.test.tsx` (3); all 479 tests pass; checked on the worker page in the browser.
+
+**2026-11-12 — Accept / Reject before anything else, notification links, access review (owner request).**
+- **New tasks**: before accepting, a worker sees only **Accept** and **Reject** (task cards, task table, details and accept-link popups, order page). Post update, Ask for screenshots and Can't continue appear only after accepting, and the server enforces the same: `updatePermissions` refuses posts on a pending task, screenshot requests and "can't continue" need the task accepted.
+- **Reject** (`rejectTaskAction` → `rejectTask`): only the assigned worker, only before accepting; optional reason; the item goes back to unassigned (no worker, no cost), activity and audit record it, the team is notified, and it shows as Unassigned in Needs attention.
+- **Notification links on the same page** (e.g. on Orders, opening a task's updates or accept popup) now open the popup without a refresh: the task list and the order page's items remount when `?open=` / `?updates=` change. Opening a notification also marks it read.
+- **Access review fixes**:
+  1. A worker could change the status of (complete, cancel, send to refill) an item NOT assigned to them by calling `changeOrderItemStatusAction` / `cancelOrderItemWithAdjustedCostAction` directly: the admin transition table applied. Now anyone without `orders.view.all` may only change items assigned to them.
+  2. The team's internal order notes (`internalNotes`, which can mention pay) reached workers on their order pages; they're now removed by `redactOrderDetail` and the Notes button is hidden for workers.
+  3. `addOrderNoteAction` (needs `orders.comment`, which External Workers hold) didn't check the order was visible: a worker could add internal notes to any order. Internal notes are now team-only (`orders.view.all`).
+  4. When the remainder is reassigned, the worker who stopped is no longer told who took over.
+  Reviewed and already correct: updates thread and image route, screenshot / can't-continue requests, progress, YouTube refresh, the order page redirect, dashboard business view, workload, sidebar counts, list badges.
+- Evidence: worker table tests (Accept/Reject only, Reject with reason), rule tests, visibility test now checks internal notes don't reach a worker; all 482 tests pass.

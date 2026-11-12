@@ -103,6 +103,8 @@ export function redactOrderDetail(order: OrderDetail, identity: AssignmentIdenti
             items.map((item) => ({ status: item.status, assigned: Boolean(item.worker || item.outsourcedWorker) })),
           ),
           activity: [],
+          // The team's internal notes, which can mention pay (2026-11-12 access review).
+          internalNotes: [],
         }
       : {}),
     totalAmount: visibility.prices ? order.totalAmount : "",

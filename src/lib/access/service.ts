@@ -834,7 +834,10 @@ export async function createUser(
         fullName,
         jobTitle: input.jobTitle?.trim() || null,
         authUserId,
-        isActive: true,
+        // Inactive until they set a password through the invite (2026-11-12).
+        isActive: false,
+        invitePending: true,
+        invitedAt: new Date(),
         createdById: actor.user.id,
       },
       select: { id: true },

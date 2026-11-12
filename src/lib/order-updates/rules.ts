@@ -32,7 +32,8 @@ export function updatePermissions(input: {
   hasMetric: boolean;
 }): { canPost: boolean; canSetCount: boolean } {
   if (input.isTeam) return { canPost: true, canSetCount: input.hasMetric };
-  if (!input.isAssignedWorker || !input.canChangeStatus || input.status === "CANCELLED") {
+  // Before accepting, a worker only accepts or rejects (2026-11-12): no posting yet.
+  if (!input.isAssignedWorker || !input.canChangeStatus || input.status === "CANCELLED" || input.status === "PENDING") {
     return { canPost: false, canSetCount: false };
   }
   return { canPost: true, canSetCount: input.hasMetric && (input.status === "PROCESSING" || input.status === "REFILL") };

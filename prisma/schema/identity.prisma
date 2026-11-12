@@ -64,6 +64,11 @@ model User {
   /// resolves to ZERO effective permissions regardless of assigned roles.
   isActive      Boolean   @default(true) @map("is_active")
   deactivatedAt DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  /// Invited but hasn't set a password yet (2026-11-12, owner request): the
+  /// profile stays inactive until then, and setting the password through the
+  /// invite link activates it. Distinct from a deactivation by an admin.
+  invitePending Boolean   @default(false) @map("invite_pending")
+  invitedAt     DateTime? @map("invited_at") @db.Timestamptz(6)
 
   lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz(6)
 

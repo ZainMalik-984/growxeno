@@ -44,7 +44,7 @@ to `/login` by the proxy and refused again by the handler itself.
 
 ## Server Actions
 
-91 actions across 15 files. "Requires" is the permission key checked before any data is touched.
+93 actions across 15 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -124,6 +124,7 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | `changeOrderItemStatusAction` | `orders.change_status` |
 | `updateOrderItemProgressAction` | `orders.change_status` — narrowed further in the service to the assigned worker (their own item only) or `orders.view.all` |
 | `cancelOrderItemWithAdjustedCostAction` | `orders.change_status` |
+| `rejectTaskAction` | `orders.change_status`, then only the item's assigned worker, and only before accepting: unassigns the task (no worker, no cost), notifies the team with the optional reason (2026-11-12) |
 | `reassignRemainderAction` | `orders.assign` and `orders.create` — a worker said they can't continue (open "WITHDRAW" request): in one transaction marks their item completed with its target cut to what was delivered (cancelled if nothing was), paid for that part, creates a new item with the same service, link, links and deadline starting where the old one stopped, assigns it to another active worker, closes the request and notifies everyone on the order; then emails / prepares WhatsApp for the new worker (2026-11-11) |
 | `addOrderItemLinkAction` | `orders.edit`, `orders.files.upload` |
 | `removeOrderItemLinkAction` | `orders.edit` |
@@ -156,7 +157,8 @@ The PayPal password is stored AES-256-GCM-encrypted (`src/lib/crypto/secret-box.
 | `setOutsourcedWorkerActiveAction` | `outsourced_workers.edit` |
 | `setServiceRateAction` | `outsourced_workers.edit` |
 | `clearServiceRateAction` | `outsourced_workers.edit` |
-| `inviteOutsourcedWorkerToLoginAction` | `outsourced_workers.edit` |
+| `inviteOutsourcedWorkerToLoginAction` | `outsourced_workers.edit` — emails the branded invitation through Resend; the profile stays inactive ("Invite pending") until they set a password (2026-11-12) |
+| `resendOutsourcedWorkerInviteAction` | `outsourced_workers.edit` — a new invitation link for a worker who hasn't set a password yet (2026-11-12) |
 
 ### Daily statistics — `src/lib/daily-stats/actions.ts`
 

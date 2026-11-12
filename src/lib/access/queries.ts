@@ -20,6 +20,8 @@ export type UserListRow = {
   email: string;
   jobTitle: string | null;
   isActive: boolean;
+  /** Invited, hasn't set a password yet (2026-11-12). */
+  invitePending: boolean;
   hasSignIn: boolean;
   roleNames: string[];
   directOverrideCount: number;
@@ -74,6 +76,7 @@ export async function listUsers(options: {
         email: true,
         jobTitle: true,
         isActive: true,
+        invitePending: true,
         authUserId: true,
         roles: { select: { role: { select: { name: true } } } },
         _count: { select: { directPermissions: true } },
@@ -91,6 +94,7 @@ export async function listUsers(options: {
       email: user.email,
       jobTitle: user.jobTitle,
       isActive: user.isActive,
+      invitePending: user.invitePending,
       hasSignIn: user.authUserId !== null,
       roleNames: user.roles.map((assignment) => assignment.role.name).sort(),
       directOverrideCount: user._count.directPermissions,
@@ -110,6 +114,8 @@ export type UserAccessDetail = {
   jobTitle: string | null;
   phone: string | null;
   isActive: boolean;
+  /** Invited, hasn't set a password yet (2026-11-12). */
+  invitePending: boolean;
   hasSignIn: boolean;
   createdAt: Date;
   lastLoginAt: Date | null;
@@ -137,6 +143,7 @@ export async function getUserAccessDetail(userId: string): Promise<UserAccessDet
       jobTitle: true,
       phone: true,
       isActive: true,
+      invitePending: true,
       authUserId: true,
       createdAt: true,
       lastLoginAt: true,
@@ -184,6 +191,7 @@ export async function getUserAccessDetail(userId: string): Promise<UserAccessDet
     jobTitle: user.jobTitle,
     phone: user.phone,
     isActive: user.isActive,
+    invitePending: user.invitePending,
     hasSignIn: user.authUserId !== null,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,

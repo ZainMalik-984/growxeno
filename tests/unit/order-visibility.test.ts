@@ -38,6 +38,7 @@ const order = {
   deadline: new Date("2026-12-10T00:00:00Z"),
   createdBy: { id: "admin-1", fullName: "Admin Person" },
   activity: [{ id: "a1", action: "order.updated", summary: "Deadline moved", actorLabel: "Admin Person", createdAt: new Date() }],
+  internalNotes: [{ id: "n1", body: "Paid Inzmam 160 PKR for his part", author: { fullName: "Admin Person" }, createdAt: new Date() }],
   items: [item("mine", WORKER, "67.89"), item("theirs", OTHER, "9999.00")],
 } as unknown as OrderDetail;
 
@@ -80,7 +81,8 @@ describe("redactOrderDetail", () => {
 
     // The point: none of it survives anywhere in what would be serialized to the browser.
     const wire = JSON.stringify(redacted);
-    for (const secret of ["9999.00", "678.90", "Jane Customer", "Fiverr Profile One", "Service theirs", "worker-2"]) {
+    // The team's internal notes too (2026-11-12 access review).
+    for (const secret of ["9999.00", "678.90", "Jane Customer", "Fiverr Profile One", "Service theirs", "worker-2", "Paid Inzmam 160 PKR"]) {
       expect(wire, `"${secret}" must not reach a plain worker`).not.toContain(secret);
     }
   });

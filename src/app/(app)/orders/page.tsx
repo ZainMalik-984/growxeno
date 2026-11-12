@@ -358,6 +358,9 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                 />
               ) : (
                 <WorkerTasksTable
+                  // Remount when a notification link changes ?open= / ?updates= on this same page, so its popup opens
+                  // without a refresh (2026-11-12): popups start from these props.
+                  key={`${params.open ?? ""}|${params.updates ?? ""}`}
                   rows={taskRows}
                   focus={workerTasks.focus ? toTaskRow(workerTasks.focus, canChangeItemStatus) : null}
                   openUpdatesId={params.updates ?? null}
@@ -615,7 +618,8 @@ function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean): WorkerTaskRo
     canComplete:
       canChangeItemStatus && task.status !== "PENDING" && canTransitionItem(task.status, "DONE", { asAssignedWorkerOnly: true }),
     // Updates thread (2026-11-11): the count, a note, screenshots. The count itself needs the task accepted (checked on post).
-    canPostUpdate: canChangeItemStatus && task.status !== "CANCELLED",
+    // Before accepting: only Accept / Reject (2026-11-12).
+    canPostUpdate: canChangeItemStatus && (task.status === "PROCESSING" || task.status === "REFILL" || task.status === "DONE"),
     updateCount: task.updateCount,
     hasOpenRequest: task.hasOpenRequest,
     hasWithdrawRequest: task.hasWithdrawRequest,

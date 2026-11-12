@@ -39,6 +39,7 @@ import {
   UpdatesTrigger,
 } from "@/components/orders/item-updates";
 import { keepWithWorkerAction } from "@/lib/order-updates/actions";
+import { RejectTaskButton } from "../reject-task-button";
 import { AssignmentDeliveryStep, MessageWorkerDialog } from "./assignment-delivery";
 import type { AssignmentMessageOutcome } from "@/lib/orders/assignment-notify";
 import { YoutubeLinkPreview } from "@/components/catalog/youtube-link-preview";
@@ -308,7 +309,10 @@ export function OrderItemsPanel({
               const canActorChangeThisItem = canChangeStatus && (canViewAll || isSelf);
               const canAddLinkToThisItem = canEdit || (canUploadOwn && isSelf);
               // Updates thread (2026-11-11): the team on any item; the worker on their own unless cancelled.
-              const canPostUpdate = canViewAll || (canChangeStatus && isSelf && item.status !== "CANCELLED");
+              // A worker posts only once they've accepted (2026-11-12).
+              const canPostUpdate = canViewAll || (canChangeStatus && isSelf && (item.status === "PROCESSING" || item.status === "REFILL" || item.status === "DONE"));
+              const workerView = isSelf && !canViewAll;
+              const workerMustAnswer = workerView && canChangeStatus && item.status === "PENDING";
               const nextStatuses = canActorChangeThisItem
                 ? ITEM_STATUSES.filter(
                     (s) =>
@@ -430,16 +434,21 @@ export function OrderItemsPanel({
 
                   {/* Actions: the next step first; full width on a phone. */}
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <UpdatesTrigger
-                      count={item.updateCount}
-                      canPost={canPostUpdate}
-                      onClick={() => setUpdatesItemId(item.id)}
-                      className="max-sm:h-10 max-sm:flex-1"
-                    />
-                    {isSelf && !canViewAll && canPostUpdate ? (
+                    {workerMustAnswer ? (
+                      // Not accepted yet: Accept (below) and Reject only.
+                      <RejectTaskButton itemId={item.id} serviceName={item.service.name} className="max-sm:h-10 max-sm:flex-1" />
+                    ) : (
+                      <UpdatesTrigger
+                        count={item.updateCount}
+                        canPost={canPostUpdate}
+                        onClick={() => setUpdatesItemId(item.id)}
+                        className="max-sm:h-10 max-sm:flex-1"
+                      />
+                    )}
+                    {workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL") ? (
                       <AskScreenshotsTrigger waiting={item.hasOpenRequest} onClick={() => setAskItem(item)} className="max-sm:h-10 max-sm:flex-1" />
                     ) : null}
-                    {isSelf && !canViewAll && canPostUpdate && item.status !== "DONE" ? (
+                    {workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL") ? (
                       <CantContinueTrigger sent={item.withdrawRequest !== null} onClick={() => setGiveUpItem(item)} className="max-sm:h-10 max-sm:flex-1" />
                     ) : null}
                     {orderedNextStatuses.map((status) => {

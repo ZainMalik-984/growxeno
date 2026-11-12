@@ -69,7 +69,7 @@ export default async function UserDetailPage({ params }: PageProps<"/settings/us
               value: (
                 <StatusDot
                   tone={user.isActive ? "done" : "neutral"}
-                  label={user.isActive ? "Active" : "Inactive"}
+                  label={user.isActive ? "Active" : user.invitePending ? "Invite pending" : "Inactive"}
                 />
               ),
             },

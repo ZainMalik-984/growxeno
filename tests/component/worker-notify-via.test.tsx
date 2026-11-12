@@ -23,6 +23,8 @@ const worker: OutsourcedWorkerDetail = {
   assignedItemCount: 0,
   rates: [],
   hasLogin: true,
+      invitePending: false,
+      invitedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

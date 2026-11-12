@@ -42,8 +42,9 @@ describe("order item updates: who may post", () => {
     expect(updatePermissions({ ...base, isTeam: true, isAssignedWorker: false, status: "DONE" })).toEqual({ canPost: true, canSetCount: true });
   });
 
-  it("lets the worker post on their own task, and set the count once accepted", () => {
-    expect(updatePermissions({ ...base, status: "PENDING" })).toEqual({ canPost: true, canSetCount: false });
+  it("lets the worker post on their own task only once accepted, and set the count then", () => {
+    // Before accepting: only Accept / Reject (2026-11-12).
+    expect(updatePermissions({ ...base, status: "PENDING" })).toEqual({ canPost: false, canSetCount: false });
     expect(updatePermissions({ ...base, status: "PROCESSING" })).toEqual({ canPost: true, canSetCount: true });
     expect(updatePermissions({ ...base, status: "REFILL" })).toEqual({ canPost: true, canSetCount: true });
     expect(updatePermissions({ ...base, status: "DONE" })).toEqual({ canPost: true, canSetCount: false });

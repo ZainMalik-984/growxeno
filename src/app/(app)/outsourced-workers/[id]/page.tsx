@@ -124,9 +124,17 @@ export default async function OutsourcedWorkerDetailPage({
         <StatTile
           icon={KeyRound}
           label="Portal access"
-          value={worker.hasLogin ? "Enabled" : "Not invited"}
-          hint={worker.hasLogin ? "Can log in to their dashboard" : worker.email ? "Invite from Portal access" : "Needs an email first"}
-          tone={worker.hasLogin ? "emerald" : "zinc"}
+          value={worker.invitePending ? "Invite pending" : worker.hasLogin ? "Enabled" : "Not invited"}
+          hint={
+            worker.invitePending
+              ? "Hasn't set a password yet"
+              : worker.hasLogin
+                ? "Can log in to their dashboard"
+                : worker.email
+                  ? "Invite from Portal access"
+                  : "Needs an email first"
+          }
+          tone={worker.invitePending ? "amber" : worker.hasLogin ? "emerald" : "zinc"}
         />
       </div>
 
@@ -195,9 +203,18 @@ export default async function OutsourcedWorkerDetailPage({
           <Card className="p-5 sm:p-6">
             <CardHeader icon={KeyRound} tone="amber" title="Portal access" description="Lets them log in and see their own items and dashboard." />
             {canEdit ? (
-              <OutsourcedWorkerLoginControl workerId={worker.id} hasLogin={worker.hasLogin} email={worker.email} />
+              <OutsourcedWorkerLoginControl
+                workerId={worker.id}
+                hasLogin={worker.hasLogin}
+                invitePending={worker.invitePending}
+                invitedAt={worker.invitedAt}
+                email={worker.email}
+              />
             ) : (
-              <StatusDot tone={worker.hasLogin ? "done" : "neutral"} label={worker.hasLogin ? "Has portal access" : "No portal access"} />
+              <StatusDot
+                tone={worker.invitePending ? "warning" : worker.hasLogin ? "done" : "neutral"}
+                label={worker.invitePending ? "Invite pending" : worker.hasLogin ? "Has portal access" : "No portal access"}
+              />
             )}
           </Card>
         </aside>
@@ -217,9 +234,9 @@ function StatTile({
   label: string;
   value: string;
   hint: string;
-  tone?: "indigo" | "emerald" | "zinc";
+  tone?: "indigo" | "emerald" | "zinc" | "amber";
 }) {
-  const chip = { indigo: "bg-indigo-50 text-indigo-600", emerald: "bg-emerald-50 text-emerald-600", zinc: "bg-zinc-100 text-zinc-500" }[tone];
+  const chip = { indigo: "bg-indigo-50 text-indigo-600", emerald: "bg-emerald-50 text-emerald-600", zinc: "bg-zinc-100 text-zinc-500", amber: "bg-amber-50 text-amber-600" }[tone];
   return (
     <div className="min-w-0 rounded-[12px] border border-zinc-200/80 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-14px_rgba(16,24,40,0.12)] sm:p-4">
       <div className="flex items-center justify-between gap-2">

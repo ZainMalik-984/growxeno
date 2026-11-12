@@ -731,6 +731,12 @@ export async function changeOrderItemStatus(
     const actingAsAssignedWorkerOnly =
       !actor.permissions.has("orders.view.all") &&
       isAssignedToIdentity(item, { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId });
+    // Someone who doesn't see every order may only touch items assigned to them
+    // (2026-11-12 access review: without this, the full admin transitions applied
+    // to anyone else's item).
+    if (!actor.permissions.has("orders.view.all") && !actingAsAssignedWorkerOnly) {
+      throw new ServiceRejection("This item isn't assigned to you.");
+    }
 
     if (!canTransitionItem(item.status, targetStatus, { asAssignedWorkerOnly: actingAsAssignedWorkerOnly })) {
       throw new ServiceRejection(
@@ -886,6 +892,12 @@ export async function cancelOrderItemWithAdjustedCost(
     const actingAsAssignedWorkerOnly =
       !actor.permissions.has("orders.view.all") &&
       isAssignedToIdentity(item, { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId });
+    // Someone who doesn't see every order may only touch items assigned to them
+    // (2026-11-12 access review: without this, the full admin transitions applied
+    // to anyone else's item).
+    if (!actor.permissions.has("orders.view.all") && !actingAsAssignedWorkerOnly) {
+      throw new ServiceRejection("This item isn't assigned to you.");
+    }
     if (!canTransitionItem(item.status, "CANCELLED", { asAssignedWorkerOnly: actingAsAssignedWorkerOnly })) {
       throw new ServiceRejection(`Cannot cancel this item from ${ORDER_ITEM_STATUS_LABELS[item.status]}.`);
     }
@@ -1026,6 +1038,10 @@ export async function addOrderNote(
 ): Promise<ServiceResult<{ id: string }>> {
   const trimmed = body.trim();
   if (!trimmed) return failure("Write a note before saving.");
+  // Internal notes are the team's (2026-11-12 access review): an External
+  // Worker holds orders.comment but must not write to orders' internal notes,
+  // which they can't see. Workers talk to the team in an item's updates.
+  if (!actor.permissions.has("orders.view.all")) return failure("Only the team can add internal notes. Use the task's updates instead.");
 
   return runTransaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
@@ -1200,6 +1216,8 @@ export async function reassignRemainder(
     await notifyEveryoneOnItem(tx, actor, { id: item.id, orderId: item.orderId, workerId: null, outsourcedWorker: item.outsourcedWorker }, {
       title: `Reassigned: ${name} · #${item.order.orderNumber}`,
       message: `${actor.user.fullName}: ${moved}.`,
+      // The worker who stopped isn't told who took over, or their pay.
+      workerMessage: completed ? "Your part is marked completed and paid. What's left was given to another worker." : "What's left was given to another worker.",
     });
     if (worker.userId && worker.userId !== actor.user.id) {
       await emitNotificationEvent(
@@ -1222,5 +1240,62 @@ export async function reassignRemainder(
     }
     await refreshOrderStatus(tx, item.orderId, actor);
     return { newItemId: created.id };
+  });
+}
+
+
+/**
+ * A worker turns down a task they haven't accepted (2026-11-12, owner request:
+ * "he should have only two buttons, Accept and Reject"). The item goes back to
+ * unassigned (no worker, no cost), the team is told with the reason, and it
+ * shows as Unassigned for them to give to someone else.
+ */
+export async function rejectTask(actor: Actor, itemId: string, reason: string): Promise<ServiceResult> {
+  const note = reason.trim().slice(0, 500);
+  return runTransaction(async (tx) => {
+    const item = await tx.orderItem.findUnique({
+      where: { id: itemId },
+      select: {
+        id: true,
+        orderId: true,
+        status: true,
+        workerId: true,
+        outsourcedWorkerId: true,
+        order: { select: { orderNumber: true } },
+        service: { select: { name: true, category: { select: { name: true } } } },
+        outsourcedWorker: { select: { name: true, userId: true } },
+      },
+    });
+    if (!item) throw new ServiceRejection("That task no longer exists.");
+    if (!isAssignedToIdentity(item, { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId })) {
+      throw new ServiceRejection("This task isn't assigned to you.");
+    }
+    if (item.status !== "PENDING") throw new ServiceRejection("You've already accepted this task. Use Can't continue instead.");
+
+    await tx.orderItem.update({
+      where: { id: itemId },
+      data: { workerId: null, outsourcedWorkerId: null, assignedById: null, assignedAt: null, workerCost: null },
+    });
+
+    const name = serviceLabel(item.service.name, item.service.category.name);
+    const who = item.outsourcedWorker?.name ?? actor.user.fullName;
+    const summary = `${who} rejected "${name}" on order #${item.order.orderNumber}${note ? `: "${note}"` : ""}`;
+    await logActivity(tx, item.orderId, actor, "order_item.rejected", summary);
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "order_item.rejected",
+      entityType: "Order",
+      entityId: item.orderId,
+      summary,
+      previousValue: { itemId, outsourcedWorkerId: item.outsourcedWorkerId },
+      newValue: { itemId, outsourcedWorkerId: null, reason: note || null },
+    });
+    // The team only: the item has no worker any more.
+    await notifyEveryoneOnItem(tx, actor, { id: item.id, orderId: item.orderId, workerId: null, outsourcedWorker: null }, {
+      title: `Task rejected: ${name} · #${item.order.orderNumber}`,
+      message: `${who} rejected it${note ? `: "${note}"` : "."} Assign it to someone else.`,
+    });
+    await refreshOrderStatus(tx, item.orderId, actor);
   });
 }

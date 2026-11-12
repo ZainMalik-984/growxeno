@@ -21,6 +21,7 @@ import {
   updateOrderItem,
   updateOrderItemProgress,
   reassignRemainder,
+  rejectTask,
 } from "./service";
 import { readStatsAfterSave } from "@/lib/youtube/stats-service";
 import { prepareAssignmentMessages, type AssignmentMessageOutcome } from "./assignment-notify";
@@ -471,4 +472,19 @@ export async function reassignRemainderAction(
   revalidatePath("/dashboard");
   const delivery = await prepareAssignmentMessages(result.data.newItemId, { sendEmail: true }).catch(() => null);
   return { ok: true, message: "Done. Their part is marked completed, and what's left is a new item for the new worker.", newItemId: result.data.newItemId, delivery };
+}
+
+const rejectTaskSchema = z.object({ itemId: uuid, reason: z.string().max(2000).default("") });
+
+/** A worker turns down a task they haven't accepted yet (2026-11-12). */
+export async function rejectTaskAction(input: unknown): Promise<ActionResult> {
+  const parsed = rejectTaskSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  const auth = await authorizeAction("orders.change_status");
+  if (!auth.ok) return { ok: false, error: auth.message };
+  const result = await rejectTask(auth.actor, parsed.data.itemId, parsed.data.reason);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath("/orders", "layout");
+  revalidatePath("/dashboard");
+  return { ok: true, message: "Task rejected. The team has been told." };
 }

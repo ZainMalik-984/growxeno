@@ -7,7 +7,7 @@ import { authorizeAction } from "@/lib/auth/authorize";
 import {
   clearServiceRate,
   createOutsourcedWorker,
-  inviteOutsourcedWorkerToLogin,
+  inviteOutsourcedWorkerToLogin, resendOutsourcedWorkerInvite,
   setOutsourcedWorkerActive,
   setServiceRate,
   updateOutsourcedWorker,
@@ -131,4 +131,16 @@ export async function inviteOutsourcedWorkerToLoginAction(input: unknown): Promi
   const result = await inviteOutsourcedWorkerToLogin(auth.actor, parsed.data.workerId);
   if (result.ok) revalidatePath(`/outsourced-workers/${parsed.data.workerId}`);
   return result.ok ? { ok: true, message: "Invitation sent." } : { ok: false, error: result.error };
+}
+
+/** Sends the portal invitation again (2026-11-12) to a worker who hasn't set a password yet. */
+export async function resendOutsourcedWorkerInviteAction(input: unknown): Promise<ActionResult> {
+  const parsed = workerIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  const auth = await authorizeAction("outsourced_workers.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+  const result = await resendOutsourcedWorkerInvite(auth.actor, parsed.data.workerId);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/outsourced-workers/${parsed.data.workerId}`);
+  return { ok: true, message: "A new invitation is on its way." };
 }

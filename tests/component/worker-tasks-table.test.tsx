@@ -11,8 +11,13 @@ const changeStatus = vi.fn<(input: { itemId: string; status: string }) => Promis
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const rejectTask = vi.fn<(input: { itemId: string; reason: string }) => Promise<{ ok: true; message: string }>>(async () => ({
+  ok: true,
+  message: "Task rejected.",
+}));
 vi.mock("@/lib/orders/actions", () => ({
   changeOrderItemStatusAction: (input: { itemId: string; status: string }) => changeStatus(input),
+  rejectTaskAction: (input: { itemId: string; reason: string }) => rejectTask(input),
 }));
 const getUpdates = vi.fn(async (input: { itemId: string }) => ({
   ok: true as const,
@@ -144,11 +149,11 @@ describe("WorkerTasksTable", () => {
 
   it("offers Ask for screenshots, and shows when a request is waiting", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "s" })]} />);
+    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "s", canAccept: false, canComplete: true })]} />);
     await user.click(table().getByRole("button", { name: /Ask for screenshots/ }));
     expect(screen.getByRole("heading", { name: "Ask for screenshots", hidden: true })).toBeInTheDocument();
     unmount();
-    render(<WorkerTasksTable rows={[row({ id: "s", hasOpenRequest: true })]} />);
+    render(<WorkerTasksTable rows={[row({ id: "s", hasOpenRequest: true, canAccept: false, canComplete: true })]} />);
     expect(table().queryByRole("button", { name: /Ask for screenshots/ })).toBeNull();
     expect(table().getByText("Screenshots requested")).toBeInTheDocument();
     expect(cards().getByText("Screenshots requested")).toBeInTheDocument();
@@ -156,13 +161,33 @@ describe("WorkerTasksTable", () => {
 
   it("offers Can't continue on an open task, and shows when it's waiting", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "w", progressPercent: 40, delivered: 400, required: 1000 })]} />);
+    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "w", progressPercent: 40, delivered: 400, required: 1000, canAccept: false, canComplete: true })]} />);
     await user.click(table().getByRole("button", { name: /Can't continue/ }));
     expect(screen.getByRole("heading", { name: "Can't continue this task?", hidden: true })).toBeInTheDocument();
     unmount();
-    render(<WorkerTasksTable rows={[row({ id: "w", hasWithdrawRequest: true })]} />);
+    render(<WorkerTasksTable rows={[row({ id: "w", hasWithdrawRequest: true, canAccept: false, canComplete: true })]} />);
     expect(table().getByText("Waiting for reassignment")).toBeInTheDocument();
     expect(cards().getByText("Waiting for reassignment")).toBeInTheDocument();
+  });
+
+  it("shows only Accept and Reject on a task not accepted yet", () => {
+    render(<WorkerTasksTable rows={[row({ id: "new" })]} />);
+    for (const scope of [table(), cards()]) {
+      expect(scope.getByRole("button", { name: /^Accept$/ })).toBeInTheDocument();
+      expect(scope.getByRole("button", { name: /^Reject$/ })).toBeInTheDocument();
+      expect(scope.queryByRole("button", { name: /Post update/ })).toBeNull();
+      expect(scope.queryByRole("button", { name: /Ask for screenshots/ })).toBeNull();
+      expect(scope.queryByRole("button", { name: /Can't continue/ })).toBeNull();
+    }
+  });
+
+  it("asks for a reason and rejects the task", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({ id: "new" })]} />);
+    await user.click(table().getByRole("button", { name: /^Reject$/ }));
+    await user.type(screen.getByLabelText(/Why?/), "Too busy");
+    await user.click(screen.getByRole("button", { name: "Reject task", hidden: true }));
+    expect(rejectTask).toHaveBeenCalledWith({ itemId: "new", reason: "Too busy" });
   });
 
   it("shows Updates (read only) when the worker can't post", () => {

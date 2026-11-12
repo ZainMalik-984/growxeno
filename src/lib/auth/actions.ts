@@ -6,6 +6,7 @@ import { z } from "zod";
 import { safeRedirectPath } from "@/lib/auth/redirect";
 import { getAppUrl, getEmailEnv, isSupabaseConfigured } from "@/lib/env";
 import { sendPasswordResetEmail } from "@/lib/auth/invite";
+import { prisma } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -187,6 +188,12 @@ export async function updatePasswordAction(
   if (error) {
     return { error: "Could not update the password. Request a new link and try again." };
   }
+
+  // Accepting an invitation (2026-11-12): the profile was kept inactive until
+  // now. Only a pending invite is switched on, never someone an admin deactivated.
+  await prisma.user
+    .updateMany({ where: { authUserId: user.id, invitePending: true }, data: { invitePending: false, isActive: true, deactivatedAt: null } })
+    .catch(() => undefined);
 
   redirect("/dashboard");
 }

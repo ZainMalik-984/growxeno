@@ -88,6 +88,8 @@ export type OutsourcedWorkerDetail = {
   rates: ServiceRateRow[];
   /** Whether this worker can log in — see `OutsourcedWorkerLoginControl`. */
   hasLogin: boolean;
+  invitePending: boolean;
+  invitedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -105,6 +107,7 @@ export async function getOutsourcedWorkerDetail(id: string): Promise<OutsourcedW
       notifyVia: true,
       isActive: true,
       userId: true,
+      user: { select: { invitePending: true, invitedAt: true } },
       createdAt: true,
       updatedAt: true,
       _count: { select: { orderItems: true } },
@@ -129,6 +132,9 @@ export async function getOutsourcedWorkerDetail(id: string): Promise<OutsourcedW
     assignedItemCount: worker._count.orderItems,
     rates: worker.rates.map((r) => ({ serviceId: r.serviceId, serviceName: serviceLabel(r.service.name, r.service.category.name), rate: r.rate.toString(), currency: r.currency })),
     hasLogin: worker.userId != null,
+    // Invited, but hasn't set a password yet (2026-11-12).
+    invitePending: worker.user?.invitePending ?? false,
+    invitedAt: worker.user?.invitedAt ?? null,
     createdAt: worker.createdAt,
     updatedAt: worker.updatedAt,
   };

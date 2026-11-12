@@ -25,11 +25,11 @@ import { getSiteContact } from "@/lib/settings/queries";
  */
 
 /** /auth/callback?token_hash=…&type=…&next=/auth/reset-password on this app. */
-export function authCallbackLink(appUrl: string, tokenHash: string, type: "invite" | "recovery"): string {
+export function authCallbackLink(appUrl: string, tokenHash: string, type: "invite" | "recovery", options: { welcome?: boolean } = {}): string {
   const url = new URL("/auth/callback", appUrl);
   url.searchParams.set("token_hash", tokenHash);
   url.searchParams.set("type", type);
-  url.searchParams.set("next", "/auth/reset-password");
+  url.searchParams.set("next", options.welcome ? "/auth/reset-password?welcome=1" : "/auth/reset-password");
   return url.toString();
 }
 
@@ -75,6 +75,32 @@ export async function inviteByEmail(
     return { ok: false, error: `The invitation email couldn't be sent: ${receipt.error}` };
   }
   return { ok: true, authUserId: user.id };
+}
+
+/**
+ * Sends a pending invitation again (2026-11-12): the account already exists
+ * but they never set a password, so Supabase won't "invite" it twice; a
+ * one-time recovery token does the same job. The email is the same branded
+ * invitation, and the set-password page still greets them as new.
+ */
+export async function resendInviteEmail(
+  admin: SupabaseClient,
+  input: { email: string; fullName: string; kind: "worker" | "team" },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!getEmailEnv()) return { ok: false, error: "Email isn't set up (RESEND_API_KEY and EMAIL_FROM)." };
+  const appUrl = getAppUrl();
+  const generated = await admin.auth.admin.generateLink({ type: "recovery", email: input.email, options: { redirectTo: `${appUrl}/auth/reset-password` } });
+  const tokenHash = generated.data?.properties?.hashed_token;
+  if (!tokenHash) return { ok: false, error: generated.error?.message ?? "Could not create a new invitation link." };
+  const email = inviteEmail({
+    fullName: input.fullName,
+    link: authCallbackLink(appUrl, tokenHash, "recovery", { welcome: true }),
+    kind: input.kind,
+    appUrl,
+    contactEmail: await contactEmail(),
+  });
+  const receipt = await getEmailProvider().sendTemplate(renderedToMessage(input.email, email));
+  return receipt.ok ? { ok: true } : { ok: false, error: `The invitation email couldn't be sent: ${receipt.error}` };
 }
 
 /**

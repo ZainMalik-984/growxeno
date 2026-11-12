@@ -1,4 +1,4 @@
-import { inviteByEmail } from "@/lib/auth/invite";
+import { inviteByEmail, resendInviteEmail } from "@/lib/auth/invite";
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -223,7 +223,8 @@ export async function inviteOutsourcedWorkerToLogin(actor: Actor, workerId: stri
 
   const result = await runTransaction(async (tx) => {
     const profile = await tx.user.create({
-      data: { email, fullName: worker.name, authUserId, isActive: true, createdById: actor.user.id },
+      // Inactive until they set a password through the invite (2026-11-12).
+      data: { email, fullName: worker.name, authUserId, isActive: false, invitePending: true, invitedAt: new Date(), createdById: actor.user.id },
       select: { id: true },
     });
     await tx.userRole.create({ data: { userId: profile.id, roleId: externalWorkerRole.id, assignedById: actor.user.id } });
@@ -245,6 +246,39 @@ export async function inviteOutsourcedWorkerToLogin(actor: Actor, workerId: stri
     await admin.auth.admin.deleteUser(authUserId).catch(() => {});
   }
   return result;
+}
+
+/** Sends the portal invitation again to a worker who hasn't set a password yet (2026-11-12). */
+export async function resendOutsourcedWorkerInvite(actor: Actor, workerId: string): Promise<ServiceResult> {
+  const worker = await prisma.outsourcedWorker.findUnique({
+    where: { id: workerId },
+    select: { name: true, user: { select: { id: true, email: true, invitePending: true } } },
+  });
+  if (!worker) return failure("That worker no longer exists.");
+  if (!worker.user) return failure("Invite them first.");
+  if (!worker.user.invitePending) return failure(`${worker.name} has already set a password.`);
+
+  let admin: SupabaseClient;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : "Supabase administrative access is not configured.");
+  }
+  const sent = await resendInviteEmail(admin, { email: worker.user.email, fullName: worker.name, kind: "worker" });
+  if (!sent.ok) return failure(sent.error);
+
+  const userId = worker.user.id;
+  return runTransaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { invitedAt: new Date() } });
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "outsourced_worker.invite_resent",
+      entityType: "OutsourcedWorker",
+      entityId: workerId,
+      summary: `Sent ${worker.name} (${worker.user!.email}) a new portal invitation`,
+    });
+  });
 }
 
 export async function setOutsourcedWorkerActive(
