@@ -8,7 +8,7 @@ import { platformOf } from "@/lib/services/link-field";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { cn } from "@/lib/utils";
 import { lookupYoutubeLinkAction, type YoutubePreviewResult } from "@/lib/youtube/actions";
-import { kindMismatch, metricValueFrom, parseYoutubeLink } from "@/lib/youtube/link";
+import { isYoutubeNotFound, kindMismatch, metricValueFrom, parseYoutubeLink, readableChannelLink } from "@/lib/youtube/link";
 
 /**
  * Live look-up of a YouTube link while an item is being filled in (owner
@@ -29,6 +29,9 @@ export function YoutubeLinkPreview({
   categoryName,
   currentValue,
   onUseValue,
+  onProblem,
+  quiet = false,
+  onReplaceLink,
 }: {
   url: string;
   serviceId: string;
@@ -37,6 +40,16 @@ export function YoutubeLinkPreview({
   /** The form's current-count field, so an empty one can be filled in. */
   currentValue: string;
   onUseValue: (value: number) => void;
+  /**
+   * Told when the link can't be used (wrong format, wrong kind, or YouTube
+   * has no such channel/video), and null once it can, so the form can block
+   * saving (2026-11-12). A failed look-up for other reasons doesn't block.
+   */
+  onProblem?: (problem: string | null) => void;
+  /** The form already shows the problem under the field: don't repeat it here. */
+  quiet?: boolean;
+  /** Swaps a /channel/UC… link for the channel's @handle link once it's known (2026-11-12). */
+  onReplaceLink?: (url: string) => void;
 }) {
   const isYoutube = platformOf(categoryName) === "youtube";
   const trimmed = url.trim();
@@ -54,10 +67,24 @@ export function YoutubeLinkPreview({
   const [result, setResult] = useState<{ key: string; value: YoutubePreviewResult } | null>(null);
 
   // Latest callbacks for the async result (never read during render).
-  const latest = useRef({ currentValue, onUseValue, metricType });
+  const latest = useRef({ currentValue, onUseValue, metricType, onProblem, onReplaceLink });
   useEffect(() => {
-    latest.current = { currentValue, onUseValue, metricType };
+    latest.current = { currentValue, onUseValue, metricType, onProblem, onReplaceLink };
   });
+
+  const settled = result && result.key === key ? result.value : null;
+  const problem = !local
+    ? null
+    : local.error
+      ? local.error
+      : settled && !settled.ok && isYoutubeNotFound(settled.error)
+        ? settled.error
+        : null;
+  useEffect(() => {
+    latest.current.onProblem?.(problem);
+  }, [problem]);
+  // Nothing to block once this preview goes away (service changed, dialog closed).
+  useEffect(() => () => latest.current.onProblem?.(null), []);
 
   useEffect(() => {
     if (!key) return;
@@ -70,9 +97,11 @@ export function YoutubeLinkPreview({
       if (cancelled) return;
       setResult({ key, value });
       if (value.ok) {
-        const { currentValue: current, onUseValue: use, metricType: metric } = latest.current;
+        const { currentValue: current, onUseValue: use, metricType: metric, onReplaceLink: replace } = latest.current;
         const reading = metricValueFrom(value.data, metric);
         if (reading !== null && current.trim() === "") use(reading);
+        const readable = readableChannelLink(link, value.data.handle);
+        if (readable) replace?.(readable);
       }
     }, DEBOUNCE_MS);
     return () => {
@@ -82,16 +111,17 @@ export function YoutubeLinkPreview({
   }, [key]);
 
   if (!local) return null;
+  if (quiet && problem) return null;
   if (local.error) {
     return (
-      <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-800">
-        <AlertTriangle aria-hidden="true" className="mt-px size-3.5 shrink-0 text-amber-600" />
+      <p className="mt-2 flex items-start gap-1.5 text-xs font-medium text-red-600" role="alert">
+        <AlertTriangle aria-hidden="true" className="mt-px size-3.5 shrink-0" />
         {local.error}
       </p>
     );
   }
 
-  const current = result && result.key === key ? result.value : null;
+  const current = settled;
   if (!current) {
     return (
       <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500" role="status">
@@ -101,6 +131,14 @@ export function YoutubeLinkPreview({
     );
   }
   if (!current.ok) {
+    if (problem) {
+      return (
+        <p className="mt-2 flex items-start gap-1.5 text-xs font-medium text-red-600" role="alert">
+          <AlertTriangle aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+          {current.error}
+        </p>
+      );
+    }
     return (
       <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-800" role="status">
         <AlertTriangle aria-hidden="true" className="mt-px size-3.5 shrink-0 text-amber-600" />
@@ -124,7 +162,7 @@ export function YoutubeLinkPreview({
         ];
 
   return (
-    <div className="mt-2 rounded-[10px] border border-zinc-200/80 bg-zinc-50/70 p-3" role="status">
+    <div className="mt-2 rounded-[10px] border border-zinc-200/80 bg-zinc-50/70 p-3 max-sm:border-0 max-sm:bg-transparent max-sm:px-0 max-sm:py-1" role="status">
       <div className="flex items-start gap-2">
         <SiYoutube aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[#FF0000]" />
         <div className="min-w-0 flex-1">

@@ -89,3 +89,21 @@ describe("manual order steps", () => {
     expect(canTransitionOrder("CANCELLED", "CANCELLED")).toBe(false);
   });
 });
+
+describe("revision (2026-11-13)", () => {
+  it("can be started once the order is completed, delivered or finalized", () => {
+    for (const from of ["COMPLETED", "DELIVERED", "FINALIZED"] as const) expect(canTransitionOrder(from, "IN_REVISION")).toBe(true);
+    for (const from of ["PENDING", "PROCESSING", "PARTIALLY_COMPLETED", "CANCELLED"] as const) {
+      expect(canTransitionOrder(from, "IN_REVISION")).toBe(false);
+    }
+  });
+  it("ends by delivering again, or a refund", () => {
+    expect(canTransitionOrder("IN_REVISION", "DELIVERED")).toBe(true);
+    expect(canTransitionOrder("IN_REVISION", "CANCELLED")).toBe(true);
+    expect(canTransitionOrder("IN_REVISION", "FINALIZED")).toBe(false);
+  });
+  it("stays in revision while items are sent to refill and done again", () => {
+    expect(deriveOrderStatus("IN_REVISION", [{ status: "REFILL", assigned: true }])).toBe("IN_REVISION");
+    expect(deriveOrderStatus("IN_REVISION", [{ status: "DONE", assigned: true }])).toBe("IN_REVISION");
+  });
+});

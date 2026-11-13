@@ -150,3 +150,39 @@ export function countsAfterReading(
   }
   return { startingCount: item.startingCount, currentCount: value, targetCount: item.targetCount };
 }
+
+/**
+ * Why a YouTube item's link can't be saved, or null when it can (owner
+ * request, 2026-11-12: a wrong link used to only warn and still let the item
+ * be created). Checks the link points at a channel or video, and the right
+ * one of the two for the service. Shared by the forms and the server.
+ */
+export function youtubeLinkProblem(metric: ServiceMetricType | null | undefined, link: string): string | null {
+  const parsed = parseYoutubeLink(link);
+  if (!parsed.ok) return parsed.error;
+  return kindMismatch(metric, parsed.target);
+}
+
+/** What YouTube says when a well-formed link points at nothing (shared so the forms can block on it). */
+export const YOUTUBE_NOT_FOUND = {
+  CHANNEL: "No YouTube channel found for that link.",
+  VIDEO: "No YouTube video found for that link (it may be private or deleted).",
+} as const;
+
+export function isYoutubeNotFound(error: string): boolean {
+  return error === YOUTUBE_NOT_FOUND.CHANNEL || error === YOUTUBE_NOT_FOUND.VIDEO;
+}
+
+/**
+ * The @handle link for a channel typed by its id (owner request, 2026-11-12):
+ * "youtube.com/channel/UCy-i8…" becomes "https://www.youtube.com/@courtniecotterell",
+ * which reads as the channel. Null when the link is already a handle link,
+ * is a video, or there is no handle. The UC… id is kept on the item
+ * (statsSourceId), so nothing is lost.
+ */
+export function readableChannelLink(link: string, handle: string | null | undefined): string | null {
+  if (!handle) return null;
+  const parsed = parseYoutubeLink(link);
+  if (!parsed.ok || (parsed.target.kind !== "channel" && parsed.target.kind !== "username")) return null;
+  return `https://www.youtube.com/@${handle}`;
+}

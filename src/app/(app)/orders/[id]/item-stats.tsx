@@ -153,7 +153,7 @@ export function ItemStatsPanel({
       ) : null}
 
       {latest ? (
-        <dl className={cn("mt-3 grid divide-x divide-zinc-200/80 rounded-[10px] bg-zinc-50 ring-1 ring-inset ring-zinc-200/70", keys.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        <dl className={cn("mt-3 grid divide-x divide-zinc-200/80 rounded-[10px] bg-zinc-50 ring-1 ring-inset ring-zinc-200/70 max-sm:rounded-none max-sm:bg-transparent max-sm:ring-0 max-sm:[&>div:first-child]:pl-0", keys.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {keys.map((key) => {
             const value = latest[key];
             const start = first?.[key] ?? null;

@@ -16,6 +16,8 @@ export type YoutubePreview = {
   title: string;
   channelId: string;
   channelTitle: string;
+  /** The channel's @handle without the @, when known. */
+  handle: string | null;
   subscribers: number | null;
   views: number | null;
   likes: number | null;

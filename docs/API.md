@@ -121,7 +121,8 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | `removeOrderItemAction` | `orders.edit` |
 | `assignOrderItemWorkerAction` | `orders.assign` — when a worker is newly set, also emails them the task (Resend) per their "Send new tasks by" setting and returns `delivery` (email result + a prefilled `wa.me` link for the admin to send) |
 | `getAssignmentMessageAction` | `orders.assign` — "Message worker": the prefilled WhatsApp link again; `resendEmail: true` sends the email once more (logged in `message_logs`) |
-| `changeOrderItemStatusAction` | `orders.change_status` |
+| `changeOrderItemStatusAction` | `orders.change_status`; marking done reads YouTube first, and a worker can mark a YouTube subscribers/views/likes/comments item done only once the count reaches the target |
+| `acceptItemDeliveryAction` | `orders.change_status` + `orders.view.all` — accepts a done item's delivery, which puts its pay in the worker's balance; notifies the worker |
 | `updateOrderItemProgressAction` | `orders.change_status` — narrowed further in the service to the assigned worker (their own item only) or `orders.view.all` |
 | `cancelOrderItemWithAdjustedCostAction` | `orders.change_status` |
 | `rejectTaskAction` | `orders.change_status`, then only the item's assigned worker, and only before accepting: unassigns the task (no worker, no cost), notifies the team with the optional reason (2026-11-12) |

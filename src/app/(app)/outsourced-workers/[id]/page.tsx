@@ -173,7 +173,7 @@ export default async function OutsourcedWorkerDetailPage({
           {canViewEarnings && earnings ? (
             <Section
               title="Earnings"
-              description="From completed (or partially completed, adjusted) items. Calculated live, not a stored balance."
+              description="Earned counts done items once their order is completed, and items closed with pay. Calculated live."
               actions={
                 <Link
                   href="/finance/worker-payments"
@@ -192,6 +192,8 @@ export default async function OutsourcedWorkerDetailPage({
                   value={formatCurrencyBreakdown(earnings.outstandingByCurrency)}
                   highlight={Object.values(earnings.outstandingByCurrency).some((amount) => amount > 0)}
                 />
+                <MoneyTile label="Awaiting confirmation" value={formatCurrencyBreakdown(earnings.awaitingByCurrency)} />
+                <MoneyTile label="In progress" value={formatCurrencyBreakdown(earnings.inProgressByCurrency)} />
               </div>
             </Section>
           ) : null}

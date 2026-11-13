@@ -385,6 +385,8 @@ export type OrderItemRow = {
   assignedAt: Date | null;
   /** When the item reached Done or Cancelled. */
   finishedAt: Date | null;
+  /** The team accepted the worker's delivery (2026-11-12). */
+  deliveryAcceptedAt: Date | null;
   links: OrderItemLinkRow[];
   /** Public YouTube stats for the link, null for other platforms (2026-11-10). */
   stats: ItemStats | null;
@@ -504,6 +506,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
           status: true,
           assignedAt: true,
           finishedAt: true,
+          deliveryAcceptedAt: true,
           createdAt: true,
           updatedAt: true,
           service: { select: { id: true, name: true, metricType: true } },
@@ -585,6 +588,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
       status: item.status,
       assignedAt: item.assignedAt,
       finishedAt: item.finishedAt,
+      deliveryAcceptedAt: item.deliveryAcceptedAt,
       links: item.links,
       updateCount: item._count.updates,
       hasOpenRequest: item.updates.some((u) => u.requestType === "SCREENSHOTS"),

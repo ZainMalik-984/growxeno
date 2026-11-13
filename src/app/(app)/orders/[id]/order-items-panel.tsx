@@ -55,6 +55,7 @@ import {
   assignOrderItemWorkerAction,
   reassignRemainderAction,
   cancelOrderItemWithAdjustedCostAction,
+  acceptItemDeliveryAction,
   changeOrderItemStatusAction,
   removeOrderItemAction,
   removeOrderItemLinkAction,
@@ -68,6 +69,7 @@ import { canTransitionItem, ORDER_ITEM_STATUS_LABELS } from "@/lib/orders/state-
 import { cn } from "@/lib/utils";
 import { METRIC_CURRENT_LABELS, METRIC_TARGET_LABELS, SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { linkFieldFor } from "@/lib/services/link-field";
+import { completionBlocker } from "@/lib/orders/completion";
 import type { ServicePickerRow } from "@/lib/services/queries";
 import type { Workload } from "@/lib/outsourced-workers/workload";
 import { WorkloadHint } from "@/components/orders/workload";
@@ -178,6 +180,8 @@ export function OrderItemsPanel({
 
   const serviceById = useMemo(() => new Map(services.map((s) => [s.id, s])), [services]);
   const selectedMetricType = serviceById.get(form.serviceId)?.metricType ?? null;
+  // A wrong YouTube link stops the item being saved (2026-11-12), reported by the preview.
+  const [linkProblem, setLinkProblem] = useState<string | null>(null);
   const dialogLink = selectedMetricType
     ? linkFieldFor(selectedMetricType, serviceById.get(form.serviceId)?.categoryName)
     : { label: "Link", placeholder: "https://…", noun: "link" };
@@ -264,6 +268,18 @@ export function OrderItemsPanel({
     });
   };
 
+  const acceptDelivery = (itemId: string) => {
+    startTransition(async () => {
+      const result = await acceptItemDeliveryAction({ itemId });
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  };
+
   const toggleLinks = (itemId: string) => {
     setExpandedLinks((current) => {
       const next = new Set(current);
@@ -324,6 +340,17 @@ export function OrderItemsPanel({
               // Cancel always renders last and visually de-emphasised — every
               // other action is the forward-moving happy path.
               const orderedNextStatuses = [...nextStatuses.filter((s) => s !== "CANCELLED"), ...nextStatuses.filter((s) => s === "CANCELLED")];
+              // A worker marks a YouTube count done only once YouTube shows the target (2026-11-12).
+              const doneBlocker = asAssignedWorkerOnly
+                ? completionBlocker({
+                    metricType: item.service.metricType,
+                    categoryName: item.category.name,
+                    currentCount: item.currentCount,
+                    targetCount: item.targetCount,
+                  })
+                : null;
+              // The team accepts a worker's done item, which puts its pay in their balance.
+              const awaitingAcceptance = item.status === "DONE" && !item.deliveryAcceptedAt;
 
               return (
                 <li key={item.id} id={`item-${item.id}`} className="scroll-mt-20 px-4 py-5 sm:px-6">
@@ -462,7 +489,8 @@ export function OrderItemsPanel({
                             action.variant === "accent" || action.variant === "secondary" ? "rounded-[8px]" : undefined,
                             action.variant === "accent" && "max-sm:h-10 max-sm:flex-1",
                           )}
-                          disabled={pending}
+                          disabled={pending || (status === "DONE" && doneBlocker !== null)}
+                          title={status === "DONE" && doneBlocker ? doneBlocker : undefined}
                           onClick={() => {
                             // Cancelling an outsourced-worker item goes through a guided flow
                             // (adjusted cost + a required note), not a bare status flip.
@@ -478,6 +506,22 @@ export function OrderItemsPanel({
                         </Button>
                       );
                     })}
+                    {canViewAll && canChangeStatus && awaitingAcceptance && (item.outsourcedWorker || item.worker) ? (
+                      <Button variant="accent" size="sm" className="rounded-[8px] max-sm:h-10 max-sm:flex-1" disabled={pending} onClick={() => acceptDelivery(item.id)}>
+                        <CheckCircle2 aria-hidden="true" className="size-3.5" />
+                        Accept delivery
+                      </Button>
+                    ) : null}
+                    {item.status === "DONE" && (item.outsourcedWorker || item.worker) ? (
+                      <span
+                        className={cn(
+                          "inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-medium",
+                          awaitingAcceptance ? "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200" : "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
+                        )}
+                      >
+                        {awaitingAcceptance ? "Awaiting acceptance" : "Delivery accepted"}
+                      </span>
+                    ) : null}
                     {canAssign && item.outsourcedWorker && item.status !== "DONE" && item.status !== "CANCELLED" ? (
                       <Button variant="ghost" size="sm" className="rounded-[8px]" onClick={() => setMessageItemId(item.id)}>
                         <Send aria-hidden="true" className="size-3.5" />
@@ -495,6 +539,9 @@ export function OrderItemsPanel({
                       {item.links.length}
                     </button>
                   </div>
+                  {doneBlocker && orderedNextStatuses.includes("DONE") ? (
+                    <p className="mt-2 text-xs text-zinc-500">{doneBlocker} Mark done turns on once it reaches the target.</p>
+                  ) : null}
 
                   {expandedLinks.has(item.id) ? (
                     <ItemLinks itemId={item.id} links={item.links} canAdd={canAddLinkToThisItem} canRemove={canEdit} />
@@ -533,7 +580,7 @@ export function OrderItemsPanel({
           </Field>
 
           {selectedMetricType ? (
-            <div className="space-y-3 rounded-[12px] bg-zinc-50 p-4">
+            <div className="space-y-3 rounded-[12px] bg-zinc-50 p-4 max-sm:bg-transparent max-sm:p-0">
               <Field label={dialogLink.label} htmlFor="item-channel-link" hint={`The client's ${dialogLink.noun}.`}>
                 <Input
                   id="item-channel-link"
@@ -550,6 +597,8 @@ export function OrderItemsPanel({
                   categoryName={serviceById.get(form.serviceId)?.categoryName}
                   currentValue={form.currentCount}
                   onUseValue={(value) => setForm((c) => ({ ...c, currentCount: String(value) }))}
+                  onProblem={setLinkProblem}
+                  onReplaceLink={(url) => setForm((c) => ({ ...c, channelLink: url }))}
                 />
               </Field>
               {dialogItemId === "new" ? (
@@ -639,6 +688,7 @@ export function OrderItemsPanel({
               !form.serviceId ||
               (selectedMetricType != null &&
                 (!form.channelLink.trim() ||
+                  linkProblem !== null ||
                   (dialogItemId === "new" ? form.requiredCount.trim() === "" : form.targetCount.trim() === "")))
             }
           >

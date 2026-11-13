@@ -29,6 +29,7 @@ import {
   type OrderScope,
 } from "@/lib/orders/queries";
 import { aggregateProgress } from "@/lib/orders/progress";
+import { completionBlocker } from "@/lib/orders/completion";
 import { earliest, orderVisibility, redactOrderListItems } from "@/lib/orders/visibility";
 import { listAssignableServices } from "@/lib/services/queries";
 import { CLOSED_ORDER_STATUSES, deriveOrderStatus, ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, ORDER_STATUS_VALUES } from "@/lib/orders/state-machine";
@@ -611,12 +612,20 @@ function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean): WorkerTaskRo
     isYoutube: task.channelLink ? /youtube\.com|youtu\.be/i.test(task.channelLink) : false,
     studioUrl: task.studioUrl,
     isWatchHours: task.metricType === "WATCH_HOURS",
-    statusLabel: ORDER_ITEM_STATUS_LABELS[task.status],
-    statusTone: ITEM_STATUS_TONE[task.status],
+    // A done task waits for the team to accept the delivery (2026-11-12).
+    statusLabel: task.status === "DONE" ? (task.deliveryAccepted ? "Accepted" : "Awaiting acceptance") : ORDER_ITEM_STATUS_LABELS[task.status],
+    statusTone: task.status === "DONE" && !task.deliveryAccepted ? "warning" : ITEM_STATUS_TONE[task.status],
     isRefill: task.status === "REFILL",
     canAccept: canChangeItemStatus && task.status === "PENDING",
     canComplete:
       canChangeItemStatus && task.status !== "PENDING" && canTransitionItem(task.status, "DONE", { asAssignedWorkerOnly: true }),
+    // Complete stays off until YouTube shows the target (2026-11-12).
+    completeBlocker: completionBlocker({
+      metricType: task.metricType,
+      categoryName: task.categoryName,
+      currentCount: task.currentCount,
+      targetCount: task.targetCount,
+    }),
     // Updates thread (2026-11-11): the count, a note, screenshots. The count itself needs the task accepted (checked on post).
     // Before accepting: only Accept / Reject (2026-11-12).
     canPostUpdate: canChangeItemStatus && (task.status === "PROCESSING" || task.status === "REFILL" || task.status === "DONE"),

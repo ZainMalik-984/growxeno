@@ -1,7 +1,7 @@
 "use client";
 
 import type { OrderStatus } from "@/generated/prisma/client";
-import { CircleSlash, PackageCheck, Stamp } from "lucide-react";
+import { CircleSlash, PackageCheck, RotateCcw, Stamp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { ORDER_STATUS_LABELS, ORDER_TRANSITIONS } from "@/lib/orders/state-machi
 const ACTION: Partial<Record<OrderStatus, { label: string; confirm: string; icon: typeof Stamp }>> = {
   DELIVERED: { label: "Mark delivered", confirm: "Mark this order as delivered?", icon: PackageCheck },
   FINALIZED: { label: "Finalize", confirm: "Finalize this order?", icon: Stamp },
+  IN_REVISION: { label: "Send for revision", confirm: "Send this order for revision?", icon: RotateCcw },
   CANCELLED: { label: "Refund / Cancel", confirm: "Refund or cancel this order?", icon: CircleSlash },
 };
 
@@ -52,6 +53,8 @@ export function OrderStatusActions({ orderId, status }: { orderId: string; statu
   const next = ORDER_TRANSITIONS[status].filter((to) => ACTION[to]);
   if (next.length === 0) return null;
   const needsReason = target === "CANCELLED";
+  // A revision takes an optional note of what the customer wants changed.
+  const showReason = needsReason || target === "IN_REVISION";
 
   return (
     <>
@@ -87,10 +90,11 @@ export function OrderStatusActions({ orderId, status }: { orderId: string; statu
             <p className="mt-1 text-[13px] text-zinc-500">
               The order moves from {ORDER_STATUS_LABELS[status]} to {ORDER_STATUS_LABELS[target]}.
               {target === "CANCELLED" ? " It stops counting toward revenue." : ""}
+              {target === "IN_REVISION" ? " Send the items that need changes to Refill so their workers pick them up." : ""}
             </p>
-            {needsReason ? (
+            {showReason ? (
               <div className="mt-4">
-                <Field label="Reason" htmlFor="status-change-reason">
+                <Field label={target === "IN_REVISION" ? "What needs changing (optional)" : "Reason"} htmlFor="status-change-reason">
                   <Textarea
                     id="status-change-reason"
                     rows={3}

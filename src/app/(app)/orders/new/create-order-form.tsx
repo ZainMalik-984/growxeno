@@ -9,7 +9,9 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { addOrderItemAction, createOrderAction } from "@/lib/orders/actions";
+import { addOrderItemAction, assignOrderItemWorkerAction, createOrderAction } from "@/lib/orders/actions";
+import type { AssignmentMessageOutcome } from "@/lib/orders/assignment-notify";
+import { CreatedOrderNotify } from "./created-order-notify";
 import type { ServicePickerRow } from "@/lib/services/queries";
 import { cn } from "@/lib/utils";
 import { CustomerPicker, type SelectedCustomer } from "../customer-picker";
@@ -24,7 +26,9 @@ import {
   TEXTAREA_CLASS,
 } from "./order-form-fields";
 import {
+  type AssignableWorker,
   describeItem,
+  draftCost,
   type DraftItem,
   formatCount,
   ITEM_FIELD_ORDER,
@@ -68,7 +72,19 @@ const FIELD_IDS: Record<FieldKey, string> = {
   deadline: "order-deadline",
 };
 
-const blankItem = (key: string): DraftItem => ({ key, serviceId: "", channelLink: "", startingCount: "", requiredCount: "" });
+/** Phones: a section is a full-width white band, not a floating card. */
+const PHONE_SECTION = "max-sm:-mx-4 max-sm:rounded-none max-sm:border-x-0 max-sm:px-4 max-sm:py-6 max-sm:shadow-none";
+
+const blankItem = (key: string): DraftItem => ({
+  key,
+  serviceId: "",
+  channelLink: "",
+  startingCount: "",
+  requiredCount: "",
+  workerId: "",
+  workerCost: null,
+  workerCostCurrency: null,
+});
 
 function formatDeadline(value: string): string {
   const date = new Date(value);
@@ -80,10 +96,13 @@ export function CreateOrderForm({
   fiverrAccounts,
   services,
   canCreateCustomer,
+  workers,
 }: {
   fiverrAccounts: ReadonlyArray<{ id: string; name: string }>;
   services: readonly ServicePickerRow[];
   canCreateCustomer: boolean;
+  /** Outsourced workers, for people who can assign (2026-11-12); undefined otherwise. */
+  workers?: readonly AssignableWorker[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -103,6 +122,18 @@ export function CreateOrderForm({
   const keySeq = useRef(1);
   const [items, setItems] = useState<DraftItem[]>(() => [blankItem("i0")]);
   const [itemErrors, setItemErrors] = useState<Record<string, ItemErrors>>({});
+  // Links the YouTube look-up rejected, per item (2026-11-12): these block creating.
+  const [linkProblems, setLinkProblems] = useState<Record<string, string>>({});
+  const setLinkProblem = (key: string, problem: string | null) =>
+    setLinkProblems((current) => {
+      if ((current[key] ?? null) === problem) return current;
+      const next = { ...current };
+      if (problem) next[key] = problem;
+      else delete next[key];
+      return next;
+    });
+  // After creating: who was told, and WhatsApp messages still to send.
+  const [created, setCreated] = useState<{ orderId: string; deliveries: AssignmentMessageOutcome[] } | null>(null);
   /** Field to focus once the list re-renders (after Add / Duplicate). */
   const focusAfterRender = useRef<string | null>(null);
   useEffect(() => {
@@ -145,7 +176,7 @@ export function CreateOrderForm({
     const key = newKey();
     setItems((current) => {
       const at = current.findIndex((item) => item.key === original.key);
-      const copy: DraftItem = { ...original, key, serviceId: "" };
+      const copy: DraftItem = { ...original, key, serviceId: "", workerId: "", workerCost: null, workerCostCurrency: null };
       return [...current.slice(0, at + 1), copy, ...current.slice(at + 1)];
     });
     focusAfterRender.current = itemFieldId(key, "service");
@@ -173,6 +204,8 @@ export function CreateOrderForm({
     }
     if (deadline && Number.isNaN(Date.parse(deadline))) {
       next.deadline = "Enter a valid deadline.";
+    } else if (!deadline && items.some((item) => item.serviceId && item.workerId)) {
+      next.deadline = "Set a deadline to assign workers.";
     }
     return next;
   };
@@ -186,6 +219,7 @@ export function CreateOrderForm({
     const foundItems: Record<string, ItemErrors> = {};
     for (const item of items) {
       const itemFound = validateItem(item, services, items.length === 1);
+      if (!itemFound.channelLink && item.serviceId && linkProblems[item.key]) itemFound.channelLink = linkProblems[item.key];
       if (Object.keys(itemFound).length > 0) foundItems[item.key] = itemFound;
     }
     setErrors(found);
@@ -224,6 +258,8 @@ export function CreateOrderForm({
         // One at a time, so items keep the order they were entered in.
         let failed = 0;
         let firstFailure = "";
+        let assignFailed = 0;
+        const deliveries: AssignmentMessageOutcome[] = [];
         for (const item of toAdd) {
           const d = describeItem(item, services);
           const itemResult = await addOrderItemAction({
@@ -236,7 +272,30 @@ export function CreateOrderForm({
           if (!itemResult.ok) {
             failed += 1;
             firstFailure ||= itemResult.error;
+            continue;
           }
+          const cost = workers ? draftCost(item, services, workers) : null;
+          if (item.workerId && cost) {
+            const assigned = await assignOrderItemWorkerAction({
+              itemId: itemResult.itemId,
+              outsourcedWorkerId: item.workerId,
+              cost: cost.cost,
+              costCurrency: cost.currency,
+            });
+            if (!assigned.ok) {
+              assignFailed += 1;
+              firstFailure ||= assigned.error;
+            } else if (assigned.delivery) {
+              deliveries.push(assigned.delivery);
+            }
+          }
+        }
+        if (assignFailed > 0) {
+          toast.error(
+            assignFailed === 1
+              ? `One worker could not be assigned: ${firstFailure}`
+              : `${assignFailed} workers could not be assigned: ${firstFailure}`,
+          );
         }
         if (failed > 0) {
           toast.error(
@@ -247,6 +306,11 @@ export function CreateOrderForm({
         }
 
         toast.success(result.message);
+        // WhatsApp has to be sent by hand: show those first, then go to the order.
+        if (deliveries.some((delivery) => delivery.whatsappUrl)) {
+          setCreated({ orderId: result.orderId, deliveries });
+          return;
+        }
         router.push(`/orders/${result.orderId}`);
       } catch {
         setServerError("Something went wrong while creating the order. Please try again.");
@@ -263,10 +327,14 @@ export function CreateOrderForm({
 
   return (
     <form onSubmit={submit} noValidate aria-busy={busy}>
+      {created ? (
+        <CreatedOrderNotify deliveries={created.deliveries} onDone={() => router.push(`/orders/${created.orderId}`)} />
+      ) : null}
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-6">
-        <fieldset disabled={busy} className="min-w-0 space-y-5">
+        <fieldset disabled={busy} className="min-w-0 space-y-5 max-sm:space-y-3">
           {/* ── A. Order details (primary) ─────────────────────────────── */}
-          <Card className="border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-12px_rgba(16,24,40,0.12)] sm:p-7">
+          {/* Phones: full-width bands with no boxes inside boxes (2026-11-12). */}
+          <Card className={cn("border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-12px_rgba(16,24,40,0.12)] sm:p-7", PHONE_SECTION)}>
             <CardHeader icon={ClipboardList} tone="indigo" title="Order details" description="Where it came from and who it's for." />
 
             <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
@@ -410,7 +478,7 @@ export function CreateOrderForm({
           </Card>
 
           {/* ── B. Items (optional, secondary) ─────────────────────────── */}
-          <Card className="border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-7">
+          <Card className={cn("border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-7", PHONE_SECTION)}>
             <CardHeader
               icon={PackagePlus}
               tone="emerald"
@@ -423,7 +491,7 @@ export function CreateOrderForm({
               }
             />
 
-            <ol className="space-y-3">
+            <ol className="space-y-3 max-sm:space-y-0 max-sm:divide-y max-sm:divide-zinc-200 max-sm:border-y max-sm:border-zinc-200">
               {items.map((item, index) => (
                 <li key={item.key}>
                   <OrderItemEditor
@@ -435,6 +503,9 @@ export function CreateOrderForm({
                     onChange={updateItem}
                     onDuplicate={() => duplicateItem(item)}
                     onRemove={() => removeItem(item.key)}
+                    onLinkProblem={(problem) => setLinkProblem(item.key, problem)}
+                    workers={workers}
+                    deadlineSet={Boolean(deadline)}
                   />
                 </li>
               ))}
@@ -443,7 +514,7 @@ export function CreateOrderForm({
             <button
               type="button"
               onClick={addItem}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed border-zinc-300 px-3 py-2.5 text-[13px] font-medium text-zinc-600 transition hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed max-sm:mt-4 border-zinc-300 px-3 py-2.5 text-[13px] font-medium text-zinc-600 transition hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
             >
               <Plus aria-hidden="true" className="size-4" />
               Add another item
@@ -501,6 +572,11 @@ export function CreateOrderForm({
                               Target {formatCount(d.targetValue)} {d.metricUnit}
                             </span>
                           ) : null}
+                          {item.workerId ? (
+                            <span className="block text-xs font-normal text-zinc-500">
+                              To {workers?.find((w) => w.id === item.workerId)?.name}
+                            </span>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -531,8 +607,8 @@ export function CreateOrderForm({
       </div>
 
       {/* ── Sticky action bar (below xl) ───────────────────────────────── */}
-      <div className="sticky bottom-3 z-20 mt-5 xl:hidden">
-        <div className="rounded-[14px] border border-zinc-200/80 bg-white/95 p-3 shadow-[0_8px_30px_-8px_rgba(16,24,40,0.18)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+      <div className="sticky bottom-3 z-20 mt-5 xl:hidden max-sm:-mx-4 max-sm:-mb-5 max-sm:bottom-0 max-sm:mt-0">
+        <div className="rounded-[14px] border border-zinc-200/80 bg-white/95 p-3 shadow-[0_8px_30px_-8px_rgba(16,24,40,0.18)] backdrop-blur supports-[backdrop-filter]:bg-white/80 max-sm:rounded-none max-sm:border-x-0 max-sm:border-b-0 max-sm:px-4 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:shadow-[0_-4px_16px_-8px_rgba(16,24,40,0.12)]">
           <FormFeedback serverError={serverError} errorCount={errorCount} className="mb-3" />
           <div className="flex items-center justify-between gap-3">
             <p className="hidden text-xs text-zinc-500 sm:block">

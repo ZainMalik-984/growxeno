@@ -123,6 +123,8 @@ export function InsetPanel({ children, className }: { children: ReactNode; class
       className={cn(
         "animate-fade-up rounded-[10px] border border-zinc-200/80 bg-zinc-50/80 p-4 [animation-duration:220ms] motion-reduce:animate-none",
         "relative before:absolute before:-top-px before:left-4 before:h-px before:w-10 before:bg-indigo-400/60",
+        // Phones: no box inside the section (2026-11-12).
+        "max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:before:hidden",
         className,
       )}
     >

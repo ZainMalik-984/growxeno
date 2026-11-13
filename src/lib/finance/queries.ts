@@ -1,4 +1,5 @@
 import "server-only";
+import { workerPayStage, type WorkerPayStage } from "./worker-pay-stage";
 
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
@@ -31,7 +32,8 @@ import { roundMoney, sumByCurrency } from "./money";
 // Delivered and Finalized (2026-11-03 rework). "Refunded / Cancelled" is
 // its own status now, so it falls out of revenue by status alone; the old
 // `refunded` flag is still honoured for rows that carry it.
-const REVENUE_RECOGNIZED_STATUSES = ["DELIVERED", "FINALIZED"] as const;
+// An order in revision was delivered before (deliveredAt is set) and still counts (2026-11-13).
+const REVENUE_RECOGNIZED_STATUSES = ["DELIVERED", "FINALIZED", "IN_REVISION"] as const;
 const EARNED_ITEM_STATUSES = ["DONE", "CANCELLED"] as const;
 
 export const FINANCE_PAGE_SIZE = 25;
@@ -318,11 +320,19 @@ export async function getWorkerPayment(id: string): Promise<WorkerPaymentRow | n
  * summary"). `workerId` XOR `outsourcedWorkerId` — same shape as everywhere
  * else this pair appears.
  */
-export async function getWorkerEarnings(worker: { workerId?: string; outsourcedWorkerId?: string }): Promise<{
+export type WorkerEarnings = {
+  /** Confirmed: done items whose delivery the team accepted, and items the team closed with pay. */
   earnedByCurrency: Record<string, number>;
   paidByCurrency: Record<string, number>;
+  /** Earned minus paid: what can be paid out now. */
   outstandingByCurrency: Record<string, number>;
-}> {
+  /** Marked done by the worker, waiting for the team to accept the delivery. */
+  awaitingByCurrency: Record<string, number>;
+  /** Not marked done yet: assigned, being worked on, or a refill. */
+  inProgressByCurrency: Record<string, number>;
+};
+
+export async function getWorkerEarnings(worker: { workerId?: string; outsourcedWorkerId?: string }): Promise<WorkerEarnings> {
   const itemWhere: Prisma.OrderItemWhereInput = worker.workerId
     ? { workerId: worker.workerId }
     : { outsourcedWorkerId: worker.outsourcedWorkerId };
@@ -332,15 +342,22 @@ export async function getWorkerEarnings(worker: { workerId?: string; outsourcedW
 
   const [items, payments] = await Promise.all([
     prisma.orderItem.findMany({
-      where: { ...itemWhere, status: { in: [...EARNED_ITEM_STATUSES] }, workerCost: { not: null } },
-      select: { workerCost: true, workerCostCurrency: true },
+      where: { ...itemWhere, workerCost: { not: null } },
+      select: { workerCost: true, workerCostCurrency: true, status: true, deliveryAcceptedAt: true },
     }),
     prisma.workerPayment.findMany({ where: paymentWhere, select: { amount: true, currency: true } }),
   ]);
 
-  const earnedByCurrency = sumByCurrency(
-    items.map((item) => ({ amount: Number(item.workerCost), currency: item.workerCostCurrency })),
-  );
+  // Owner's rule (2026-11-12): pay counts once the team confirms, not when the worker marks it done.
+  const share = (stage: WorkerPayStage) =>
+    sumByCurrency(
+      items
+        .filter((item) => workerPayStage(item.status, item.deliveryAcceptedAt !== null) === stage)
+        .map((item) => ({ amount: Number(item.workerCost), currency: item.workerCostCurrency })),
+    );
+  const earnedByCurrency = share("earned");
+  const awaitingByCurrency = share("awaiting");
+  const inProgressByCurrency = share("inProgress");
   const paidByCurrency = sumByCurrency(payments.map((p) => ({ amount: Number(p.amount), currency: p.currency })));
 
   const outstandingByCurrency: Record<string, number> = {};
@@ -348,7 +365,7 @@ export async function getWorkerEarnings(worker: { workerId?: string; outsourcedW
     outstandingByCurrency[currency] = roundMoney((earnedByCurrency[currency] ?? 0) - (paidByCurrency[currency] ?? 0));
   }
 
-  return { earnedByCurrency, paidByCurrency, outstandingByCurrency };
+  return { earnedByCurrency, paidByCurrency, outstandingByCurrency, awaitingByCurrency, inProgressByCurrency };
 }
 
 // ---------------------------------------------------------------------------

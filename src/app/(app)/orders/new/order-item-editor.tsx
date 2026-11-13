@@ -1,9 +1,12 @@
 "use client";
 
-import { ArrowRight, Copy, Link2, Trash2, TrendingUp } from "lucide-react";
+import { ArrowRight, Copy, Link2, Trash2, TrendingUp, UserRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
+import { WorkloadHint } from "@/components/orders/workload";
+import { computeAssignmentCost } from "@/lib/orders/rate";
+import type { Workload } from "@/lib/outsourced-workers/workload";
 import { safeExternalHref } from "@/lib/orders/url-normalize";
 import {
   METRIC_CURRENT_LABELS,
@@ -12,7 +15,8 @@ import {
   type ServiceMetricType,
 } from "@/lib/services/metric-type";
 import { ServicePicker } from "@/components/catalog/service-picker";
-import { linkFieldFor } from "@/lib/services/link-field";
+import { linkFieldFor, platformOf } from "@/lib/services/link-field";
+import { youtubeLinkProblem } from "@/lib/youtube/link";
 import { YoutubeLinkPreview } from "@/components/catalog/youtube-link-preview";
 import type { ServicePickerRow } from "@/lib/services/queries";
 import { cn } from "@/lib/utils";
@@ -30,9 +34,41 @@ export type DraftItem = {
   readonly channelLink: string;
   readonly startingCount: string;
   readonly requiredCount: string;
+  /** Outsourced worker to assign once the item exists; "" = not yet (2026-11-12). */
+  readonly workerId: string;
+  /** Typed cost, or null to use the worker's rate. */
+  readonly workerCost: string | null;
+  readonly workerCostCurrency: string | null;
 };
 
-export type ItemFieldKey = "service" | "channelLink" | "currentCount" | "requiredCount";
+/** A worker who can be picked on the New Order form, with their rates and current load. */
+export type AssignableWorker = {
+  id: string;
+  name: string;
+  rates: readonly { serviceId: string; rate: string; currency: string }[];
+  workload: Workload;
+};
+
+const COST_CURRENCIES = ["PKR", "USD"] as const;
+const MONEY = /^\d+(\.\d{1,2})?$/;
+
+/** The cost that will be saved: what was typed, else the worker's rate × the units asked for. */
+export function draftCost(item: DraftItem, services: readonly ServicePickerRow[], workers: readonly AssignableWorker[]) {
+  if (!item.workerId) return null;
+  const d = describeItem(item, services);
+  const rate = workers.find((w) => w.id === item.workerId)?.rates.find((r) => r.serviceId === item.serviceId) ?? null;
+  const auto = computeAssignmentCost(
+    { metricType: d.metricType, targetCount: d.targetValue, startingCount: d.startingValue },
+    rate ? { rate: rate.rate, currency: rate.currency } : null,
+  );
+  return {
+    cost: item.workerCost ?? auto?.cost ?? "",
+    currency: item.workerCostCurrency ?? auto?.currency ?? "PKR",
+    hasRate: rate !== null,
+  };
+}
+
+export type ItemFieldKey = "service" | "channelLink" | "currentCount" | "requiredCount" | "workerCost";
 export type ItemErrors = Partial<Record<ItemFieldKey, string>>;
 
 const WHOLE_NUMBER = /^\d+$/;
@@ -45,10 +81,10 @@ export const formatCount = (n: number) => n.toLocaleString("en-US");
 /** DOM id of one field of one item — the first invalid one gets focus. */
 export const itemFieldId = (key: string, field: ItemFieldKey) =>
   `order-item-${key}-${
-    { service: "service", channelLink: "channel-link", currentCount: "starting-count", requiredCount: "required-count" }[field]
+    { service: "service", channelLink: "channel-link", currentCount: "starting-count", requiredCount: "required-count", workerCost: "worker-cost" }[field]
   }`;
 
-export const ITEM_FIELD_ORDER: readonly ItemFieldKey[] = ["service", "channelLink", "currentCount", "requiredCount"];
+export const ITEM_FIELD_ORDER: readonly ItemFieldKey[] = ["service", "channelLink", "currentCount", "requiredCount", "workerCost"];
 
 /** Derived numbers for one item: metric, start, how many more, target. */
 export function describeItem(item: DraftItem, services: readonly ServicePickerRow[]) {
@@ -74,10 +110,18 @@ export function validateItem(item: DraftItem, services: readonly ServicePickerRo
     if (!allowEmpty) errors.service = "Choose a service, or remove this item.";
     return errors;
   }
+  if (item.workerId && item.workerCost !== null && item.workerCost.trim() !== "" && !MONEY.test(item.workerCost.trim())) {
+    errors.workerCost = "Enter an amount like 1750 or 1750.50.";
+  }
   if (!d.metricType) return errors;
   const link = item.channelLink.trim();
   if (!link) errors.channelLink = `Add the ${linkFieldFor(d.metricType, d.service?.categoryName).noun} link.`;
   else if (!safeExternalHref(link)) errors.channelLink = "Enter a full link, starting with https://";
+  else if (platformOf(d.service?.categoryName) === "youtube") {
+    // A wrong YouTube link blocks the item, not just a warning (2026-11-12).
+    const problem = youtubeLinkProblem(d.metricType, link);
+    if (problem) errors.channelLink = problem;
+  }
   if (d.startingClean !== "" && !WHOLE_NUMBER.test(d.startingClean)) errors.currentCount = "Use a whole number (0 or more).";
   if (d.requiredClean === "") errors.requiredCount = `Enter how many ${d.metricUnit} are needed.`;
   else if (!WHOLE_NUMBER.test(d.requiredClean)) errors.requiredCount = "Use a whole number (0 or more).";
@@ -94,6 +138,7 @@ export function validateItem(item: DraftItem, services: readonly ServicePickerRo
 export function withService(item: DraftItem, nextId: string, services: readonly ServicePickerRow[]): DraftItem {
   const currentMetric = services.find((s) => s.id === item.serviceId)?.metricType ?? null;
   const nextMetric = services.find((s) => s.id === nextId)?.metricType ?? null;
+  item = { ...item, workerCost: null, workerCostCurrency: null };
   if (!nextId) return { ...item, serviceId: "" }; // keep the typed values in case another service is picked
   if (!nextMetric) return { ...item, serviceId: nextId, channelLink: "", startingCount: "", requiredCount: "" };
   if (nextMetric !== currentMetric) return { ...item, serviceId: nextId, startingCount: "", requiredCount: "" };
@@ -109,6 +154,9 @@ export function OrderItemEditor({
   onChange,
   onDuplicate,
   onRemove,
+  onLinkProblem,
+  workers,
+  deadlineSet = true,
 }: {
   item: DraftItem;
   index: number;
@@ -118,6 +166,12 @@ export function OrderItemEditor({
   onChange: (next: DraftItem, touched: ItemFieldKey[]) => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  /** The link preview's verdict: YouTube has no such channel/video, or the link is wrong (2026-11-12). */
+  onLinkProblem?: (problem: string | null) => void;
+  /** Workers to pick from; undefined when this person can't assign. */
+  workers?: readonly AssignableWorker[];
+  /** Assigning needs the order deadline (assignOrderItemWorker). */
+  deadlineSet?: boolean;
 }) {
   const d = describeItem(item, services);
   const id = (field: ItemFieldKey) => itemFieldId(item.key, field);
@@ -128,8 +182,9 @@ export function OrderItemEditor({
   const isBlankOnly = total === 1 && !item.serviceId;
 
   return (
-    <div className="rounded-[10px] border border-zinc-200/80 bg-white shadow-[0_1px_1px_rgba(16,24,40,0.03)]">
-      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-2.5">
+    // Phones: a plain row in the divided list, not a card in the card (2026-11-12).
+    <div className="rounded-[10px] border border-zinc-200/80 bg-white shadow-[0_1px_1px_rgba(16,24,40,0.03)] max-sm:rounded-none max-sm:border-0 max-sm:shadow-none">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-2.5 max-sm:border-0 max-sm:px-0 max-sm:pb-0 max-sm:pt-4">
         <p className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-zinc-900">
           <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[11px] font-semibold text-zinc-600 tabular-nums">
             {index + 1}
@@ -164,7 +219,7 @@ export function OrderItemEditor({
         ) : null}
       </div>
 
-      <div className="space-y-4 p-4">
+      <div className="space-y-4 p-4 max-sm:px-0 max-sm:pb-5">
         <FormField
           label="Service"
           htmlFor={id("service")}
@@ -219,6 +274,9 @@ export function OrderItemEditor({
                 categoryName={d.service?.categoryName}
                 currentValue={item.startingCount}
                 onUseValue={(value) => onChange({ ...item, startingCount: String(value) }, ["currentCount"])}
+                onProblem={onLinkProblem}
+                onReplaceLink={(url) => onChange({ ...item, channelLink: url }, ["channelLink"])}
+                quiet={Boolean(errors.channelLink)}
               />
             </FormField>
 
@@ -285,11 +343,139 @@ export function OrderItemEditor({
             </div>
           </div>
         ) : (
-          <p className="rounded-[8px] bg-zinc-50 px-3 py-2.5 text-[13px] text-zinc-500 ring-1 ring-inset ring-zinc-200/70">
+          <p className="rounded-[8px] bg-zinc-50 px-3 py-2.5 text-[13px] text-zinc-500 ring-1 ring-inset ring-zinc-200/70 max-sm:bg-transparent max-sm:p-0 max-sm:ring-0">
             No extra details needed. The item is added when the order is created.
           </p>
         )}
+
+        {workers && item.serviceId ? (
+          <WorkerField
+            item={item}
+            services={services}
+            workers={workers}
+            metricType={d.metricType}
+            deadlineSet={deadlineSet}
+            error={errors.workerCost}
+            costId={id("workerCost")}
+            onChange={onChange}
+          />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Pick who does this item while creating the order (owner request,
+ * 2026-11-12). Same rules as the order page's Assign: cost comes from the
+ * worker's rate and stays editable; the worker is told once the order exists.
+ */
+function WorkerField({
+  item,
+  services,
+  workers,
+  metricType,
+  deadlineSet,
+  error,
+  costId,
+  onChange,
+}: {
+  item: DraftItem;
+  services: readonly ServicePickerRow[];
+  workers: readonly AssignableWorker[];
+  metricType: ServiceMetricType | null;
+  deadlineSet: boolean;
+  error?: string;
+  costId: string;
+  onChange: (next: DraftItem, touched: ItemFieldKey[]) => void;
+}) {
+  const selectId = `order-item-${item.key}-worker`;
+  const worker = workers.find((w) => w.id === item.workerId) ?? null;
+  const cost = draftCost(item, services, workers);
+
+  return (
+    <div className="space-y-3 border-t border-zinc-100 pt-4">
+      <FormField
+        label="Worker"
+        htmlFor={selectId}
+        tag="Optional"
+        hint={
+          worker ? (
+            <WorkloadHint workload={worker.workload} metricType={metricType} />
+          ) : workers.length === 0 ? (
+            "No active outsourced workers yet."
+          ) : (
+            "Assign now, or later from the order page."
+          )
+        }
+      >
+        <div className="relative">
+          <UserRound aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+          <Select
+            id={selectId}
+            className={cn(FIELD_CLASS, "pl-9")}
+            value={item.workerId}
+            disabled={workers.length === 0}
+            onChange={(event) =>
+              onChange({ ...item, workerId: event.target.value, workerCost: null, workerCostCurrency: null }, ["workerCost"])
+            }
+          >
+            <option value="">Not assigned yet</option>
+            {workers.map((w) => {
+              const rate = w.rates.find((r) => r.serviceId === item.serviceId);
+              const rateText = rate ? `${rate.rate} ${rate.currency}/${metricType ? "unit" : "item"}` : "no rate";
+              const load = w.workload.active === 0 ? "free" : `${w.workload.active} active`;
+              return (
+                <option key={w.id} value={w.id}>
+                  {`${w.name} · ${rateText} · ${load}`}
+                </option>
+              );
+            })}
+          </Select>
+        </div>
+      </FormField>
+
+      {worker && cost ? (
+        <FormField
+          label="Cost"
+          htmlFor={costId}
+          error={error}
+          hint={
+            !deadlineSet ? (
+              <span className="text-amber-700">Set the order deadline above to assign.</span>
+            ) : cost.hasRate ? (
+              "From their rate. You can change it."
+            ) : (
+              "No rate set for this service. Enter what they're paid."
+            )
+          }
+        >
+          <div className="flex gap-2">
+            <Input
+              id={costId}
+              className={cn(FIELD_CLASS, "min-w-0 flex-1 tabular-nums")}
+              inputMode="decimal"
+              placeholder="0.00"
+              value={cost.cost}
+              aria-invalid={Boolean(error) || undefined}
+              aria-describedby={error ? `${costId}-error` : `${costId}-hint`}
+              onChange={(event) => onChange({ ...item, workerCost: event.target.value, workerCostCurrency: cost.currency }, ["workerCost"])}
+            />
+            <Select
+              aria-label="Cost currency"
+              className={cn(FIELD_CLASS, "w-24 shrink-0")}
+              value={cost.currency}
+              onChange={(event) => onChange({ ...item, workerCost: cost.cost, workerCostCurrency: event.target.value }, ["workerCost"])}
+            >
+              {COST_CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </FormField>
+      ) : null}
     </div>
   );
 }

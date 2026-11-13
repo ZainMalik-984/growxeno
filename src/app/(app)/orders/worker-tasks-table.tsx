@@ -53,6 +53,8 @@ export type WorkerTaskRow = {
   isRefill: boolean;
   canAccept: boolean;
   canComplete: boolean;
+  /** Why Complete is off: YouTube doesn't show the target yet (2026-11-12). */
+  completeBlocker: string | null;
   /** The worker may post in the task's updates thread (2026-11-11): anything but a cancelled task. */
   canPostUpdate: boolean;
   /** Posts in the updates thread so far. */
@@ -150,8 +152,7 @@ export function WorkerTasksTable({
             <TR className="border-0">
               <TH className={th}>Task</TH>
               <TH className={th}>Link</TH>
-              <TH className={th}>Given</TH>
-              <TH className={th}>Progress</TH>
+              <TH className={th}>Time &amp; progress</TH>
               <TH className={th}>Analytics</TH>
               <TH className={th}>You earn</TH>
               <TH className={th}>Status</TH>
@@ -174,11 +175,12 @@ export function WorkerTasksTable({
                 <TD className={cn(EDGE, "max-w-[240px] py-3")}>
                   <ChannelCell task={task} />
                 </TD>
-                <TD className={cn(EDGE, "whitespace-nowrap py-3")}>
-                  <GivenCell assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} />
-                </TD>
-                <TD className={cn(EDGE, "min-w-40 py-3")}>
-                  <ProgressCell task={task} />
+                {/* Time since it was given, prominent, with progress under it (owner request, 2026-11-13). */}
+                <TD className={cn(EDGE, "min-w-48 py-3")}>
+                  <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} showDate />
+                  <div className="mt-2">
+                    <ProgressCell task={task} />
+                  </div>
                 </TD>
                 <TD className={cn(EDGE, "whitespace-nowrap py-3")}>
                   {task.studioUrl ? (
@@ -224,7 +226,7 @@ export function WorkerTasksTable({
                         {task.canPostUpdate && !task.finished ? (
                           <CantContinueTrigger sent={task.hasWithdrawRequest} onClick={() => cantContinue(task)} className="h-8 px-2.5" />
                         ) : null}
-                        {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-8 px-3" /> : null}
+                        {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} blocker={task.completeBlocker} className="h-8 px-3" /> : null}
                       </>
                     )}
                     <button
@@ -302,9 +304,13 @@ function TaskCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[15px] font-semibold text-zinc-900">{task.serviceName}</p>
-          <p className="text-xs tabular-nums text-zinc-500">Order #{task.orderNumber}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-xs tabular-nums text-zinc-500">Order #{task.orderNumber}</span>
+            <StatusBadge tone={task.statusTone} label={task.statusLabel} className="px-2 py-0.5" />
+          </div>
         </div>
-        <StatusBadge tone={task.statusTone} label={task.statusLabel} className="shrink-0 px-2 py-0.5" />
+        {/* How long since it was given, top right where it's seen first (owner request, 2026-11-13). */}
+        <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} className="shrink-0" />
       </div>
 
       {task.channel ? (
@@ -329,8 +335,7 @@ function TaskCard({
         </div>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <GivenAgo assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} />
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2">
           {task.studioUrl ? (
             <a
@@ -359,7 +364,7 @@ function TaskCard({
           {/* Post update sits beside the next step, both full size (2026-11-11). */}
           <div className={cn("relative mt-3 grid gap-2", task.canComplete && "grid-cols-2")}>
             <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} className="h-11 w-full text-sm" />
-            {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} className="h-11 w-full text-sm" /> : null}
+            {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} blocker={task.completeBlocker} className="h-11 w-full text-sm" /> : null}
           </div>
           {task.canPostUpdate && !task.finished ? (
             <div className="relative mt-2 grid grid-cols-2 gap-2">
@@ -370,19 +375,6 @@ function TaskCard({
         </>
       )}
     </li>
-  );
-}
-
-/** "Given 3h ago" on one line, for the phone card. */
-function GivenAgo({ assignedAt, finishedAt }: { assignedAt: Date | null; finishedAt: Date | null }) {
-  const now = useNowMinute();
-  if (!assignedAt || now === null) return <span />;
-  const start = new Date(assignedAt).getTime();
-  return (
-    <span className="inline-flex items-center gap-1 text-xs tabular-nums text-zinc-500">
-      <Hourglass aria-hidden="true" className="size-3" />
-      {finishedAt ? `Took ${formatDuration(new Date(finishedAt).getTime() - start)}` : `Given ${formatDuration(now - start)} ago`}
-    </span>
   );
 }
 
@@ -416,20 +408,39 @@ function ChannelCell({ task }: { task: WorkerTaskRow }) {
   );
 }
 
-/** When the task was given to the worker, and how long ago (or how long it took, once done). */
-function GivenCell({ assignedAt, finishedAt }: { assignedAt: Date | null; finishedAt: Date | null }) {
+/**
+ * How long since the task was given, big and easy to spot (owner request,
+ * 2026-11-13); once done, how long it took. `showDate` adds when it was given.
+ */
+function Elapsed({
+  assignedAt,
+  finishedAt,
+  showDate = false,
+  className,
+}: {
+  assignedAt: Date | null;
+  finishedAt: Date | null;
+  showDate?: boolean;
+  className?: string;
+}) {
   const now = useNowMinute();
-  if (!assignedAt) return <span className="text-zinc-400">—</span>;
+  if (!assignedAt) return showDate ? <span className="text-zinc-400">—</span> : null;
   const start = new Date(assignedAt).getTime();
+  const ms = finishedAt ? new Date(finishedAt).getTime() - start : now !== null ? now - start : null;
   return (
-    <div>
-      <span className="block text-[13px] text-zinc-800">{formatDeadlineDate(assignedAt)}</span>
-      {now !== null ? (
-        <span className="mt-0.5 flex items-center gap-1 text-xs tabular-nums text-zinc-500">
-          <Hourglass aria-hidden="true" className="size-3" />
-          {finishedAt ? `took ${formatDuration(new Date(finishedAt).getTime() - start)}` : `${formatDuration(now - start)} ago`}
-        </span>
-      ) : null}
+    <div className={cn("text-right md:text-left", className)}>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 ring-1 ring-inset",
+          finishedAt ? "bg-zinc-50 text-zinc-800 ring-zinc-200" : "bg-indigo-50 text-indigo-950 ring-indigo-200/80",
+        )}
+        title={`Given ${formatDeadlineDate(assignedAt)}`}
+      >
+        <Hourglass aria-hidden="true" className={cn("size-3.5", finishedAt ? "text-zinc-400" : "text-indigo-500")} />
+        <span className="text-[15px] font-semibold leading-none tabular-nums">{ms !== null ? formatDuration(ms) : "—"}</span>
+        <span className={cn("text-[11px] leading-none", finishedAt ? "text-zinc-500" : "text-indigo-700/80")}>{finishedAt ? "taken" : "elapsed"}</span>
+      </span>
+      {showDate ? <span className="mt-1 block text-xs text-zinc-500">Given {formatDeadlineDate(assignedAt)}</span> : null}
     </div>
   );
 }
@@ -510,7 +521,7 @@ function TaskSummary({ task, onClose, onShowAll }: { task: WorkerTaskRow; onClos
 
         <div className="grid grid-cols-2 gap-4">
           <Detail icon={Hourglass} label="Given">
-            <GivenCell assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} />
+            <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} showDate className="text-left" />
           </Detail>
           <Detail icon={Wallet} label="You earn">
             <Earnings label={task.earningsLabel} />
@@ -525,7 +536,7 @@ function TaskSummary({ task, onClose, onShowAll }: { task: WorkerTaskRow; onClos
         <div className="flex items-center gap-2">
           {task.canAccept ? <RejectTaskButton itemId={task.id} serviceName={task.serviceName} /> : null}
           {task.canAccept ? <AcceptItemsButton itemIds={[task.id]} size="md" /> : null}
-          {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} /> : null}
+          {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} blocker={task.completeBlocker} /> : null}
           {!task.canAccept && !task.canComplete ? <span className="text-xs text-zinc-500">{task.statusLabel}</span> : null}
         </div>
       </div>
@@ -587,7 +598,7 @@ function TaskDetails({
 
         <div className="grid grid-cols-2 gap-4">
           <Detail icon={Hourglass} label="Given">
-            <GivenCell assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} />
+            <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} showDate className="text-left" />
           </Detail>
           <Detail icon={CalendarClock} label="Deadline">
             {task.deadline ? (
@@ -684,7 +695,7 @@ function TaskDetails({
             <>
               {task.canPostUpdate && !task.finished ? <AskScreenshotsTrigger waiting={task.hasOpenRequest} onClick={onAsk} /> : null}
               <UpdatesTrigger count={task.updateCount} canPost={task.canPostUpdate} onClick={onUpdates} />
-              {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} /> : null}
+              {task.canComplete ? <CompleteTaskButton itemId={task.id} refill={task.isRefill} blocker={task.completeBlocker} /> : null}
             </>
           )}
         </div>

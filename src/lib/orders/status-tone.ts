@@ -13,6 +13,7 @@ export const ORDER_STATUS_TONE: Record<OrderStatus, StatusTone> = {
   COMPLETED: "done",
   DELIVERED: "done",
   FINALIZED: "neutral",
+  IN_REVISION: "warning",
   CANCELLED: "danger",
 };
 

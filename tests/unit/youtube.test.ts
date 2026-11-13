@@ -6,6 +6,7 @@ import {
   kindMismatch,
   metricValueFrom,
   parseYoutubeLink,
+  readableChannelLink,
   studioAnalyticsUrl,
   youtubeKindFor,
 } from "@/lib/youtube/link";
@@ -122,7 +123,7 @@ describe("YouTube API responses", () => {
     });
     expect(result).toEqual({
       ok: true,
-      data: { kind: "CHANNEL", id: CHANNEL, title: "My Channel", channelId: CHANNEL, channelTitle: "My Channel", subscribers: 12300, views: 456789, likes: null, comments: null },
+      data: { kind: "CHANNEL", id: CHANNEL, title: "My Channel", channelId: CHANNEL, channelTitle: "My Channel", handle: null, subscribers: 12300, views: 456789, likes: null, comments: null },
     });
   });
 
@@ -181,5 +182,28 @@ describe("YouTube stats settings", () => {
     expect(formatInterval(24)).toBe("day");
     expect(formatInterval(72)).toBe("3 days");
     expect(formatInterval(168)).toBe("week");
+  });
+});
+
+describe("channel links shown as the @handle (2026-11-12)", () => {
+  it("reads the handle from a channel response", () => {
+    const result = parseYoutubeResponse("CHANNEL", {
+      items: [{ id: "UCy-i8IvDtFI7Lrpd-aev2-Q", snippet: { title: "Courtnie", customUrl: "@courtniecotterell" }, statistics: {} }],
+    });
+    expect(result).toMatchObject({ ok: true, data: { id: "UCy-i8IvDtFI7Lrpd-aev2-Q", handle: "courtniecotterell" } });
+  });
+  it("ignores an old custom name that isn't a handle", () => {
+    const result = parseYoutubeResponse("CHANNEL", { items: [{ id: "UCy-i8IvDtFI7Lrpd-aev2-Q", snippet: { customUrl: "oldname" } }] });
+    expect(result).toMatchObject({ ok: true, data: { handle: null } });
+  });
+  it("turns a /channel/UC… link into the handle link", () => {
+    expect(readableChannelLink("https://www.youtube.com/channel/UCy-i8IvDtFI7Lrpd-aev2-Q", "courtniecotterell")).toBe(
+      "https://www.youtube.com/@courtniecotterell",
+    );
+  });
+  it("leaves handle links, videos and unknown handles alone", () => {
+    expect(readableChannelLink("https://www.youtube.com/@courtniecotterell", "courtniecotterell")).toBeNull();
+    expect(readableChannelLink("https://youtu.be/dQw4w9WgXcQ", "someone")).toBeNull();
+    expect(readableChannelLink("https://www.youtube.com/channel/UCy-i8IvDtFI7Lrpd-aev2-Q", null)).toBeNull();
   });
 });

@@ -11,7 +11,7 @@ import { SERVICE_METRIC_TYPE_LABELS, type ServiceMetricType } from "@/lib/servic
 import { serviceLabel } from "@/lib/services/label";
 import { getYoutubeStatsSettings } from "@/lib/settings/queries";
 import { lookupYoutube, type YoutubeLookup } from "./api";
-import { countsAfterReading, kindMismatch, metricValueFrom, parseYoutubeLink } from "./link";
+import { countsAfterReading, kindMismatch, metricValueFrom, parseYoutubeLink, readableChannelLink } from "./link";
 
 /**
  * Public YouTube stats for order items (owner request, 2026-11-10):
@@ -111,6 +111,7 @@ export async function refreshItemStats(itemId: string, options: RefreshOptions):
     (await prisma.orderItemStatSnapshot.count({ where: { orderItemId: item.id, sourceId: data.id } })) === 0;
   const counts = countsAfterReading(item, value, isFirstReading);
   const trigger: StatSnapshotTrigger = isFirstReading ? "INITIAL" : options.trigger;
+  const readableLink = readableChannelLink(item.channelLink, data.handle);
 
   const written = await runTransaction(async (tx) => {
     await tx.orderItemStatSnapshot.create({
@@ -132,6 +133,8 @@ export async function refreshItemStats(itemId: string, options: RefreshOptions):
       data: {
         statsSourceId: data.id,
         statsSourceKind: data.kind,
+        // A /channel/UC… link is shown as the channel's @handle link; the id stays in statsSourceId (2026-11-12).
+        ...(readableLink ? { channelLink: readableLink } : {}),
         statsTitle: data.title.slice(0, 300),
         statsFetchedAt: checkedAt,
         statsCheckedAt: checkedAt,

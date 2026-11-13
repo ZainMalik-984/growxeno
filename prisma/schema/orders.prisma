@@ -70,6 +70,9 @@ enum OrderStatus {
   COMPLETED
   DELIVERED
   FINALIZED
+  /// The customer asked for changes after completion or delivery (owner
+  /// request, 2026-11-13). Set by an admin; back to DELIVERED when redone.
+  IN_REVISION
   CANCELLED
 }
 
@@ -336,6 +339,12 @@ model OrderItem {
   /// docs/REQUIREMENTS.md D5); cleared when a done item is sent to REFILL.
   /// Reports and Finance range on this instead of `updatedAt`, which moves on any edit.
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  /// The team accepted the worker's delivery (owner request, 2026-11-12):
+  /// only then does a done item count toward the worker's balance. Cleared
+  /// whenever the status changes (a refill, or done again needs a new check).
+  deliveryAcceptedAt   DateTime? @map("delivery_accepted_at") @db.Timestamptz(6)
+  deliveryAcceptedById String?   @map("delivery_accepted_by_id") @db.Uuid
 
   /// Public stats pulled from the platform for `channelLink` (owner request,
   /// 2026-11-10; YouTube only so far, see src/lib/youtube/). The resolved

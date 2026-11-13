@@ -19,6 +19,7 @@ vi.mock("@/lib/orders/actions", () => ({
   changeOrderItemStatusAction: (input: { itemId: string; status: string }) => changeStatus(input),
   rejectTaskAction: (input: { itemId: string; reason: string }) => rejectTask(input),
 }));
+vi.mock("@/lib/youtube/actions", () => ({ refreshOrderItemStatsAction: vi.fn(async () => ({ ok: true, message: "" })) }));
 const getUpdates = vi.fn(async (input: { itemId: string }) => ({
   ok: true as const,
   thread: {
@@ -76,6 +77,7 @@ function row(overrides: Partial<WorkerTaskRow>): WorkerTaskRow {
     isRefill: false,
     canAccept: true,
     canComplete: false,
+    completeBlocker: null,
     canPostUpdate: true,
     updateCount: 0,
     hasOpenRequest: false,
@@ -113,9 +115,12 @@ describe("WorkerTasksTable", () => {
     render(<WorkerTasksTable rows={[row({})]} />);
     expect(table().getByText("MrBeast")).toBeInTheDocument();
     expect(table().getByText("youtube.com/@MrBeast")).toBeInTheDocument();
-    expect(table().getByRole("columnheader", { name: "Given" })).toBeInTheDocument();
+    // Time since given sits right after Link, with progress under it (2026-11-13).
+    const headers = table().getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers.indexOf("Time & progress")).toBe(headers.indexOf("Link") + 1);
     expect(table().queryByRole("columnheader", { name: "Deadline" })).toBeNull();
-    expect(table().getByText(/(2h 59m|3h 0m) ago/)).toBeInTheDocument();
+    expect(table().getByText(/^(2h 59m|3h 0m)$/)).toBeInTheDocument();
+    expect(table().getByText("elapsed")).toBeInTheDocument();
   });
 
   it("offers Accept on a pending task and Complete (with a confirm) on a processing one", async () => {
@@ -135,6 +140,13 @@ describe("WorkerTasksTable", () => {
     expect(changeStatus).toHaveBeenCalledTimes(1);
     await user.click(table().getByRole("button", { name: /Confirm/ }));
     expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "b", status: "DONE" });
+  });
+
+  it("keeps Complete off until YouTube shows the target, with a way to check again", () => {
+    const blocker = "YouTube shows 1,120 of 3,170 subscribers, 2,050 to go.";
+    render(<WorkerTasksTable rows={[row({ id: "b", statusLabel: "Processing", canAccept: false, canComplete: true, completeBlocker: blocker })]} />);
+    expect(table().getByRole("button", { name: /Complete/ })).toBeDisabled();
+    expect(table().getByRole("button", { name: "Check the count on YouTube again" })).toBeEnabled();
   });
 
   it("opens the task's updates from a prominent Post update button, with the count so far", async () => {
@@ -234,7 +246,8 @@ describe("WorkerTasksTable", () => {
       expect(card.getByText("MrBeast")).toBeInTheDocument();
       expect(card.getByText(/subscribers delivered/).closest("p")).toHaveTextContent("500 / 5,000 subscribers delivered · now 1,500");
       expect(card.getByText("250.00 PKR")).toBeInTheDocument();
-      expect(card.getByText(/Given (2h 59m|3h 0m) ago/)).toBeInTheDocument();
+      expect(card.getByText(/^(2h 59m|3h 0m)$/)).toBeInTheDocument();
+      expect(card.getByText("elapsed")).toBeInTheDocument();
       await user.click(card.getByRole("button", { name: /^Accept$/ }));
       expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "m", status: "PROCESSING" });
     });

@@ -13,8 +13,9 @@ import type { OrderItemStatus, OrderStatus } from "@/generated/prisma/client";
  *         DONE → (admin) REFILL → (worker) DONE;  any → (admin) CANCELLED
  * Orders: PENDING / ASSIGNED / PROCESSING / PARTIALLY_COMPLETED / COMPLETED
  *         are calculated from the items (`deriveOrderStatus`) — nobody sets
- *         them. An admin then moves COMPLETED → DELIVERED → FINALIZED, and
- *         can mark any open order Refunded / Cancelled.
+ *         them. An admin then moves COMPLETED → DELIVERED → FINALIZED, can
+ *         send any of those three to IN_REVISION (back to DELIVERED when the
+ *         changes are done), and can mark any open order Refunded / Cancelled.
  */
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ export const CALCULATED_ORDER_STATUSES: readonly OrderStatus[] = [
 ];
 
 /** Set by an admin; once there, the order no longer follows its items. */
-export const MANUAL_ORDER_STATUSES: readonly OrderStatus[] = ["DELIVERED", "FINALIZED", "CANCELLED"];
+export const MANUAL_ORDER_STATUSES: readonly OrderStatus[] = ["DELIVERED", "FINALIZED", "IN_REVISION", "CANCELLED"];
 
 /** The order is closed: delivered, finalized or refunded/cancelled. */
 export const CLOSED_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "FINALIZED", "CANCELLED"];
@@ -91,10 +92,12 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   ASSIGNED: ["CANCELLED"],
   PROCESSING: ["CANCELLED"],
   PARTIALLY_COMPLETED: ["CANCELLED"],
-  COMPLETED: ["DELIVERED", "CANCELLED"],
-  DELIVERED: ["FINALIZED", "CANCELLED"],
+  // Revision once it's done or delivered, even finalized (owner request, 2026-11-13).
+  COMPLETED: ["DELIVERED", "IN_REVISION", "CANCELLED"],
+  DELIVERED: ["FINALIZED", "IN_REVISION", "CANCELLED"],
   // Refund after finalizing is still possible.
-  FINALIZED: ["CANCELLED"],
+  FINALIZED: ["IN_REVISION", "CANCELLED"],
+  IN_REVISION: ["DELIVERED", "CANCELLED"],
   CANCELLED: [],
 };
 
@@ -135,6 +138,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   COMPLETED: "Completed",
   DELIVERED: "Delivered",
   FINALIZED: "Finalized",
+  IN_REVISION: "In revision",
   CANCELLED: "Refunded / Cancelled",
 };
 

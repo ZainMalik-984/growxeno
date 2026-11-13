@@ -23,8 +23,13 @@ import type { Bucket } from "./range";
  */
 
 const TOP_N = 15;
-const RECOGNIZED = Prisma.sql`status IN ('DELIVERED', 'FINALIZED') AND refunded = false`;
-const RECOGNIZED_WHERE = { status: { in: ["DELIVERED", "FINALIZED"] as ("DELIVERED" | "FINALIZED")[] }, refunded: false };
+// IN_REVISION: delivered before, sent back for changes (2026-11-13); its revenue still counts.
+const RECOGNIZED = Prisma.sql`status IN ('DELIVERED', 'FINALIZED', 'IN_REVISION') AND refunded = false AND delivered_at IS NOT NULL`;
+const RECOGNIZED_WHERE = {
+  status: { in: ["DELIVERED", "FINALIZED", "IN_REVISION"] as ("DELIVERED" | "FINALIZED" | "IN_REVISION")[] },
+  refunded: false,
+  deliveredAt: { not: null },
+};
 const EARNED_STATUSES = ["DONE", "CANCELLED"] as ("DONE" | "CANCELLED")[];
 const OPEN_STATUSES = ["PENDING", "PROCESSING", "REFILL"] as ("PENDING" | "PROCESSING" | "REFILL")[];
 

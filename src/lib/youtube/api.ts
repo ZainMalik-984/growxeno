@@ -1,3 +1,4 @@
+import { YOUTUBE_NOT_FOUND } from "./link";
 import type { YoutubeLinkTarget, YoutubeStats } from "./link";
 
 /**
@@ -15,6 +16,8 @@ export type YoutubeLookup = YoutubeStats & {
   /** The channel the video belongs to (same as `id` for a channel). */
   channelId: string;
   channelTitle: string;
+  /** The channel's @handle without the @, when YouTube gives one (channels only). */
+  handle: string | null;
 };
 
 export type YoutubeLookupResult = { ok: true; data: YoutubeLookup } | { ok: false; error: string };
@@ -31,7 +34,7 @@ function count(value: unknown): number | null {
 
 type ApiItem = {
   id?: string;
-  snippet?: { title?: string; channelId?: string; channelTitle?: string };
+  snippet?: { title?: string; channelId?: string; channelTitle?: string; customUrl?: string };
   statistics?: Record<string, unknown>;
 };
 
@@ -39,7 +42,7 @@ type ApiItem = {
 export function parseYoutubeResponse(kind: "CHANNEL" | "VIDEO", body: unknown): YoutubeLookupResult {
   const item = (body as { items?: ApiItem[] } | null)?.items?.[0];
   if (!item?.id) {
-    return { ok: false, error: kind === "CHANNEL" ? "No YouTube channel found for that link." : "No YouTube video found for that link (it may be private or deleted)." };
+    return { ok: false, error: YOUTUBE_NOT_FOUND[kind] };
   }
   const stats = item.statistics ?? {};
   const title = item.snippet?.title?.trim() || item.id;
@@ -52,6 +55,8 @@ export function parseYoutubeResponse(kind: "CHANNEL" | "VIDEO", body: unknown): 
         title,
         channelId: item.id,
         channelTitle: title,
+        // customUrl is "@handle" on today's channels; older custom names have no @ and aren't handles.
+        handle: item.snippet?.customUrl?.startsWith("@") ? item.snippet.customUrl.slice(1) : null,
         // Hidden subscriber counts come back as hiddenSubscriberCount: true and no number.
         subscribers: stats.hiddenSubscriberCount === true ? null : count(stats.subscriberCount),
         views: count(stats.viewCount),
@@ -68,6 +73,7 @@ export function parseYoutubeResponse(kind: "CHANNEL" | "VIDEO", body: unknown): 
       title,
       channelId: item.snippet?.channelId ?? "",
       channelTitle: item.snippet?.channelTitle?.trim() ?? "",
+      handle: null,
       subscribers: null,
       views: count(stats.viewCount),
       // Absent when the owner hides likes or turns comments off.

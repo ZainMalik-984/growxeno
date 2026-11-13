@@ -20,7 +20,10 @@ export type WorkerTask = {
   orderId: string;
   orderNumber: number;
   serviceName: string;
+  categoryName: string;
   metricType: ServiceMetricType | null;
+  /** The team accepted this done task's delivery (2026-11-12). */
+  deliveryAccepted: boolean;
   status: OrderItemStatus;
   description: string | null;
   channelLink: string | null;
@@ -102,6 +105,7 @@ export async function listWorkerTasks(
         statsSourceKind: true,
         assignedAt: true,
         finishedAt: true,
+        deliveryAcceptedAt: true,
         deadline: true,
         createdAt: true,
         currentCount: true,
@@ -140,7 +144,9 @@ export async function listWorkerTasks(
       orderId: item.orderId,
       orderNumber: item.order.orderNumber,
       serviceName: serviceLabel(item.service.name, item.category.name),
+      categoryName: item.category.name,
       metricType,
+      deliveryAccepted: item.deliveryAcceptedAt !== null,
       status: item.status,
       description: item.description,
       channelLink: item.channelLink,

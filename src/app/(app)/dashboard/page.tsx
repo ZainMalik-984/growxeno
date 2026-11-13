@@ -16,7 +16,7 @@ import { countCustomers } from "@/lib/customers/queries";
 import { getBusinessOverview, thisMonthRangeUtc, type AttentionRow } from "@/lib/dashboard/queries";
 import { getEmployeeCommission, getMyWorkSummary } from "@/lib/employees/queries";
 import { formatPay } from "@/lib/finance/format-pay";
-import { getFinanceSummary, getWorkerEarnings } from "@/lib/finance/queries";
+import { getFinanceSummary, getWorkerEarnings, type WorkerEarnings } from "@/lib/finance/queries";
 import { getNewInquiriesSummary } from "@/lib/inquiries/queries";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_VALUES, ORDER_ITEM_STATUS_LABELS } from "@/lib/orders/state-machine";
 import { ITEM_STATUS_TONE, ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
@@ -240,7 +240,7 @@ export default async function DashboardPage() {
               <WorkloadLines workload={workload} className="px-4 pb-5 sm:px-5" />
             </Panel>
           ) : null}
-          {earnings ? <EarningsPanel earnings={earnings} tasks={workerTasks?.tasks ?? []} /> : null}
+          {earnings ? <EarningsPanel earnings={earnings} /> : null}
 
           {month ? (
             <Panel title="This month" description={`${month.recognizedOrderCount} ${month.recognizedOrderCount === 1 ? "order" : "orders"} delivered`} action={<PanelLink href="/finance">Finance</PanelLink>}>
@@ -452,31 +452,25 @@ function TaskItem({ task, now }: { task: WorkerTask; now: number }) {
   );
 }
 
-/** A worker's money: what they're still owed, what they've earned and been paid, and what open tasks will add. */
-function EarningsPanel({
-  earnings,
-  tasks,
-}: {
-  earnings: { earnedByCurrency: Record<string, number>; paidByCurrency: Record<string, number>; outstandingByCurrency: Record<string, number> };
-  tasks: WorkerTask[];
-}) {
-  const inProgress: Record<string, number> = {};
-  for (const task of tasks) {
-    if (!task.workerCost) continue;
-    inProgress[task.workerCostCurrency] = (inProgress[task.workerCostCurrency] ?? 0) + Number(task.workerCost);
-  }
+/**
+ * A worker's money (owner's rule, 2026-11-12): the balance is only what the
+ * team has confirmed (see workerPayStage); work marked done but not yet
+ * confirmed, and work still in progress, are shown apart from it.
+ */
+function EarningsPanel({ earnings }: { earnings: WorkerEarnings }) {
   const owed = Object.entries(earnings.outstandingByCurrency).filter(([, amount]) => amount !== 0);
   return (
-    <Panel title="Your earnings" description="From finished tasks, before and after payment.">
+    <Panel title="Your earnings" description="Counted once the team accepts your delivery.">
       <div className="px-4 pb-5 sm:px-5">
-        <p className="text-[13px] font-medium text-zinc-500">To be paid</p>
+        <p className="text-[13px] font-medium text-zinc-500">Available balance</p>
         <p className="mt-1 text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-zinc-900">
           {owed.length > 0 ? owed.map(([currency, amount]) => formatPay(amount, currency)).join(" + ") : "Nothing owed"}
         </p>
         <dl className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
           <MoneyRow label="Earned" values={earnings.earnedByCurrency} />
           <MoneyRow label="Paid" values={earnings.paidByCurrency} />
-          <MoneyRow label="In open tasks" values={inProgress} muted />
+          <MoneyRow label="Awaiting confirmation" values={earnings.awaitingByCurrency} muted />
+          <MoneyRow label="In progress" values={earnings.inProgressByCurrency} muted />
         </dl>
       </div>
     </Panel>

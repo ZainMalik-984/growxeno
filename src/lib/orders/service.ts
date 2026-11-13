@@ -15,6 +15,7 @@ import { notifyEveryoneOnItem } from "@/lib/order-updates/service";
 import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { isAssignedToIdentity } from "./assignment";
 import { computeAssignmentCost } from "./rate";
+import { completionBlocker } from "./completion";
 import {
   canTransitionItem,
   canTransitionOrder,
@@ -23,7 +24,8 @@ import {
   ORDER_STATUS_LABELS,
 } from "./state-machine";
 import { normalizeUrl, safeExternalHref } from "./url-normalize";
-import { linkFieldFor } from "@/lib/services/link-field";
+import { linkFieldFor, platformOf } from "@/lib/services/link-field";
+import { youtubeLinkProblem } from "@/lib/youtube/link";
 import { serviceLabel } from "@/lib/services/label";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { syncWorkerDeadlines } from "./worker-deadline-sync";
@@ -273,7 +275,7 @@ export async function changeOrderStatus(
   return runTransaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
-      select: { orderNumber: true, status: true },
+      select: { orderNumber: true, status: true, deliveredAt: true },
     });
     if (!order) throw new ServiceRejection("That order no longer exists.");
 
@@ -290,8 +292,9 @@ export async function changeOrderStatus(
       where: { id: orderId },
       data: {
         status: targetStatus,
-        // Revenue recognition point (docs/REQUIREMENTS.md D4).
-        ...(targetStatus === "DELIVERED" ? { deliveredAt: new Date() } : {}),
+        // Revenue recognition point (docs/REQUIREMENTS.md D4). Delivering again
+        // after a revision keeps the first delivery date, so revenue doesn't move.
+        ...(targetStatus === "DELIVERED" && !order.deliveredAt ? { deliveredAt: new Date() } : {}),
       },
     });
 
@@ -349,6 +352,11 @@ function resolveMetricFields(
   if (!channelLink) throw new ServiceRejection(`"${service.name}" needs a ${noun} link.`);
   if (!safeExternalHref(channelLink)) {
     throw new ServiceRejection(`Enter a valid ${noun} link, including https://.`);
+  }
+  // A YouTube service only takes a real channel or video link (2026-11-12).
+  if (platformOf(service.category?.name) === "youtube") {
+    const problem = youtubeLinkProblem(service.metricType as ServiceMetricType, channelLink);
+    if (problem) throw new ServiceRejection(problem);
   }
   if (input.targetCount === null || input.targetCount === undefined) {
     throw new ServiceRejection(`"${service.name}" needs how many are required.`);
@@ -441,7 +449,7 @@ export async function updateOrderItem(
 
     const service = await tx.service.findUnique({
       where: { id: input.serviceId },
-      select: { id: true, name: true, categoryId: true, metricType: true },
+      select: { id: true, name: true, categoryId: true, metricType: true, category: { select: { name: true } } },
     });
     if (!service) throw new ServiceRejection("That service no longer exists.");
 
@@ -721,8 +729,11 @@ export async function changeOrderItemStatus(
         status: true,
         workerId: true,
         outsourcedWorkerId: true,
+        currentCount: true,
+        targetCount: true,
         order: { select: { orderNumber: true } },
-        service: { select: { name: true } },
+        service: { select: { name: true, metricType: true } },
+        category: { select: { name: true } },
         outsourcedWorker: { select: { userId: true } },
       },
     });
@@ -746,10 +757,25 @@ export async function changeOrderItemStatus(
     if (targetStatus === "PROCESSING" && !item.outsourcedWorkerId && !item.workerId) {
       throw new ServiceRejection("Assign a worker to this item before it can be accepted.");
     }
+    // A worker can only mark a YouTube count done once YouTube shows the target (2026-11-12).
+    // The action reads YouTube just before this, so currentCount is fresh.
+    if (targetStatus === "DONE" && actingAsAssignedWorkerOnly) {
+      const blocker = completionBlocker({
+        metricType: item.service.metricType as ServiceMetricType | null,
+        categoryName: item.category.name,
+        currentCount: item.currentCount,
+        targetCount: item.targetCount,
+      });
+      if (blocker) throw new ServiceRejection(`${blocker} You can mark it done once it reaches the target.`);
+    }
 
     // finishedAt marks the two "earned" states (D5); a done item sent to Refill clears it.
     const finishedAt = targetStatus === "DONE" || targetStatus === "CANCELLED" ? new Date() : null;
-    await tx.orderItem.update({ where: { id: itemId }, data: { status: targetStatus, finishedAt } });
+    // Any status change needs the delivery accepted again (a refill, or done once more).
+    await tx.orderItem.update({
+      where: { id: itemId },
+      data: { status: targetStatus, finishedAt, deliveryAcceptedAt: null, deliveryAcceptedById: null },
+    });
 
     const summary = `${actor.user.fullName} changed the item status of "${item.service.name}" on order #${item.order.orderNumber} from ${ORDER_ITEM_STATUS_LABELS[item.status]} to ${ORDER_ITEM_STATUS_LABELS[targetStatus]}`;
     await logActivity(tx, item.orderId, actor, "order_item.status_changed", summary);
@@ -783,6 +809,68 @@ export async function changeOrderItemStatus(
       );
     }
     await refreshOrderStatus(tx, item.orderId, actor);
+  });
+}
+
+/**
+ * The team accepts a worker's delivery (owner request, 2026-11-12): until
+ * then a done item shows as "Awaiting confirmation" for the worker and isn't
+ * in their balance. Team only (`orders.view.all`); the item must be Done.
+ */
+export async function acceptItemDelivery(actor: Actor, itemId: string): Promise<ServiceResult> {
+  if (!actor.permissions.has("orders.view.all")) return failure("Only the team can accept a delivery.");
+  return runTransaction(async (tx) => {
+    const item = await tx.orderItem.findUnique({
+      where: { id: itemId },
+      select: {
+        orderId: true,
+        status: true,
+        deliveryAcceptedAt: true,
+        workerCost: true,
+        workerCostCurrency: true,
+        order: { select: { orderNumber: true } },
+        service: { select: { name: true } },
+        category: { select: { name: true } },
+        outsourcedWorker: { select: { name: true, userId: true } },
+      },
+    });
+    if (!item) throw new ServiceRejection("That item no longer exists.");
+    if (item.status !== "DONE") throw new ServiceRejection("Only a done item's delivery can be accepted.");
+    if (item.deliveryAcceptedAt) throw new ServiceRejection("This delivery is already accepted.");
+
+    await tx.orderItem.update({ where: { id: itemId }, data: { deliveryAcceptedAt: new Date(), deliveryAcceptedById: actor.user.id } });
+
+    const label = serviceLabel(item.service.name, item.category.name);
+    const summary = `${actor.user.fullName} accepted the delivery of "${label}" on order #${item.order.orderNumber}${item.outsourcedWorker ? ` from ${item.outsourcedWorker.name}` : ""}`;
+    await logActivity(tx, item.orderId, actor, "order_item.delivery_accepted", summary);
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "order_item.delivery_accepted",
+      entityType: "Order",
+      entityId: item.orderId,
+      summary,
+      newValue: { itemId },
+    });
+
+    if (item.outsourcedWorker?.userId) {
+      const pay = item.workerCost ? ` ${item.workerCost.toString()} ${item.workerCostCurrency} is now in your balance.` : "";
+      await emitNotificationEvent(
+        tx,
+        "ORDER_COMPLETED",
+        [
+          {
+            userId: item.outsourcedWorker.userId,
+            title: `Delivery accepted: ${label}`,
+            message: `Your work on "${label}" for order #${item.order.orderNumber} was accepted.${pay}`,
+            entityType: "Order",
+            entityId: item.orderId,
+            actionUrl: "/dashboard",
+          },
+        ],
+        { orderId: item.orderId, orderItemId: itemId },
+      );
+    }
   });
 }
 
@@ -1150,7 +1238,7 @@ export async function reassignRemainder(
     await tx.orderItem.update({
       where: { id: item.id },
       data: completed
-        ? { status: "DONE", targetCount: now, finishedAt: new Date(), workerCost: previousCost }
+        ? { status: "DONE", targetCount: now, finishedAt: new Date(), workerCost: previousCost, deliveryAcceptedAt: new Date(), deliveryAcceptedById: actor.user.id }
         : { status: "CANCELLED", finishedAt: new Date(), workerCost: previousCost },
     });
 

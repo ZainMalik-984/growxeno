@@ -6,6 +6,7 @@ import { z } from "zod";
 import { authorizeAction } from "@/lib/auth/authorize";
 import { canChangeWholeOrderStatus } from "./visibility";
 import {
+  acceptItemDelivery,
   addOrderItem,
   addOrderItemLink,
   addOrderNote,
@@ -23,7 +24,7 @@ import {
   reassignRemainder,
   rejectTask,
 } from "./service";
-import { readStatsAfterSave } from "@/lib/youtube/stats-service";
+import { readStatsAfterSave, refreshItemStats } from "@/lib/youtube/stats-service";
 import { prepareAssignmentMessages, type AssignmentMessageOutcome } from "./assignment-notify";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
@@ -337,8 +338,25 @@ export async function changeOrderItemStatusAction(input: unknown): Promise<Actio
   const auth = await authorizeAction("orders.change_status");
   if (!auth.ok) return { ok: false, error: auth.message };
 
+  // Marking done checks YouTube first (2026-11-12): read the latest count, then the service compares it to the target.
+  if (parsed.data.status === "DONE") {
+    await refreshItemStats(parsed.data.itemId, { trigger: "MANUAL", actor: auth.actor }).catch(() => undefined);
+  }
+
   const result = await changeOrderItemStatus(auth.actor, parsed.data.itemId, parsed.data.status);
   return result.ok ? { ok: true, message: "Item status updated." } : { ok: false, error: result.error };
+}
+
+/** The team accepts a worker's delivery, which puts its pay in their balance (2026-11-12). */
+export async function acceptItemDeliveryAction(input: unknown): Promise<ActionResult> {
+  const parsed = itemIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("orders.change_status");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await acceptItemDelivery(auth.actor, parsed.data.itemId);
+  return result.ok ? { ok: true, message: "Delivery accepted." } : { ok: false, error: result.error };
 }
 
 const updateItemProgressSchema = z.object({

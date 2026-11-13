@@ -1,4 +1,4 @@
-import { Check, CircleSlash, Zap } from "lucide-react";
+import { Check, CircleSlash, RotateCcw, Zap } from "lucide-react";
 
 import type { OrderStatus } from "@/generated/prisma/client";
 import { CALCULATED_ORDER_STATUSES } from "@/lib/orders/state-machine";
@@ -21,7 +21,9 @@ const STEPS: ReadonlyArray<{ status: OrderStatus; label: string }> = [
 
 export function OrderStatusStepper({ status }: { status: OrderStatus }) {
   const isCancelled = status === "CANCELLED";
-  const currentIndex = STEPS.findIndex((s) => s.status === status);
+  // In revision (2026-11-13): back at Completed until it's delivered again.
+  const inRevision = status === "IN_REVISION";
+  const currentIndex = STEPS.findIndex((s) => s.status === (inRevision ? "COMPLETED" : status));
   const automatic = CALCULATED_ORDER_STATUSES.includes(status);
 
   return (
@@ -30,6 +32,12 @@ export function OrderStatusStepper({ status }: { status: OrderStatus }) {
         <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
           <CircleSlash aria-hidden="true" className="size-3.5" />
           This order was refunded or cancelled.
+        </p>
+      ) : null}
+      {inRevision ? (
+        <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+          <RotateCcw aria-hidden="true" className="size-3.5" />
+          In revision: the customer asked for changes.
         </p>
       ) : null}
 
