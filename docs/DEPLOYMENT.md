@@ -82,17 +82,21 @@ The YouTube stats refresh (docs/ENVIRONMENT.md) runs inside the server process o
 Vercel functions don't stay alive, so there:
 
 1. Set `YOUTUBE_API_KEY` and `CRON_SECRET` for Production.
-2. Add a `vercel.json` at the repository root:
+2. `vercel.json` at the repository root (committed, 2026-11-13) runs the end-of-day reading at
+   00:00 Pakistan time:
 
    ```json
-   { "crons": [{ "path": "/api/cron/youtube-stats", "schedule": "0 * * * *" }] }
+   { "crons": [{ "path": "/api/cron/youtube-stats?dayEnd=1", "schedule": "0 19 * * *" }] }
    ```
 
-   Vercel sends `Authorization: Bearer $CRON_SECRET` automatically. Hourly is enough — the interval
-   in Settings decides which items are due. **Hobby plans allow one cron run a day**; on Hobby use
-   `"0 6 * * *"` (or any external scheduler that sends the same header), or upgrade for hourly runs.
+   Vercel sends `Authorization: Bearer $CRON_SECRET` automatically. `dayEnd=1` reads every tracked
+   item and records it as the close of the Pakistan day that just ended (history keeps one row per
+   item per day). Hobby plans run a daily cron once a day, possibly up to an hour late; the reading
+   still lands on the previous day.
 
-Any other scheduler works the same way: `GET /api/cron/youtube-stats` with that header.
+Any other scheduler works the same way: `GET /api/cron/youtube-stats?dayEnd=1` with that header at
+19:00 UTC. Without `dayEnd=1` it refreshes only items due by the interval in Settings, each updating
+that day's row.
 
 ## 5. Security configuration (Phase 10)
 

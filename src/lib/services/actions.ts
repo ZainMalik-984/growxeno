@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { STAT_KEYS } from "./tracked-stats";
+
 import { authorizeAction } from "@/lib/auth/authorize";
 import { SERVICE_METRIC_TYPES } from "./metric-type";
 import {
@@ -28,6 +30,7 @@ const serviceInputSchema = z.object({
   // Which of the three growth metrics this service sells, if any (owner-directed
   // redesign, confirmed directly 2026-09-27) — see src/lib/services/metric-type.ts.
   metricType: z.enum(SERVICE_METRIC_TYPES).nullable().optional(),
+  trackedStats: z.array(z.enum(STAT_KEYS)).max(4).optional(),
 });
 
 export type CreateServiceActionResult =

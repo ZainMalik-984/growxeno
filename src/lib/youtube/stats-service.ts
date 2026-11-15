@@ -11,6 +11,8 @@ import { SERVICE_METRIC_TYPE_LABELS, type ServiceMetricType } from "@/lib/servic
 import { serviceLabel } from "@/lib/services/label";
 import { getYoutubeStatsSettings } from "@/lib/settings/queries";
 import { lookupYoutube, type YoutubeLookup } from "./api";
+import { effectiveTrackedStats, STAT_KEYS, type StatKey } from "@/lib/services/tracked-stats";
+import { statDayFor, statTakenAt } from "./stat-day";
 import { countsAfterReading, kindMismatch, metricValueFrom, parseYoutubeLink, readableChannelLink } from "./link";
 
 /**
@@ -34,7 +36,12 @@ const TRACKED_ITEM_STATUSES = ["PENDING", "PROCESSING", "DONE", "REFILL"] as con
 const FINISHED_ORDER_STATUSES = ["FINALIZED", "CANCELLED"] as const;
 
 /** Looks up a link for the New Order / item forms, before anything is saved. */
-export async function lookupYoutubeLink(url: string, metric: ServiceMetricType | null): Promise<ServiceResult<YoutubeLookup>> {
+export async function lookupYoutubeLink(
+  url: string,
+  metric: ServiceMetricType | null,
+  /** The service's switched-on stats (2026-11-13); others come back null. Omitted: everything. */
+  tracked?: readonly StatKey[],
+): Promise<ServiceResult<YoutubeLookup>> {
   const parsed = parseYoutubeLink(url);
   if (!parsed.ok) return failure(parsed.error);
   const mismatch = kindMismatch(metric, parsed.target);
@@ -42,11 +49,23 @@ export async function lookupYoutubeLink(url: string, metric: ServiceMetricType |
   const apiKey = getYoutubeApiKey();
   if (!apiKey) return failure(YOUTUBE_NOT_CONFIGURED);
   const result = await lookupYoutube(parsed.target, apiKey);
-  return result.ok ? { ok: true, data: result.data } : failure(result.error);
+  if (!result.ok) return failure(result.error);
+  if (!tracked) return { ok: true, data: result.data };
+
+  const data = { ...result.data };
+  // A video service following subscribers reads its channel too (one more request).
+  if (tracked.includes("subscribers") && data.kind === "VIDEO" && data.channelId) {
+    const channel = await lookupYoutube({ kind: "channel", channelId: data.channelId }, apiKey);
+    data.subscribers = channel.ok ? channel.data.subscribers : null;
+  }
+  for (const key of STAT_KEYS) if (!tracked.includes(key)) data[key] = null;
+  return { ok: true, data };
 }
 
 type RefreshOptions = {
   trigger: Exclude<StatSnapshotTrigger, "INITIAL">;
+  /** The 00:00 PKT end-of-day reading: recorded under the day that just ended (2026-11-13). */
+  dayEnd?: boolean;
   /** Who pressed Refresh; null for the scheduled refresh. */
   actor: Actor | null;
 };
@@ -76,7 +95,7 @@ export async function refreshItemStats(itemId: string, options: RefreshOptions):
       targetCount: true,
       workerId: true,
       outsourcedWorkerId: true,
-      service: { select: { name: true, metricType: true } },
+      service: { select: { name: true, metricType: true, trackedStats: true } },
       category: { select: { name: true } },
       order: { select: { orderNumber: true } },
     },
@@ -96,7 +115,9 @@ export async function refreshItemStats(itemId: string, options: RefreshOptions):
   }
 
   const metric = item.service.metricType as ServiceMetricType | null;
-  const lookup = await lookupYoutubeLink(item.channelLink, metric);
+  // Only the service's switched-on stats are read and kept (2026-11-13).
+  const tracked = effectiveTrackedStats(item.service.trackedStats, metric);
+  const lookup = await lookupYoutubeLink(item.channelLink, metric, tracked);
   const checkedAt = new Date();
 
   if (!lookup.ok) {
@@ -113,21 +134,40 @@ export async function refreshItemStats(itemId: string, options: RefreshOptions):
   const trigger: StatSnapshotTrigger = isFirstReading ? "INITIAL" : options.trigger;
   const readableLink = readableChannelLink(item.channelLink, data.handle);
 
+  // One history row per item per Pakistan day (owner request, 2026-11-13): a
+  // reading updates that day's row; the first reading keeps its own row.
+  const dayEnd = options.dayEnd === true;
+  const day = statDayFor(checkedAt, dayEnd);
+  const reading = {
+    trigger,
+    subscribers: data.subscribers !== null ? BigInt(data.subscribers) : null,
+    views: data.views !== null ? BigInt(data.views) : null,
+    likes: data.likes !== null ? BigInt(data.likes) : null,
+    comments: data.comments !== null ? BigInt(data.comments) : null,
+    triggeredById: actor?.user.id ?? null,
+    triggeredByLabel: actor?.user.fullName ?? null,
+    takenAt: statTakenAt(checkedAt, dayEnd),
+  };
+
   const written = await runTransaction(async (tx) => {
-    await tx.orderItemStatSnapshot.create({
-      data: {
-        orderItemId: item.id,
-        sourceId: data.id,
-        trigger,
-        subscribers: data.subscribers !== null ? BigInt(data.subscribers) : null,
-        views: data.views !== null ? BigInt(data.views) : null,
-        likes: data.likes !== null ? BigInt(data.likes) : null,
-        comments: data.comments !== null ? BigInt(data.comments) : null,
-        triggeredById: actor?.user.id ?? null,
-        triggeredByLabel: actor?.user.fullName ?? null,
-        takenAt: checkedAt,
-      },
-    });
+    const sameDay =
+      trigger === "INITIAL"
+        ? null
+        : await tx.orderItemStatSnapshot.findFirst({
+            where: {
+              orderItemId: item.id,
+              sourceId: data.id,
+              trigger: { not: "INITIAL" },
+              takenAt: { gte: day.start, lt: day.end },
+            },
+            orderBy: { takenAt: "desc" },
+            select: { id: true },
+          });
+    if (sameDay) {
+      await tx.orderItemStatSnapshot.update({ where: { id: sameDay.id }, data: reading });
+    } else {
+      await tx.orderItemStatSnapshot.create({ data: { orderItemId: item.id, sourceId: data.id, ...reading } });
+    }
     await tx.orderItem.update({
       where: { id: item.id },
       data: {
@@ -168,11 +208,13 @@ export async function readStatsAfterSave(itemId: string, actor: Actor): Promise<
 
 /**
  * The scheduled refresh: every tracked YouTube item whose last attempt is
- * older than the interval in Settings. `orderId` limits it to one order (used
+ * older than the interval in Settings (each updates that day's row). With
+ * `dayEnd`, every tracked item, recorded as the close of the day that just
+ * ended (the 00:00 PKT cron, 2026-11-13). `orderId` limits it to one order (used
  * when someone opens that order). Items run one after another, a few at a
  * time, to stay well inside YouTube's per-second limits.
  */
-export async function refreshDueItemStats(options: { orderId?: string; limit?: number } = {}): Promise<{
+export async function refreshDueItemStats(options: { orderId?: string; limit?: number; dayEnd?: boolean } = {}): Promise<{
   checked: number;
   failed: number;
   skipped?: string;
@@ -193,7 +235,8 @@ export async function refreshDueItemStats(options: { orderId?: string; limit?: n
       channelLink: { not: null },
       status: { in: [...TRACKED_ITEM_STATUSES] },
       order: { status: { notIn: [...FINISHED_ORDER_STATUSES] } },
-      OR: [{ statsCheckedAt: null }, { statsCheckedAt: { lt: dueBefore } }],
+      // The end-of-day reading covers every tracked item, whenever it was last read.
+      ...(options.dayEnd ? {} : { OR: [{ statsCheckedAt: null }, { statsCheckedAt: { lt: dueBefore } }] }),
     },
     select: { id: true },
     orderBy: [{ statsCheckedAt: { sort: "asc", nulls: "first" } }],
@@ -204,7 +247,7 @@ export async function refreshDueItemStats(options: { orderId?: string; limit?: n
   const BATCH = 5;
   for (let i = 0; i < due.length; i += BATCH) {
     const results = await Promise.all(
-      due.slice(i, i + BATCH).map((row) => refreshItemStats(row.id, { trigger: "SCHEDULED", actor: null }).catch(() => failure("error"))),
+      due.slice(i, i + BATCH).map((row) => refreshItemStats(row.id, { trigger: "SCHEDULED", actor: null, dayEnd: options.dayEnd }).catch(() => failure("error"))),
     );
     failed += results.filter((r) => !r.ok).length;
   }

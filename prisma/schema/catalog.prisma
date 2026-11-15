@@ -96,6 +96,12 @@ model Service {
   /// structured channel-link/target-count/current-count fields.
   metricType ServiceMetricType? @map("metric_type")
 
+  /// Public YouTube numbers this service follows (owner request, 2026-11-13):
+  /// any of "subscribers", "views", "likes", "comments". Only these are read,
+  /// stored and shown for its items; the progress stat is always included
+  /// (src/lib/services/tracked-stats.ts).
+  trackedStats String[] @default([]) @map("tracked_stats")
+
   /// A service no longer offered is deactivated, not deleted, so past orders
   /// that reference it keep resolving.
   isActive Boolean @default(true) @map("is_active")

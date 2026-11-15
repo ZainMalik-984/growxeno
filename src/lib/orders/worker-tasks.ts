@@ -1,10 +1,12 @@
 import "server-only";
 
+import { effectiveTrackedStats, type StatKey } from "@/lib/services/tracked-stats";
 import type { OrderItemStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { serviceLabel } from "@/lib/services/label";
+import { categoryImageUrl } from "@/lib/categories/images";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
-import { parseYoutubeLink, studioAnalyticsUrl } from "@/lib/youtube/link";
+import { parseYoutubeLink, studioAnalyticsUrl, youtubeChannelUrl } from "@/lib/youtube/link";
 import { assignedItemWhere, type AssignmentIdentity } from "./assignment";
 import { sortWorkerTasks, WORKER_TASK_VIEW_STATUSES, WORKER_TASK_VIEWS, type WorkerTaskView } from "./worker-task-view";
 
@@ -21,6 +23,9 @@ export type WorkerTask = {
   orderNumber: number;
   serviceName: string;
   categoryName: string;
+  /** The service's own name ("Subscribers") and the category's logo, shown as logo + name (2026-11-15). */
+  serviceTitle: string;
+  categoryImageUrl: string | null;
   metricType: ServiceMetricType | null;
   /** The team accepted this done task's delivery (2026-11-12). */
   deliveryAccepted: boolean;
@@ -31,6 +36,8 @@ export type WorkerTask = {
   channelTitle: string | null;
   /** YouTube Studio analytics for a watch-hours item's channel. */
   studioUrl: string | null;
+  /** youtube.com/channel/UC… for the item's channel, when known and not already the link (2026-11-15). */
+  channelIdUrl: string | null;
   assignedAt: Date | null;
   finishedAt: Date | null;
   deadline: Date | null;
@@ -40,6 +47,8 @@ export type WorkerTask = {
   startingCount: number | null;
   workerCost: string | null;
   workerCostCurrency: string;
+  /** The stats the service follows (2026-11-13). */
+  trackedStats: StatKey[];
   /** Latest public YouTube numbers for the link, when read. */
   stats: { subscribers: number | null; views: number | null; likes: number | null; comments: number | null; at: Date } | null;
   links: { id: string; url: string; label: string | null }[];
@@ -114,8 +123,8 @@ export async function listWorkerTasks(
         workerCost: true,
         workerCostCurrency: true,
         order: { select: { orderNumber: true } },
-        service: { select: { name: true, metricType: true } },
-        category: { select: { name: true } },
+        service: { select: { name: true, metricType: true, trackedStats: true } },
+        category: { select: { name: true, imagePath: true } },
         links: { select: { id: true, url: true, label: true }, orderBy: { createdAt: "asc" } },
         _count: { select: { updates: true } },
         updates: { where: { isRequest: true, resolvedAt: null }, select: { id: true, requestType: true, authorLabel: true, body: true, createdAt: true }, take: 5 },
@@ -138,20 +147,26 @@ export async function listWorkerTasks(
   const all = items.map((item): WorkerTask => {
     const metricType = item.service.metricType as ServiceMetricType | null;
     const snapshot = item.statSnapshots[0];
-    const channelId = metricType === "WATCH_HOURS" ? channelIdFor(item) : null;
+    const knownChannelId = channelIdFor(item);
+    const channelId = metricType === "WATCH_HOURS" ? knownChannelId : null;
+    const linkIsChannelId = item.channelLink ? (() => { const p = parseYoutubeLink(item.channelLink); return p.ok && p.target.kind === "channel"; })() : false;
     return {
       id: item.id,
       orderId: item.orderId,
       orderNumber: item.order.orderNumber,
       serviceName: serviceLabel(item.service.name, item.category.name),
       categoryName: item.category.name,
+      serviceTitle: item.service.name,
+      categoryImageUrl: categoryImageUrl(item.category.imagePath),
       metricType,
+      trackedStats: effectiveTrackedStats(item.service.trackedStats, metricType),
       deliveryAccepted: item.deliveryAcceptedAt !== null,
       status: item.status,
       description: item.description,
       channelLink: item.channelLink,
       channelTitle: item.statsTitle,
       studioUrl: channelId ? studioAnalyticsUrl(channelId) : null,
+      channelIdUrl: knownChannelId && !linkIsChannelId ? youtubeChannelUrl(knownChannelId) : null,
       assignedAt: item.assignedAt,
       finishedAt: item.finishedAt,
       deadline: item.deadline,

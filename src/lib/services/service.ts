@@ -1,4 +1,5 @@
 import "server-only";
+import { STAT_KEYS } from "./tracked-stats";
 
 import { recordAudit } from "@/lib/audit/record";
 import type { Actor } from "@/lib/auth/session";
@@ -21,6 +22,8 @@ export type ServiceInput = {
   basePrice?: string | null;
   currency?: string;
   metricType?: ServiceMetricType | null;
+  /** YouTube numbers to follow (2026-11-13); see tracked-stats.ts. */
+  trackedStats?: readonly string[];
 };
 
 function normalizeServiceInput(input: ServiceInput) {
@@ -31,6 +34,7 @@ function normalizeServiceInput(input: ServiceInput) {
     basePrice: input.basePrice?.trim() || null,
     currency: (input.currency?.trim() || "USD").toUpperCase(),
     metricType: input.metricType || null,
+    trackedStats: STAT_KEYS.filter((key) => input.trackedStats?.includes(key)),
   };
 }
 
@@ -58,6 +62,7 @@ export async function createServiceRecord(
         basePrice: data.basePrice,
         currency: data.currency,
         metricType: data.metricType,
+        trackedStats: data.trackedStats,
       },
       select: { id: true },
     });
@@ -108,6 +113,7 @@ export async function updateServiceRecord(
         basePrice: data.basePrice,
         currency: data.currency,
         metricType: data.metricType,
+        trackedStats: data.trackedStats,
       },
     });
 

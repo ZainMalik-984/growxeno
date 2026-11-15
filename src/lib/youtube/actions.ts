@@ -7,6 +7,7 @@ import { authorizeAction, authorizeAuthenticatedAction } from "@/lib/auth/author
 import { prisma } from "@/lib/db/prisma";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { studioAnalyticsUrl } from "./link";
+import { effectiveTrackedStats, STAT_KEYS, type StatKey } from "@/lib/services/tracked-stats";
 import { lookupYoutubeLink, refreshItemStats } from "./stats-service";
 
 /** What the New Order / item forms show for a pasted YouTube link. */
@@ -24,6 +25,8 @@ export type YoutubePreview = {
   comments: number | null;
   /** YouTube Studio analytics for the channel (watch hours are only visible there). */
   studioUrl: string | null;
+  /** The stats the service follows (2026-11-13); the preview shows only these. */
+  tracked: StatKey[];
 };
 
 export type YoutubePreviewResult = { ok: true; data: YoutubePreview } | { ok: false; error: string };
@@ -45,15 +48,17 @@ export async function lookupYoutubeLinkAction(input: unknown): Promise<YoutubePr
   }
 
   const service = parsed.data.serviceId
-    ? await prisma.service.findUnique({ where: { id: parsed.data.serviceId }, select: { metricType: true } })
+    ? await prisma.service.findUnique({ where: { id: parsed.data.serviceId }, select: { metricType: true, trackedStats: true } })
     : null;
-  const result = await lookupYoutubeLink(parsed.data.url, (service?.metricType as ServiceMetricType | null) ?? null);
+  const metric = (service?.metricType as ServiceMetricType | null) ?? null;
+  const tracked = service ? effectiveTrackedStats(service.trackedStats, metric) : [...STAT_KEYS];
+  const result = await lookupYoutubeLink(parsed.data.url, metric, tracked);
   if (!result.ok) return result;
 
   const d = result.data;
   return {
     ok: true,
-    data: { ...d, studioUrl: d.channelId ? studioAnalyticsUrl(d.channelId) : null },
+    data: { ...d, studioUrl: d.channelId ? studioAnalyticsUrl(d.channelId) : null, tracked },
   };
 }
 

@@ -9,8 +9,11 @@ import {
   Hourglass,
   ChevronRight,
   Link2,
+  MessageSquareText,
   Pencil,
+  Trash2,
   PenLine,
+  Plus,
   RotateCcw,
   Send,
   UserRound,
@@ -27,25 +30,25 @@ import { formatDuration } from "@/lib/time/countdown";
 import { formatPay } from "@/lib/finance/format-pay";
 import { ITEM_STATUS_TONE } from "@/lib/orders/status-tone";
 import { ServicePicker } from "@/components/catalog/service-picker";
-import { ItemStatsPanel } from "./item-stats";
+import { hasStatsToShow, ItemStatsPanel, RefreshStatsButton } from "./item-stats";
 import {
   AskScreenshotsDialog,
-  AskScreenshotsTrigger,
   CantContinueDialog,
-  CantContinueTrigger,
   clearUpdatesParam,
   ItemUpdatesSheet,
   progressSentence,
-  UpdatesTrigger,
 } from "@/components/orders/item-updates";
 import { keepWithWorkerAction } from "@/lib/order-updates/actions";
-import { RejectTaskButton } from "../reject-task-button";
+import { RejectTaskDialog } from "../reject-task-button";
+import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
 import { AssignmentDeliveryStep, MessageWorkerDialog } from "./assignment-delivery";
 import type { AssignmentMessageOutcome } from "@/lib/orders/assignment-notify";
 import { YoutubeLinkPreview } from "@/components/catalog/youtube-link-preview";
+import { CategoryThumb } from "@/components/catalog/category-thumb";
+import { itemLinkParts } from "@/lib/youtube/link-parts";
+import { ItemLinkLine } from "./item-link-line";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { ProgressBar } from "@/components/ui/progress-bar";
 import { EmptyState } from "@/components/ui/page";
 import { StatusBadge } from "@/components/ui/status-dot";
 import { CURRENCIES } from "@/lib/finance/money";
@@ -89,6 +92,49 @@ const ITEM_STATUSES = Object.keys(ORDER_ITEM_STATUS_LABELS) as OrderItemStatus[]
 /** Rounded, colour-accented field styling shared by this panel's two modals (owner-directed, 2026-10-14/15 — real depth, not the flat default). */
 const FIELD = "rounded-[8px] focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
 const MODAL_SHELL = "m-auto w-full max-w-lg rounded-[16px] border border-zinc-200 bg-white p-0 shadow-xl shadow-zinc-900/10 backdrop:bg-zinc-950/30";
+
+/**
+ * Who the item is assigned to, as an avatar at the left of its header
+ * (owner request, 2026-11-14). For people who can assign, a click opens
+ * Assign to change it; otherwise it just shows who.
+ */
+function AssigneeAvatar({ name, onEdit }: { name: string | null; onEdit?: () => void }) {
+  const face = (
+    <span
+      className={cn(
+        "relative flex size-9 items-center justify-center rounded-full text-[12px] font-semibold ring-2 ring-white",
+        name ? "bg-indigo-600 text-white" : "border border-dashed border-zinc-300 bg-white text-zinc-400",
+      )}
+    >
+      {name ? initials(name) : <UserRound aria-hidden="true" className="size-4" />}
+      {onEdit ? (
+        <span className="absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-white text-zinc-500 shadow ring-1 ring-zinc-200">
+          <Pencil aria-hidden="true" className="size-2.5" />
+        </span>
+      ) : null}
+    </span>
+  );
+  const label = name ? `Assigned to ${name}` : "Not assigned yet";
+  if (!onEdit) {
+    return (
+      <span className="shrink-0" title={label}>
+        {face}
+        <span className="sr-only">{label}</span>
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      title={name ? `${label}. Change` : "Assign someone"}
+      aria-label={name ? `${label}. Change who it's assigned to` : "Assign someone"}
+      className="shrink-0 rounded-full transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+    >
+      {face}
+    </button>
+  );
+}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -176,6 +222,8 @@ export function OrderItemsPanel({
   const [askItem, setAskItem] = useState<OrderItemRow | null>(null);
   // "Can't continue" (2026-11-11): the worker's popup, and the team's reassign dialog.
   const [giveUpItem, setGiveUpItem] = useState<OrderItemRow | null>(null);
+  // Reject from the menu (2026-11-15).
+  const [rejectItem, setRejectItem] = useState<OrderItemRow | null>(null);
   const [reassignItem, setReassignItem] = useState<OrderItemRow | null>(null);
 
   const serviceById = useMemo(() => new Map(services.map((s) => [s.id, s])), [services]);
@@ -289,8 +337,27 @@ export function OrderItemsPanel({
     });
   };
 
+  const assignedCount = items.filter((item) => item.worker || item.outsourcedWorker).length;
+
   return (
     <div>
+      {/* Compact header (owner request, 2026-11-15): "Items (2/3 assigned)", Add on the right. */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+        <h2 className="text-[15px] font-semibold text-zinc-900">
+          Items
+          {items.length > 0 ? (
+            <span className="ml-1.5 text-[13px] font-normal tabular-nums text-zinc-500">
+              ({assignedCount}/{items.length} assigned)
+            </span>
+          ) : null}
+        </h2>
+        {canCreate && items.length > 0 ? (
+          <Button variant="accent" size="sm" className="rounded-[8px]" onClick={openAdd}>
+            <Plus aria-hidden="true" className="size-3.5" />
+            Add
+          </Button>
+        ) : null}
+      </div>
       {items.length === 0 ? (
         <EmptyState
           title="No items yet"
@@ -305,18 +372,12 @@ export function OrderItemsPanel({
         />
       ) : (
         <>
-          {canCreate ? (
-            <div className="flex justify-end px-4 pb-4 sm:px-6">
-              <Button variant="accent" size="sm" className="rounded-[8px] max-sm:h-10 max-sm:w-full" onClick={openAdd}>
-                + Add item
-              </Button>
-            </div>
-          ) : null}
-
           {/* Items as rows divided by hairlines inside the one Items card (2026-11-11):
               a shadowed card per item inside that card read as boxes in boxes. */}
-          <ul className="divide-y divide-zinc-100 border-t border-zinc-100">
-            {items.map((item, index) => {
+          {/* Each item is its own block with a shaded header, a grey gap between them (owner request,
+              2026-11-14: hairlines alone made two items read as one). Full width on phones, so no box in a box. */}
+          <ul className="space-y-3 border-t border-zinc-100 bg-zinc-50/70 p-3 max-sm:space-y-2 max-sm:bg-zinc-100 max-sm:px-0 max-sm:py-2 sm:p-4">
+            {items.map((item) => {
               const isSelf = isAssignedToIdentity(
                 { workerId: item.worker?.id ?? null, outsourcedWorkerId: item.outsourcedWorker?.id ?? null },
                 { userId: currentUserId, outsourcedWorkerId: currentOutsourcedWorkerId },
@@ -353,199 +414,177 @@ export function OrderItemsPanel({
               const awaitingAcceptance = item.status === "DONE" && !item.deliveryAcceptedAt;
 
               return (
-                <li key={item.id} id={`item-${item.id}`} className="scroll-mt-20 px-4 py-5 sm:px-6">
-                  {/* Title row: only the name sits beside Edit / Remove, so nothing below gets squeezed (2026-11-11). */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="font-mono text-xs text-zinc-400">#{index + 1}</span>
-                        <p className="text-[15px] font-semibold text-zinc-900">{item.service.name}</p>
-                        <span className="text-xs text-zinc-400">{item.category.name}</span>
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                        <StatusBadge tone={ITEM_STATUS_TONE[item.status]} label={ORDER_ITEM_STATUS_LABELS[item.status]} />
-                        {/* The team sees this until someone answers the worker's request (2026-11-11). */}
-                        {canViewAll && item.hasOpenRequest ? (
-                          <button
-                            type="button"
-                            onClick={() => setUpdatesItemId(item.id)}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
+                <li
+                  key={item.id}
+                  id={`item-${item.id}`}
+                  className="scroll-mt-20 rounded-[12px] border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none"
+                >
+                  {/* Compact item (owner request, 2026-11-15): who has it, logo + service + link, status and a
+                      "⋯" menu on one header line; the figures with a ring; who and when on one footer line, with
+                      only the next step as a button. */}
+                  <div className="flex items-start gap-3 px-4 pt-3.5 sm:px-5">
+                    <AssigneeAvatar
+                      name={item.outsourcedWorker?.name ?? item.worker?.fullName ?? null}
+                      onEdit={canAssign ? () => setAssignDialogItem(item) : undefined}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <CategoryThumb name={item.category.name} imageUrl={item.category.imageUrl} size={18} className="shrink-0 rounded-[5px]" />
+                        <p className="min-w-0 truncate text-[15px] font-semibold text-zinc-900" title={`${item.category.name} · ${item.service.name}`}>
+                          {item.service.name}
+                        </p>
+                        <StatusBadge tone={ITEM_STATUS_TONE[item.status]} label={ORDER_ITEM_STATUS_LABELS[item.status]} className="px-2 py-0.5" />
+                        {item.status === "DONE" && (item.outsourcedWorker || item.worker) ? (
+                          <span
+                            className={cn(
+                              "inline-flex h-6 items-center rounded-full px-2 text-[11px] font-medium",
+                              awaitingAcceptance ? "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200" : "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
+                            )}
                           >
-                            <Camera aria-hidden="true" className="size-3.5" />
-                            Screenshots requested · Answer
-                          </button>
+                            {awaitingAcceptance ? "Awaiting acceptance" : "Delivery accepted"}
+                          </span>
                         ) : null}
                       </div>
+                      {(() => {
+                        const parts = itemLinkParts(item.channelLink, item.stats);
+                        return parts ? <ItemLinkLine parts={parts} /> : null;
+                      })()}
+                      {/* The team sees this until someone answers the worker's request (2026-11-11). */}
+                      {canViewAll && item.hasOpenRequest ? (
+                        <button
+                          type="button"
+                          onClick={() => setUpdatesItemId(item.id)}
+                          className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
+                        >
+                          <Camera aria-hidden="true" className="size-3.5" />
+                          Screenshots requested · Answer
+                        </button>
+                      ) : null}
                     </div>
-                    {canEdit ? (
-                      <div className="-mr-2 flex shrink-0 items-center">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(item)}>
-                          Edit
-                        </Button>
-                        <Button variant="dangerGhost" size="sm" onClick={() => removeItem(item.id)} disabled={pending}>
-                          Remove
-                        </Button>
+                    <ActionMenu
+                      label={`Actions for ${item.service.name}`}
+                      className="-mr-1.5 shrink-0"
+                      items={(() => {
+                        const menu: ActionMenuItem[] = [];
+                        if (workerMustAnswer) {
+                          menu.push({ label: "Reject", icon: XCircle, tone: "danger", onSelect: () => setRejectItem(item) });
+                        } else {
+                          menu.push({
+                            label: `${canPostUpdate ? "Post update" : "Updates"}${item.updateCount > 0 ? ` (${item.updateCount})` : ""}`,
+                            icon: MessageSquareText,
+                            onSelect: () => setUpdatesItemId(item.id),
+                          });
+                        }
+                        if (workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL")) {
+                          menu.push(
+                            item.hasOpenRequest
+                              ? { label: "Screenshots requested", icon: Camera, disabled: true, hint: "Waiting for the team" }
+                              : { label: "Ask for screenshots", icon: Camera, onSelect: () => setAskItem(item) },
+                          );
+                        }
+                        if (canAssign) menu.push({ label: item.outsourcedWorker || item.worker ? "Change assignee" : "Assign", icon: UserRound, onSelect: () => setAssignDialogItem(item) });
+                        if (canAssign && item.outsourcedWorker && item.status !== "DONE" && item.status !== "CANCELLED") {
+                          menu.push({ label: "Message worker", icon: Send, onSelect: () => setMessageItemId(item.id) });
+                        }
+                        menu.push({ label: `Links (${item.links.length})`, icon: Link2, onSelect: () => toggleLinks(item.id) });
+                        for (const status of orderedNextStatuses) {
+                          const action = workflowAction(item.status, status);
+                          if (action.variant === "accent") continue;
+                          menu.push({
+                            label: action.label,
+                            icon: action.icon,
+                            tone: action.variant === "dangerGhost" ? "danger" : "default",
+                            disabled: pending,
+                            onSelect: () => (status === "CANCELLED" && item.outsourcedWorker ? setCancelDialogItem(item) : changeStatus(item.id, status)),
+                          });
+                        }
+                        if (canEdit) menu.push({ label: "Edit item", icon: Pencil, onSelect: () => openEdit(item) });
+                        const danger: ActionMenuItem[] = [];
+                        if (workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL")) {
+                          danger.push(
+                            item.withdrawRequest
+                              ? { label: "Waiting for reassignment", icon: Ban, disabled: true, hint: "You said you can't continue" }
+                              : { label: "Can't continue", icon: Ban, tone: "danger", onSelect: () => setGiveUpItem(item) },
+                          );
+                        }
+                        if (canEdit) danger.push({ label: "Remove item", icon: Trash2, tone: "danger", disabled: pending, onSelect: () => removeItem(item.id) });
+                        return danger.length ? [...menu, "separator", ...danger] : menu;
+                      })()}
+                    />
+                  </div>
+
+                  <div className="space-y-3 px-4 pb-4 pt-3 sm:px-5">
+                    {item.description ? <p className="text-[13px] text-zinc-600">{item.description}</p> : null}
+
+                    {canViewAll && item.withdrawRequest ? (
+                      <WithdrawBanner
+                        item={item}
+                        canReassign={canAssign && canCreate}
+                        onReassign={() => setReassignItem(item)}
+                        onOpenUpdates={() => setUpdatesItemId(item.id)}
+                      />
+                    ) : null}
+
+                    {item.service.metricType ? (
+                      <ItemFigures item={item} refresh={item.stats ? <RefreshStatsButton itemId={item.id} fetchedAt={item.stats.fetchedAt} /> : null} />
+                    ) : item.stats ? (
+                      <div className="flex justify-end">
+                        <RefreshStatsButton itemId={item.id} fetchedAt={item.stats.fetchedAt} />
                       </div>
                     ) : null}
+
+                    {item.stats && hasStatsToShow(item.stats) ? <ItemStatsPanel stats={item.stats} metricType={item.service.metricType} /> : null}
+
+                    {expandedLinks.has(item.id) ? (
+                      <ItemLinks itemId={item.id} links={item.links} canAdd={canAddLinkToThisItem} canRemove={canEdit} />
+                    ) : null}
                   </div>
 
-                  {item.description ? <p className="mt-2 text-[13px] text-zinc-600">{item.description}</p> : null}
-
-                  {canViewAll && item.withdrawRequest ? (
-                    <WithdrawBanner
-                      item={item}
-                      canReassign={canAssign && canCreate}
-                      onReassign={() => setReassignItem(item)}
-                      onOpenUpdates={() => setUpdatesItemId(item.id)}
-                    />
-                  ) : null}
-
-                  {item.service.metricType ? (
-                    <ItemProgress
-                      item={item}
-                      metricLabel={SERVICE_METRIC_TYPE_LABELS[item.service.metricType].toLowerCase()}
-                      canUpdate={canPostUpdate && item.status !== "CANCELLED" && (canViewAll || item.status === "PROCESSING" || item.status === "REFILL")}
-                      onUpdate={() => setUpdatesItemId(item.id)}
-                      linkHref={item.channelLink && !item.stats ? safeExternalHref(item.channelLink) : null}
-                      linkNoun={linkFieldFor(item.service.metricType, item.category.name).noun}
-                    />
-                  ) : null}
-
-                  {item.stats ? (
-                    <div className="mt-4 border-t border-zinc-100 pt-4">
-                      <ItemStatsPanel itemId={item.id} stats={item.stats} metricType={item.service.metricType} link={item.channelLink} />
-                    </div>
-                  ) : null}
-
-                  {/* Who and by when, side by side from sm up. */}
-                  <div className="mt-4 grid gap-3 border-t border-zinc-100 pt-4 sm:grid-cols-2">
+                  {/* Footer: who and by when on one line, then the next step. */}
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-b-[12px] border-t border-zinc-100 bg-zinc-50/60 px-4 py-2.5 text-[13px] max-sm:rounded-none sm:px-5">
                     <div className="min-w-0">
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Worker</p>
-                      <button
-                        type="button"
-                        aria-label="Assign worker"
-                        onClick={() => canAssign && setAssignDialogItem(item)}
-                        disabled={!canAssign}
-                        className={cn("-ml-1.5 flex max-w-full items-start gap-2.5 rounded-[8px] px-1.5 py-1 text-left transition-colors", canAssign && "hover:bg-zinc-50")}
-                      >
-                        <span
-                          className={cn(
-                            "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                            item.outsourcedWorker ? "bg-indigo-50 text-indigo-700" : "bg-zinc-100 text-zinc-400",
-                          )}
-                        >
-                          {item.outsourcedWorker ? initials(item.outsourcedWorker.name) : <UserRound aria-hidden="true" className="size-3.5" />}
-                        </span>
-                        <span className="min-w-0 text-[13px]">
-                          <span className="font-medium text-zinc-800">{item.outsourcedWorker?.name ?? item.worker?.fullName ?? "Unassigned"}</span>
-                          {showCosts && item.workerCost ? (
-                            <span className="text-zinc-500"> · {item.workerCost} {item.workerCostCurrency}</span>
-                          ) : null}
-                          {!showCosts && asAssignedWorkerOnly && item.workerCost ? (
-                            <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-px text-xs font-semibold tabular-nums text-emerald-800 ring-1 ring-inset ring-emerald-200/70">
-                              You earn {formatPay(item.workerCost, item.workerCostCurrency)}
-                            </span>
-                          ) : null}
-                          {canAssign ? <span className="ml-1.5 text-indigo-600">Change</span> : null}
-                          {item.assignedAt && (item.outsourcedWorker || item.worker) ? (
-                            <AssignedSince assignedAt={item.assignedAt} finishedAt={item.status === "DONE" ? item.finishedAt : null} />
-                          ) : null}
-                        </span>
-                      </button>
+                      <span className="text-zinc-500">Assigned to </span>
+                      <span className="font-medium text-zinc-900">{item.outsourcedWorker?.name ?? item.worker?.fullName ?? "Nobody yet"}</span>
+                      {showCosts && item.workerCost ? <span className="text-zinc-500"> · {item.workerCost} {item.workerCostCurrency}</span> : null}
+                      {!showCosts && asAssignedWorkerOnly && item.workerCost ? (
+                        <span className="ml-1.5 font-semibold tabular-nums text-emerald-700">You earn {formatPay(item.workerCost, item.workerCostCurrency)}</span>
+                      ) : null}
+                      {item.assignedAt && (item.outsourcedWorker || item.worker) ? (
+                        <AssignedSince assignedAt={item.assignedAt} finishedAt={item.status === "DONE" ? item.finishedAt : null} />
+                      ) : null}
                     </div>
-                    <div className="min-w-0">
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{canViewAll ? "Worker deadline" : "Deadline"}</p>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="text-zinc-500">{canViewAll ? "Worker deadline" : "Deadline"}</span>
                       <ItemDeadline item={item} canEdit={canEdit} label={canViewAll ? "Worker deadline" : "Deadline"} />
                     </div>
-                  </div>
-
-                  {/* Actions: the next step first; full width on a phone. */}
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    {workerMustAnswer ? (
-                      // Not accepted yet: Accept (below) and Reject only.
-                      <RejectTaskButton itemId={item.id} serviceName={item.service.name} className="max-sm:h-10 max-sm:flex-1" />
-                    ) : (
-                      <UpdatesTrigger
-                        count={item.updateCount}
-                        canPost={canPostUpdate}
-                        onClick={() => setUpdatesItemId(item.id)}
-                        className="max-sm:h-10 max-sm:flex-1"
-                      />
-                    )}
-                    {workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL") ? (
-                      <AskScreenshotsTrigger waiting={item.hasOpenRequest} onClick={() => setAskItem(item)} className="max-sm:h-10 max-sm:flex-1" />
-                    ) : null}
-                    {workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL") ? (
-                      <CantContinueTrigger sent={item.withdrawRequest !== null} onClick={() => setGiveUpItem(item)} className="max-sm:h-10 max-sm:flex-1" />
-                    ) : null}
-                    {orderedNextStatuses.map((status) => {
-                      const action = workflowAction(item.status, status);
-                      return (
-                        <Button
-                          key={status}
-                          variant={action.variant}
-                          size="sm"
-                          className={cn(
-                            action.variant === "accent" || action.variant === "secondary" ? "rounded-[8px]" : undefined,
-                            action.variant === "accent" && "max-sm:h-10 max-sm:flex-1",
-                          )}
-                          disabled={pending || (status === "DONE" && doneBlocker !== null)}
-                          title={status === "DONE" && doneBlocker ? doneBlocker : undefined}
-                          onClick={() => {
-                            // Cancelling an outsourced-worker item goes through a guided flow
-                            // (adjusted cost + a required note), not a bare status flip.
-                            if (status === "CANCELLED" && item.outsourcedWorker) {
-                              setCancelDialogItem(item);
-                            } else {
-                              changeStatus(item.id, status);
-                            }
-                          }}
-                        >
-                          <action.icon aria-hidden="true" className="size-3.5" />
-                          {action.label}
+                    <div className="flex flex-wrap items-center gap-2 max-sm:w-full sm:ml-auto">
+                      {orderedNextStatuses.map((status) => {
+                        const action = workflowAction(item.status, status);
+                        if (action.variant !== "accent") return null;
+                        return (
+                          <Button
+                            key={status}
+                            variant="accent"
+                            size="sm"
+                            className="rounded-[8px] max-sm:h-10 max-sm:flex-1"
+                            disabled={pending || (status === "DONE" && doneBlocker !== null)}
+                            title={status === "DONE" && doneBlocker ? doneBlocker : undefined}
+                            onClick={() => changeStatus(item.id, status)}
+                          >
+                            <action.icon aria-hidden="true" className="size-3.5" />
+                            {action.label}
+                          </Button>
+                        );
+                      })}
+                      {canViewAll && canChangeStatus && awaitingAcceptance && (item.outsourcedWorker || item.worker) ? (
+                        <Button variant="accent" size="sm" className="rounded-[8px] max-sm:h-10 max-sm:flex-1" disabled={pending} onClick={() => acceptDelivery(item.id)}>
+                          <CheckCircle2 aria-hidden="true" className="size-3.5" />
+                          Accept delivery
                         </Button>
-                      );
-                    })}
-                    {canViewAll && canChangeStatus && awaitingAcceptance && (item.outsourcedWorker || item.worker) ? (
-                      <Button variant="accent" size="sm" className="rounded-[8px] max-sm:h-10 max-sm:flex-1" disabled={pending} onClick={() => acceptDelivery(item.id)}>
-                        <CheckCircle2 aria-hidden="true" className="size-3.5" />
-                        Accept delivery
-                      </Button>
-                    ) : null}
-                    {item.status === "DONE" && (item.outsourcedWorker || item.worker) ? (
-                      <span
-                        className={cn(
-                          "inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-medium",
-                          awaitingAcceptance ? "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200" : "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
-                        )}
-                      >
-                        {awaitingAcceptance ? "Awaiting acceptance" : "Delivery accepted"}
-                      </span>
-                    ) : null}
-                    {canAssign && item.outsourcedWorker && item.status !== "DONE" && item.status !== "CANCELLED" ? (
-                      <Button variant="ghost" size="sm" className="rounded-[8px]" onClick={() => setMessageItemId(item.id)}>
-                        <Send aria-hidden="true" className="size-3.5" />
-                        Message worker
-                      </Button>
-                    ) : null}
-                    <button
-                      type="button"
-                      aria-label={`Links (${item.links.length})`}
-                      aria-expanded={expandedLinks.has(item.id)}
-                      onClick={() => toggleLinks(item.id)}
-                      className="ml-auto inline-flex h-8 items-center gap-1 rounded-[8px] px-2 text-[13px] text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
-                    >
-                      <Link2 aria-hidden="true" className="size-3.5" />
-                      {item.links.length}
-                    </button>
+                      ) : null}
+                    </div>
+                    {doneBlocker && orderedNextStatuses.includes("DONE") ? <p className="w-full text-xs text-zinc-500">{doneBlocker}</p> : null}
                   </div>
-                  {doneBlocker && orderedNextStatuses.includes("DONE") ? (
-                    <p className="mt-2 text-xs text-zinc-500">{doneBlocker} Mark done turns on once it reaches the target.</p>
-                  ) : null}
-
-                  {expandedLinks.has(item.id) ? (
-                    <ItemLinks itemId={item.id} links={item.links} canAdd={canAddLinkToThisItem} canRemove={canEdit} />
-                  ) : null}
                 </li>
               );
             })}
@@ -705,6 +744,7 @@ export function OrderItemsPanel({
         />
       ) : null}
 
+      {rejectItem ? <RejectTaskDialog itemId={rejectItem.id} serviceName={rejectItem.service.name} onClose={() => setRejectItem(null)} /> : null}
       {askItem ? <AskScreenshotsDialog itemId={askItem.id} serviceName={askItem.service.name} onClose={() => setAskItem(null)} /> : null}
       {giveUpItem ? (
         <CantContinueDialog
@@ -736,57 +776,65 @@ export function OrderItemsPanel({
 }
 
 /**
- * The item's progress (2026-11-11): a bar with what was delivered since the
- * start out of what was asked, the current count, and "Update count", which
- * opens the item's updates thread.
+ * Progress at a glance (owner request, 2026-11-15, matching the worker's
+ * popup): a ring, then Started at / Current / Completed / Remaining, with
+ * Refresh from YouTube at the end.
  */
-function ItemProgress({
-  item,
-  metricLabel,
-  canUpdate,
-  onUpdate,
-  linkHref,
-  linkNoun,
-}: {
-  item: OrderItemRow;
-  metricLabel: string;
-  /** May set the count (opens the updates thread). */
-  canUpdate: boolean;
-  onUpdate: () => void;
-  /** The client's link, shown here only when there is no stats block to show it. */
-  linkHref: string | null;
-  linkNoun: string;
-}) {
+function ItemFigures({ item, refresh }: { item: OrderItemRow; refresh?: React.ReactNode }) {
   const start = Math.max(0, item.startingCount ?? 0);
   const required = Math.max(0, (item.targetCount ?? 0) - start);
   const delivered = Math.max(0, (item.currentCount ?? start) - start);
+  const remaining = Math.max(0, required - delivered);
   const percent = required > 0 ? Math.min(100, Math.round((delivered / required) * 100)) : 0;
-
+  const figures: { label: string; value: number | null; tone?: string }[] = [
+    { label: "Started at", value: item.startingCount },
+    { label: "Current", value: item.currentCount },
+    { label: "Completed", value: delivered, tone: "text-indigo-700 font-semibold" },
+    { label: "Remaining", value: remaining, tone: remaining === 0 ? "text-emerald-700 font-semibold" : "text-amber-700 font-semibold" },
+  ];
   return (
-    <div className="mt-4">
-      <div className="flex items-center gap-3">
-        <ProgressBar percent={percent} className="flex-1" />
-        <span className="tabular w-10 text-right text-xs font-semibold text-zinc-700">{percent}%</span>
-      </div>
-      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-zinc-600">
-        <span>
-          <span className="font-semibold text-zinc-900">{numberFormat.format(delivered)}</span> / {numberFormat.format(required)} {metricLabel} delivered
-        </span>
-        <span className="text-zinc-400">
-          now {numberFormat.format(item.currentCount ?? start)} · target {numberFormat.format(item.targetCount ?? 0)}
-        </span>
-        {canUpdate ? (
-          <button type="button" onClick={onUpdate} className="font-medium text-indigo-600 hover:underline">
-            Update count
-          </button>
-        ) : null}
-        {linkHref ? (
-          <a href={linkHref} target="_blank" rel="noreferrer noopener" className="text-zinc-500 hover:text-zinc-900 hover:underline">
-            Open {linkNoun}
-          </a>
-        ) : null}
-      </p>
+    <div className="flex items-center gap-3">
+      <Ring percent={percent} />
+      <dl className="grid min-w-0 flex-1 grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+        {figures.map((f) => (
+          <div key={f.label} className="min-w-0">
+            <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-zinc-500">{f.label}</dt>
+            <dd className={cn("text-[15px] tabular-nums", f.tone ?? "font-medium text-zinc-900")}>{f.value !== null ? numberFormat.format(f.value) : "—"}</dd>
+          </div>
+        ))}
+      </dl>
+      {refresh ? <div className="shrink-0 self-start">{refresh}</div> : null}
     </div>
+  );
+}
+
+/** Progress as a ring with the percentage inside. */
+function Ring({ percent, size = 48 }: { percent: number; size?: number }) {
+  const stroke = 4;
+  const r = (size - stroke) / 2 - 1;
+  const c = 2 * Math.PI * r;
+  const value = Math.max(0, Math.min(100, percent));
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${value}% done`} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-zinc-200/80" />
+      {value > 0 ? (
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c.toFixed(2)}
+          strokeDashoffset={(c * (1 - value / 100)).toFixed(2)}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          className={value >= 100 ? "stroke-emerald-500" : "stroke-indigo-600"}
+        />
+      ) : null}
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="fill-zinc-800 text-[11px] font-semibold tabular-nums">
+        {value}%
+      </text>
+    </svg>
   );
 }
 
@@ -805,7 +853,7 @@ function AssignedSince({ assignedAt, finishedAt }: { assignedAt: Date; finishedA
     ? `done ${formatDuration(new Date(finishedAt).getTime() - start)} after assignment`
     : `assigned ${formatDuration(now - start)} ago`;
   return (
-    <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500" title={formatDeadlineDate(assignedAt)}>
+    <span className="ml-1.5 inline-flex items-center gap-1 text-xs text-zinc-500" title={formatDeadlineDate(assignedAt)}>
       <Hourglass aria-hidden="true" className="size-3" />
       {text}
     </span>

@@ -8,6 +8,7 @@ import { platformOf } from "@/lib/services/link-field";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { cn } from "@/lib/utils";
 import { lookupYoutubeLinkAction, type YoutubePreviewResult } from "@/lib/youtube/actions";
+import { STAT_KEY_LABELS } from "@/lib/services/tracked-stats";
 import { isYoutubeNotFound, kindMismatch, metricValueFrom, parseYoutubeLink, readableChannelLink } from "@/lib/youtube/link";
 
 /**
@@ -149,17 +150,11 @@ export function YoutubeLinkPreview({
 
   const d = current.data;
   const reading = metricValueFrom(d, metricType);
-  const stats: { label: string; value: number | null }[] =
-    d.kind === "CHANNEL"
-      ? [
-          { label: "Subscribers", value: d.subscribers },
-          { label: "Total views", value: d.views },
-        ]
-      : [
-          { label: "Views", value: d.views },
-          { label: "Likes", value: d.likes },
-          { label: "Comments", value: d.comments },
-        ];
+  // Only the stats the service follows (2026-11-13).
+  const stats: { label: string; value: number | null }[] = d.tracked.map((key) => ({
+    label: key === "views" && d.kind === "CHANNEL" ? "Total views" : STAT_KEY_LABELS[key],
+    value: d[key],
+  }));
 
   return (
     <div className="mt-2 rounded-[10px] border border-zinc-200/80 bg-zinc-50/70 p-3 max-sm:border-0 max-sm:bg-transparent max-sm:px-0 max-sm:py-1" role="status">
@@ -173,6 +168,7 @@ export function YoutubeLinkPreview({
           </p>
         </div>
       </div>
+      {stats.length > 0 ? (
       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {stats.map((s) => (
           <div key={s.label} className="flex items-baseline gap-1.5">
@@ -181,6 +177,7 @@ export function YoutubeLinkPreview({
           </div>
         ))}
       </dl>
+      ) : null}
       {reading !== null && currentValue.trim() !== String(reading) ? (
         <button
           type="button"

@@ -1,4 +1,5 @@
 import "server-only";
+import { isStatKey, type StatKey } from "./tracked-stats";
 
 import { prisma } from "@/lib/db/prisma";
 import { categoryImageUrl } from "@/lib/categories/images";
@@ -101,6 +102,7 @@ export type ServiceDetail = {
   basePrice: string | null;
   currency: string;
   metricType: ServiceMetricType | null;
+  trackedStats: StatKey[];
   isActive: boolean;
   category: { id: string; name: string };
   createdAt: Date;
@@ -117,6 +119,7 @@ export async function getServiceDetail(serviceId: string): Promise<ServiceDetail
       basePrice: true,
       currency: true,
       metricType: true,
+      trackedStats: true,
       isActive: true,
       category: { select: { id: true, name: true } },
       createdAt: true,
@@ -133,6 +136,7 @@ export async function getServiceDetail(serviceId: string): Promise<ServiceDetail
     basePrice: service.basePrice ? service.basePrice.toString() : null,
     currency: service.currency,
     metricType: service.metricType,
+    trackedStats: service.trackedStats.filter(isStatKey),
     isActive: service.isActive,
     category: service.category,
     createdAt: service.createdAt,

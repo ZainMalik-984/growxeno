@@ -1,8 +1,10 @@
 import "server-only";
 
+import { effectiveTrackedStats, type StatKey } from "@/lib/services/tracked-stats";
 import type { OrderItemStatus, OrderSource, OrderStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { platformOf } from "@/lib/services/link-field";
+import { categoryImageUrl } from "@/lib/categories/images";
 import { serviceLabel } from "@/lib/services/label";
 import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { assignedItemWhere, type AssignmentIdentity } from "./assignment";
@@ -59,6 +61,10 @@ export type OrderListItemRow = {
   id: string;
   orderId: string;
   serviceName: string;
+  /** The service's own name and its category, shown as logo + name (2026-11-15). */
+  serviceTitle: string;
+  categoryName: string;
+  categoryImageUrl: string | null;
   metricType: ServiceMetricType | null;
   workerId: string | null;
   worker: { id: string; fullName: string } | null;
@@ -298,7 +304,7 @@ export async function listOrders(
           statsTitle: true,
           workerCost: true,
           workerCostCurrency: true,
-          service: { select: { name: true, metricType: true, category: { select: { name: true } } } },
+          service: { select: { name: true, metricType: true, category: { select: { name: true, imagePath: true } } } },
           worker: { select: { id: true, fullName: true } },
           outsourcedWorker: { select: { id: true, name: true } },
           updates: { where: { isRequest: true, resolvedAt: null }, select: { id: true, requestType: true, authorLabel: true, body: true, createdAt: true }, take: 5 },
@@ -313,6 +319,9 @@ export async function listOrders(
       id: item.id,
       orderId: item.orderId,
       serviceName: serviceLabel(item.service.name, item.service.category.name),
+      serviceTitle: item.service.name,
+      categoryName: item.service.category.name,
+      categoryImageUrl: categoryImageUrl(item.service.category.imagePath),
       metricType: item.service.metricType,
       workerId: item.worker?.id ?? null,
       worker: item.worker,
@@ -365,7 +374,8 @@ export type OrderItemLinkRow = {
 export type OrderItemRow = {
   id: string;
   service: { id: string; name: string; metricType: ServiceMetricType | null };
-  category: { id: string; name: string };
+  /** imageUrl: the category's logo, shown before the service name (2026-11-14). */
+  category: { id: string; name: string; imageUrl: string | null };
   worker: { id: string; fullName: string } | null;
   outsourcedWorker: { id: string; name: string } | null;
   description: string | null;
@@ -421,6 +431,8 @@ export type ItemStats = {
   error: string | null;
   /** Readings for the current link, oldest first; the first is the baseline. */
   readings: ItemStatsReading[];
+  /** The stats the service follows (2026-11-13): only these are shown. */
+  tracked: StatKey[];
 };
 
 export type OrderNoteRow = {
@@ -509,8 +521,8 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
           deliveryAcceptedAt: true,
           createdAt: true,
           updatedAt: true,
-          service: { select: { id: true, name: true, metricType: true } },
-          category: { select: { id: true, name: true } },
+          service: { select: { id: true, name: true, metricType: true, trackedStats: true } },
+          category: { select: { id: true, name: true, imagePath: true } },
           worker: { select: { id: true, fullName: true } },
           outsourcedWorker: { select: { id: true, name: true } },
           links: { select: { id: true, url: true, domain: true, label: true }, orderBy: { createdAt: "asc" } },
@@ -573,7 +585,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
     items: order.items.map((item) => ({
       id: item.id,
       service: item.service,
-      category: item.category,
+      category: { id: item.category.id, name: item.category.name, imageUrl: categoryImageUrl(item.category.imagePath) },
       worker: item.worker,
       outsourcedWorker: item.outsourcedWorker,
       description: item.description,
@@ -604,6 +616,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
               title: item.statsTitle,
               fetchedAt: item.statsFetchedAt,
               error: item.statsError,
+              tracked: effectiveTrackedStats(item.service.trackedStats, item.service.metricType as ServiceMetricType | null),
               readings: item.statSnapshots
                 .filter((r) => r.sourceId === item.statsSourceId)
                 .map((r) => ({

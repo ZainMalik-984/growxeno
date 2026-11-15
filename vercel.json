@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/youtube-stats?dayEnd=1",
+      "schedule": "0 19 * * *"
+    }
+  ]
+}

@@ -9,6 +9,8 @@ import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { CURRENCIES } from "@/lib/finance/money";
 import { createServiceAction } from "@/lib/services/actions";
 import { SERVICE_METRIC_TYPE_LABELS, SERVICE_METRIC_TYPES, type ServiceMetricType } from "@/lib/services/metric-type";
+import { defaultTrackedStats, type StatKey } from "@/lib/services/tracked-stats";
+import { TrackedStatsSwitches } from "@/components/catalog/tracked-stats-switches";
 
 export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ id: string; name: string }> }) {
   const router = useRouter();
@@ -19,6 +21,7 @@ export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ 
   const [basePrice, setBasePrice] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [metricType, setMetricType] = useState<ServiceMetricType | "">("");
+  const [trackedStats, setTrackedStats] = useState<StatKey[]>([]);
   const [error, setError] = useState<string | undefined>();
 
   const submit = (event: FormEvent) => {
@@ -32,6 +35,7 @@ export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ 
         basePrice: basePrice || undefined,
         currency,
         metricType: metricType || null,
+        trackedStats,
       });
       if (result.ok) {
         toast.success(result.message);
@@ -104,7 +108,12 @@ export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ 
         <select
           id="service-metric-type"
           value={metricType}
-          onChange={(event) => setMetricType(event.target.value as ServiceMetricType | "")}
+          onChange={(event) => {
+            const next = event.target.value as ServiceMetricType | "";
+            setMetricType(next);
+            // New kind of service: start from that kind's usual switches.
+            setTrackedStats(defaultTrackedStats(next || null));
+          }}
           className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
         >
           <option value="">Not a metric service</option>
@@ -115,6 +124,10 @@ export function CreateServiceForm({ categories }: { categories: ReadonlyArray<{ 
           ))}
         </select>
       </Field>
+
+      {metricType ? (
+        <TrackedStatsSwitches metricType={metricType} value={trackedStats} onChange={setTrackedStats} disabled={pending} />
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-[13px] text-red-600">

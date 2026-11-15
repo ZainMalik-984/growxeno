@@ -105,170 +105,154 @@ function row(overrides: Partial<WorkerTaskRow>): WorkerTaskRow {
   };
 }
 
-/** The desktop table; the same tasks also render as phone cards, hidden by CSS from `md` up. */
-const table = () => within(screen.getByRole("table"));
-/** The phone card list (the first list on the page). */
-const cards = () => within(screen.getAllByRole("list")[0]!);
+/** The task list (one row per task, the same markup on phones and desktop). */
+const list = () => within(screen.getByRole("list", { name: "Your tasks" }));
+/** Opens a row's "⋯" menu and returns it. */
+async function openMenu(user: ReturnType<typeof userEvent.setup>, name = /Actions for Youtube · Subscribers/) {
+  await user.click(list().getByRole("button", { name }));
+  return within(screen.getByRole("menu", { name }));
+}
 
 describe("WorkerTasksTable", () => {
-  it("shows the channel name with its link, when it was given, and no deadline column", () => {
+  it("shows the ring, channel name, delivered count, pay and a large elapsed time", () => {
     render(<WorkerTasksTable rows={[row({})]} />);
-    expect(table().getByText("MrBeast")).toBeInTheDocument();
-    expect(table().getByText("youtube.com/@MrBeast")).toBeInTheDocument();
-    // Time since given sits right after Link, with progress under it (2026-11-13).
-    const headers = table().getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers.indexOf("Time & progress")).toBe(headers.indexOf("Link") + 1);
-    expect(table().queryByRole("columnheader", { name: "Deadline" })).toBeNull();
-    expect(table().getByText(/^(2h 59m|3h 0m)$/)).toBeInTheDocument();
-    expect(table().getByText("elapsed")).toBeInTheDocument();
+    expect(list().getByRole("img", { name: "10% done" })).toBeInTheDocument();
+    expect(list().getByRole("link", { name: /MrBeast/ })).toHaveAttribute("href", "https://www.youtube.com/@MrBeast");
+    expect(list().getByText(/of 5,000 subscribers/)).toHaveTextContent("500 of 5,000 subscribers");
+    expect(list().getAllByText("250.00 PKR").length).toBeGreaterThan(0);
+    expect(list().getByText(/^(2h 59m|3h 0m)$/)).toHaveClass("text-emerald-600");
+    expect(list().getByText("elapsed")).toBeInTheDocument();
   });
 
-  it("offers Accept on a pending task and Complete (with a confirm) on a processing one", async () => {
+  it("colours the elapsed time by age", () => {
+    render(<WorkerTasksTable rows={[row({ assignedAt: new Date(Date.now() - 4.5 * 86_400_000) })]} />);
+    expect(list().getByText(/^4d/)).toHaveClass("text-red-600");
+  });
+
+  it("puts every action in the menu: Accept and Reject on a task not accepted yet", async () => {
     const user = userEvent.setup();
-    render(
-      <WorkerTasksTable
-        rows={[
-          row({ id: "a" }),
-          row({ id: "b", statusLabel: "Processing", canAccept: false, canComplete: true }),
-        ]}
-      />,
-    );
-    await user.click(table().getByRole("button", { name: /^Accept$/ }));
-    expect(changeStatus).toHaveBeenCalledWith({ itemId: "a", status: "PROCESSING" });
-
-    await user.click(table().getByRole("button", { name: /Complete/ }));
-    expect(changeStatus).toHaveBeenCalledTimes(1);
-    await user.click(table().getByRole("button", { name: /Confirm/ }));
-    expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "b", status: "DONE" });
+    render(<WorkerTasksTable rows={[row({})]} />);
+    expect(list().queryByRole("button", { name: /^Accept$/ })).toBeNull();
+    const menu = await openMenu(user);
+    expect(menu.getByRole("menuitem", { name: /Accept task/ })).toBeInTheDocument();
+    expect(menu.getByRole("menuitem", { name: /Reject/ })).toBeInTheDocument();
+    expect(menu.queryByRole("menuitem", { name: /Post update/ })).toBeNull();
+    expect(menu.queryByRole("menuitem", { name: /continue/ })).toBeNull();
+    await user.click(menu.getByRole("menuitem", { name: /Accept task/ }));
+    expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "item-1", status: "PROCESSING" });
   });
 
-  it("keeps Complete off until YouTube shows the target, with a way to check again", () => {
-    const blocker = "YouTube shows 1,120 of 3,170 subscribers, 2,050 to go.";
-    render(<WorkerTasksTable rows={[row({ id: "b", statusLabel: "Processing", canAccept: false, canComplete: true, completeBlocker: blocker })]} />);
-    expect(table().getByRole("button", { name: /Complete/ })).toBeDisabled();
-    expect(table().getByRole("button", { name: "Check the count on YouTube again" })).toBeEnabled();
-  });
-
-  it("opens the task's updates from a prominent Post update button, with the count so far", async () => {
+  it("asks for a reason and rejects the task", async () => {
     const user = userEvent.setup();
-    render(<WorkerTasksTable rows={[row({ id: "p", canAccept: false, canComplete: true, updateCount: 3 })]} />);
-    const button = table().getByRole("button", { name: /Post update/ });
-    expect(button).toHaveTextContent("3");
-    await user.click(button);
-    expect(getUpdates).toHaveBeenCalledWith({ itemId: "p" });
+    render(<WorkerTasksTable rows={[row({})]} />);
+    await user.click((await openMenu(user)).getByRole("menuitem", { name: /Reject/ }));
+    await user.type(screen.getByLabelText(/Why?/), "Too busy");
+    await user.click(screen.getByRole("button", { name: "Reject task", hidden: true }));
+    expect(rejectTask).toHaveBeenLastCalledWith({ itemId: "item-1", reason: "Too busy" });
+  });
+
+  it("completes a processing task after a confirm", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({ canAccept: false, canComplete: true, statusLabel: "Processing" })]} />);
+    await user.click((await openMenu(user)).getByRole("menuitem", { name: /^Complete$/ }));
+    expect(screen.getByRole("heading", { name: "Mark this task done?", hidden: true })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Complete$/, hidden: true }));
+    expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "item-1", status: "DONE" });
+  });
+
+  it("keeps Complete off until YouTube shows the target, with a way to check again", async () => {
+    const user = userEvent.setup();
+    const blocker = "YouTube shows 1,500 of 6,000 subscribers, 4,500 to go.";
+    render(<WorkerTasksTable rows={[row({ canAccept: false, canComplete: true, completeBlocker: blocker })]} />);
+    const menu = await openMenu(user);
+    expect(menu.getByRole("menuitem", { name: /Complete/ })).toHaveAttribute("aria-disabled", "true");
+    expect(menu.getByText(blocker)).toBeInTheDocument();
+    expect(menu.getByRole("menuitem", { name: "Check YouTube again" })).toBeInTheDocument();
+  });
+
+  it("opens the task's updates from Post update, with the count so far", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({ canAccept: false, updateCount: 3 })]} />);
+    await user.click((await openMenu(user)).getByRole("menuitem", { name: "Post update (3)" }));
     expect(await screen.findByLabelText("Subscribers now")).toBeInTheDocument();
   });
 
   it("offers Ask for screenshots, and shows when a request is waiting", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "s", canAccept: false, canComplete: true })]} />);
-    await user.click(table().getByRole("button", { name: /Ask for screenshots/ }));
+    const { rerender } = render(<WorkerTasksTable rows={[row({ canAccept: false })]} />);
+    await user.click((await openMenu(user)).getByRole("menuitem", { name: /Ask for screenshots/ }));
     expect(screen.getByRole("heading", { name: "Ask for screenshots", hidden: true })).toBeInTheDocument();
-    unmount();
-    render(<WorkerTasksTable rows={[row({ id: "s", hasOpenRequest: true, canAccept: false, canComplete: true })]} />);
-    expect(table().queryByRole("button", { name: /Ask for screenshots/ })).toBeNull();
-    expect(table().getByText("Screenshots requested")).toBeInTheDocument();
-    expect(cards().getByText("Screenshots requested")).toBeInTheDocument();
+
+    rerender(<WorkerTasksTable rows={[row({ canAccept: false, hasOpenRequest: true })]} />);
+    expect(list().getAllByText("Screenshots requested")[0]).toBeInTheDocument();
   });
 
   it("offers Can't continue on an open task, and shows when it's waiting", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<WorkerTasksTable rows={[row({ id: "w", progressPercent: 40, delivered: 400, required: 1000, canAccept: false, canComplete: true })]} />);
-    await user.click(table().getByRole("button", { name: /Can't continue/ }));
+    const { rerender } = render(<WorkerTasksTable rows={[row({ canAccept: false })]} />);
+    await user.click((await openMenu(user)).getByRole("menuitem", { name: /continue/ }));
     expect(screen.getByRole("heading", { name: "Can't continue this task?", hidden: true })).toBeInTheDocument();
-    unmount();
-    render(<WorkerTasksTable rows={[row({ id: "w", hasWithdrawRequest: true, canAccept: false, canComplete: true })]} />);
-    expect(table().getByText("Waiting for reassignment")).toBeInTheDocument();
-    expect(cards().getByText("Waiting for reassignment")).toBeInTheDocument();
+
+    rerender(<WorkerTasksTable rows={[row({ canAccept: false, hasWithdrawRequest: true })]} />);
+    expect(list().getAllByText("Waiting for reassignment")[0]).toBeInTheDocument();
   });
 
-  it("shows only Accept and Reject on a task not accepted yet", () => {
-    render(<WorkerTasksTable rows={[row({ id: "new" })]} />);
-    for (const scope of [table(), cards()]) {
-      expect(scope.getByRole("button", { name: /^Accept$/ })).toBeInTheDocument();
-      expect(scope.getByRole("button", { name: /^Reject$/ })).toBeInTheDocument();
-      expect(scope.queryByRole("button", { name: /Post update/ })).toBeNull();
-      expect(scope.queryByRole("button", { name: /Ask for screenshots/ })).toBeNull();
-      expect(scope.queryByRole("button", { name: /Can't continue/ })).toBeNull();
-    }
-  });
-
-  it("asks for a reason and rejects the task", async () => {
+  it("shows Updates (read only) when the worker can't post", async () => {
     const user = userEvent.setup();
-    render(<WorkerTasksTable rows={[row({ id: "new" })]} />);
-    await user.click(table().getByRole("button", { name: /^Reject$/ }));
-    await user.type(screen.getByLabelText(/Why?/), "Too busy");
-    await user.click(screen.getByRole("button", { name: "Reject task", hidden: true }));
-    expect(rejectTask).toHaveBeenCalledWith({ itemId: "new", reason: "Too busy" });
-  });
-
-  it("shows Updates (read only) when the worker can't post", () => {
-    render(<WorkerTasksTable rows={[row({ canPostUpdate: false, canAccept: false })]} />);
-    expect(table().getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
+    render(<WorkerTasksTable rows={[row({ canAccept: false, canPostUpdate: false, finished: true })]} />);
+    expect((await openMenu(user)).getByRole("menuitem", { name: "Updates" })).toBeInTheDocument();
   });
 
   it("opens a task's updates straight away from a notification link", async () => {
-    render(<WorkerTasksTable rows={[row({ id: "n" })]} openUpdatesId="n" />);
-    expect(getUpdates).toHaveBeenCalledWith({ itemId: "n" });
+    render(<WorkerTasksTable rows={[row({})]} openUpdatesId="item-1" />);
     expect(await screen.findByLabelText("Subscribers now")).toBeInTheDocument();
   });
 
-  it("shows progress as delivered out of required, not the channel's total", () => {
-    render(<WorkerTasksTable rows={[row({})]} />);
-    const cell = table().getByText(/subscribers delivered/).closest("span")!;
-    expect(cell).toHaveTextContent("500 / 5,000 subscribers delivered");
-    expect(table().getByText("Now at 1,500")).toBeInTheDocument();
-    expect(screen.queryByText(/1,500 \/ 6,000/)).toBeNull();
+  it("links watch hours to YouTube Studio from the menu", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({ canAccept: false, studioUrl: STUDIO, isWatchHours: true })]} />);
+    expect((await openMenu(user)).getByRole("menuitem", { name: /Studio analytics/ })).toHaveAttribute("href", STUDIO);
   });
 
-
-  it("links watch hours to YouTube Studio", () => {
-    render(<WorkerTasksTable rows={[row({ serviceName: "Youtube · Watch Hours", isWatchHours: true, studioUrl: STUDIO })]} />);
-    expect(table().getByRole("link", { name: /Studio/ })).toHaveAttribute("href", STUDIO);
-  });
-
-  it("opens the task's details in a popup", async () => {
+  it("opens the task's details in a popup when the row is clicked", async () => {
     const user = userEvent.setup();
     render(<WorkerTasksTable rows={[row({})]} />);
-    await user.click(table().getByRole("button", { name: /Details/ }));
+    await user.click(list().getByRole("button", { name: /Details for Youtube · Subscribers, order #7/ }));
     const dialog = screen.getByRole("dialog", { hidden: true });
     expect(within(dialog).getByText("Use the slow drip.")).toBeInTheDocument();
-    expect(within(dialog).getByText("500 of 5,000 subscribers delivered.")).toBeInTheDocument();
+    const figure = (label: string) => within(dialog).getByText(label, { selector: "dt" }).parentElement!;
+    expect(figure("Started at")).toHaveTextContent("1,000");
+    expect(figure("Current")).toHaveTextContent("1,500");
+    expect(figure("Completed")).toHaveTextContent("500");
+    expect(figure("Remaining")).toHaveTextContent("4,500");
+    expect(within(dialog).queryByText(/completed, .* to go/)).toBeNull();
+    // Subscribers is already shown as Current; only the other YouTube numbers are listed.
+    expect(within(dialog).queryByText("Subscribers")).toBeNull();
+    expect(within(dialog).getByText("Total views")).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Open order page", hidden: true })).toHaveAttribute("href", "/orders/order-1");
   });
 
-  describe("on a phone", () => {
-    it("shows a card per task with delivered progress, pay and a full-width Accept", async () => {
-      const user = userEvent.setup();
-      render(<WorkerTasksTable rows={[row({ id: "m" })]} />);
-      const card = cards();
-      expect(card.getByText("Youtube · Subscribers")).toBeInTheDocument();
-      expect(card.getByText("MrBeast")).toBeInTheDocument();
-      expect(card.getByText(/subscribers delivered/).closest("p")).toHaveTextContent("500 / 5,000 subscribers delivered · now 1,500");
-      expect(card.getByText("250.00 PKR")).toBeInTheDocument();
-      expect(card.getByText(/^(2h 59m|3h 0m)$/)).toBeInTheDocument();
-      expect(card.getByText("elapsed")).toBeInTheDocument();
-      await user.click(card.getByRole("button", { name: /^Accept$/ }));
-      expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "m", status: "PROCESSING" });
-    });
+  it("shows the channel-id link and Studio beside the link in the popup", async () => {
+    const user = userEvent.setup();
+    const idUrl = "https://www.youtube.com/channel/UCX6OQ3DkcsbYNE6H8uQQuVA";
+    render(<WorkerTasksTable rows={[row({ channelIdUrl: idUrl, studioUrl: STUDIO })]} />);
+    await user.click(list().getByRole("button", { name: /Details for/ }));
+    const dialog = within(screen.getByRole("dialog", { hidden: true }));
+    expect(dialog.getByRole("link", { name: "Open by channel ID", hidden: true })).toHaveAttribute("href", idUrl);
+    expect(dialog.getByRole("link", { name: /Studio/, hidden: true })).toHaveAttribute("href", STUDIO);
+  });
 
-    it("opens the details when the card is tapped", async () => {
-      const user = userEvent.setup();
-      render(<WorkerTasksTable rows={[row({})]} />);
-      await user.click(cards().getByRole("button", { name: /Details for Youtube · Subscribers, order #7/ }));
-      const dialog = screen.getByRole("dialog", { hidden: true });
-      expect(within(dialog).getByText("Use the slow drip.")).toBeInTheDocument();
-    });
-
-    it("shows Complete on an accepted task and the Studio link for watch hours", () => {
-      render(
-        <WorkerTasksTable
-          rows={[row({ statusLabel: "Processing", canAccept: false, canComplete: true, isWatchHours: true, studioUrl: STUDIO })]}
-        />,
-      );
-      expect(cards().getByRole("button", { name: /Complete/ })).toBeInTheDocument();
-      expect(cards().getByRole("link", { name: /Studio/ })).toHaveAttribute("href", STUDIO);
-    });
+  it("shows Complete as a button in the details popup, with the rest in its menu", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({ canAccept: false, canComplete: true, statusLabel: "Processing" })]} />);
+    await user.click(list().getByRole("button", { name: /Details for/ }));
+    const dialog = within(screen.getByRole("dialog", { hidden: true }));
+    expect(dialog.getByRole("button", { name: /Complete/, hidden: true })).toBeInTheDocument();
+    await user.click(dialog.getByRole("button", { name: /More actions/, hidden: true }));
+    const menu = within(screen.getByRole("menu", { name: /More actions/, hidden: true }));
+    expect(menu.getByRole("menuitem", { name: /Post update/, hidden: true })).toBeInTheDocument();
+    expect(menu.queryByRole("menuitem", { name: /^Complete$/, hidden: true })).toBeNull();
+    expect(menu.queryByRole("menuitem", { name: "Details", hidden: true })).toBeNull();
   });
 
   describe("opened from an accept link", () => {

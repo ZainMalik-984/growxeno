@@ -1,4 +1,4 @@
-import { AlarmClock, BellRing, ListChecks } from "lucide-react";
+import { AlarmClock, BellRing } from "lucide-react";
 import { formatPay } from "@/lib/finance/format-pay";
 import { ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
 import type { Metadata } from "next";
@@ -6,7 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
 
 import { requirePermission } from "@/lib/auth/authorize";
-import { Card, CardHeader, PHONE_FLUSH } from "@/components/ui/card";
+import { Card, PHONE_FLUSH } from "@/components/ui/card";
 import { DeadlineCountdown } from "@/components/ui/deadline";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Breadcrumbs, MetaList, Section } from "@/components/ui/page";
@@ -214,21 +214,6 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
         <div className="min-w-0 space-y-6">
           {/* Rows run edge to edge inside the card; only the header is padded (2026-11-11). */}
           <Card className={cn("overflow-hidden p-0 sm:p-0", PHONE_FLUSH)}>
-            <div className="px-4 pt-5 sm:px-6 [&>div]:mb-4">
-              <CardHeader
-                icon={ListChecks}
-                title="Items"
-                description="Each item moves through its own status."
-                tone="amber"
-                actions={
-                  totalItemCount > 0 ? (
-                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
-                      {assignedItemCount}/{totalItemCount} assigned
-                    </span>
-                  ) : undefined
-                }
-              />
-            </div>
             <OrderItemsPanel
               // Remount when a notification opens another item's updates on this same page (2026-11-12).
               key={openUpdatesId ?? "none"}

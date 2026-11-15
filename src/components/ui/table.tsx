@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  */
 
 export function TableWrap({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("w-full overflow-x-auto", className)} {...props} />;
+  return <div className={cn("relative w-full overflow-x-auto", className)} {...props} />;
 }
 
 export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>) {

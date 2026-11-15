@@ -1,27 +1,30 @@
 "use client";
 
-import { Ban, Camera, ChevronRight, ExternalLink } from "lucide-react";
+import { Ban, Camera, CheckCircle2, ChevronDown, ExternalLink, Eye, ListTree } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { SiYoutube } from "react-icons/si";
+import { toast } from "sonner";
 
+import { CategoryThumb } from "@/components/catalog/category-thumb";
+import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
 import { DeadlineCountdown } from "@/components/ui/deadline";
-import { AcceptItemsButton } from "./accept-items-button";
-
-import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge, StatusDot, type StatusTone } from "@/components/ui/status-dot";
-import { Table, TableWrap, TBody, TH, THead, TD, TR } from "@/components/ui/table";
+import { changeOrderItemStatusAction } from "@/lib/orders/actions";
 import { cn } from "@/lib/utils";
 
 /**
- * Confirmed directly, 2026-10-05: "on the orders list page each row for
- * order should have progress bar and percentage... and each row would be a
- * dropdown and dropdown would show the order item, who its assigned to and
- * progress like 1600/6000." All redaction already happened server-side
- * (src/lib/orders/visibility.ts's `redactOrderListItems`) before this data
- * reached the client — `items` here is already only what this actor may see.
- *
- * Status stays a dot + label, not a filled pill: specification Section 99
- * (a long table of coloured badges is unreadable).
+ * The orders list for the team (admins, employees; owner request 2026-11-15:
+ * "update the Orders page for employee and admins as well", in the
+ * progress-rings design the worker list uses). One compact row per order: a
+ * progress ring, the order and customer, its services as logo + name, the
+ * channel, status and amount, and the deadline; actions sit in a "⋯" menu.
+ * The services line opens the order's items under the row (confirmed
+ * 2026-10-05: "each row would be a dropdown ... who its assigned to and
+ * progress"). All redaction already happened server-side
+ * (src/lib/orders/visibility.ts's `redactOrderListItems`): `items` here is
+ * only what this actor may see.
  */
 
 /** `title` is the channel/video name read from YouTube, shown with the link (2026-11-11). */
@@ -30,10 +33,15 @@ export type ChannelLink = { href: string; label: string; title?: string | null }
 export type OrdersTableItem = {
   id: string;
   channel: ChannelLink | null;
-  /** The signed-in worker's own pending item: show Accept. */
+  /** The signed-in worker's own pending item: offer Accept. */
   canAccept: boolean;
   serviceName: string;
+  /** Shown as category logo + service name (2026-11-15). */
+  serviceTitle?: string;
+  categoryName?: string;
+  categoryImageUrl?: string | null;
   assigneeLabel: string;
+  assigned?: boolean;
   statusLabel: string;
   statusTone: StatusTone;
   metricLabel: string | null;
@@ -66,8 +74,8 @@ export type OrdersTableRow = {
   items: OrdersTableItem[];
 };
 
-/** Cell padding inside the card: the shared TD/TH are flush-left by default. */
-const EDGE = "first:pl-5 last:pr-5";
+const numberFormat = new Intl.NumberFormat("en-US");
+const GRID = "md:grid-cols-[44px_minmax(0,1fr)_150px_170px_32px]";
 
 export function OrdersTable({
   rows,
@@ -78,7 +86,10 @@ export function OrdersTable({
   showCustomer: boolean;
   showAmount: boolean;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [, startTransition] = useTransition();
+  const [busy, setBusy] = useState<string | null>(null);
 
   const toggle = (id: string) => {
     setExpanded((current) => {
@@ -89,310 +100,298 @@ export function OrdersTable({
     });
   };
 
-  const columnCount = 3 + (showCustomer ? 1 : 0) + 3 + (showAmount ? 1 : 0);
-  const th = cn(EDGE, "border-zinc-200/80 bg-zinc-50/80 py-2.5 text-zinc-500");
+  // Same server action and rules as Accept on the order page; one at a time, since each recalculates the order.
+  const accept = (key: string, itemIds: string[]) => {
+    setBusy(key);
+    startTransition(async () => {
+      let accepted = 0;
+      let firstError: string | null = null;
+      for (const itemId of itemIds) {
+        const result = await changeOrderItemStatusAction({ itemId, status: "PROCESSING" });
+        if (result.ok) accepted += 1;
+        else firstError ??= result.error;
+      }
+      if (accepted > 0) toast.success(accepted === 1 ? "Task accepted." : `${accepted} tasks accepted.`);
+      if (firstError) toast.error(firstError);
+      setBusy(null);
+      router.refresh();
+    });
+  };
 
   return (
     <>
-    {/* Phones: one card per order (2026-11-11), since the table is ~970px wide. */}
-    <ul className="divide-y divide-zinc-100 md:hidden">
-      {rows.map((order) => (
-        <OrderCard key={order.id} order={order} showCustomer={showCustomer} showAmount={showAmount} />
-      ))}
-    </ul>
-    <TableWrap className="hidden md:block">
-      <Table className="min-w-[720px]">
-        <caption className="sr-only">Orders</caption>
-        <THead>
-          <TR className="border-0">
-            <TH className={cn(th, "w-10")} aria-hidden="true" />
-            <TH className={th}>Order</TH>
-            <TH className={th}>Link</TH>
-            {showCustomer ? <TH className={th}>Customer</TH> : null}
-            <TH className={th}>Status</TH>
-            <TH className={th}>Deadline</TH>
-            <TH className={th}>Progress</TH>
-            <TH className={cn(th, "text-right")}>Items</TH>
-            {showAmount ? <TH className={cn(th, "text-right")}>Amount</TH> : null}
-          </TR>
-        </THead>
-        <TBody>
-          {rows.map((order) => {
-            const isOpen = expanded.has(order.id);
-            const acceptable = order.items.filter((item) => item.canAccept);
-            return (
-              <Fragment key={order.id}>
-                <TR className={cn("border-zinc-100 transition-colors hover:bg-zinc-50/70", isOpen && "bg-zinc-50/70")}>
-                  <TD className={cn(EDGE, "py-3 pr-0")}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(order.id)}
-                      aria-expanded={isOpen}
-                      aria-label={isOpen ? `Collapse order #${order.orderNumber}` : `Expand order #${order.orderNumber}`}
-                      className="flex size-7 items-center justify-center rounded-[6px] text-zinc-400 transition hover:bg-zinc-200/60 hover:text-zinc-800"
-                    >
-                      <ChevronRight className={cn("size-4 transition-transform", isOpen && "rotate-90")} />
-                    </button>
-                  </TD>
-                  <TD className={cn(EDGE, "py-3")}>
-                    <Link href={`/orders/${order.id}`} className="font-semibold tabular-nums text-zinc-900 hover:text-indigo-600 hover:underline">
-                      #{order.orderNumber}
-                    </Link>
-                  </TD>
-                  <TD className={cn(EDGE, "max-w-[240px] py-3")}>
-                    {order.channels.length > 0 ? (
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <ChannelAnchor channel={order.channels[0]} />
-                        {order.channels.length > 1 ? (
-                          <button
-                            type="button"
-                            onClick={() => toggle(order.id)}
-                            title={order.channels.slice(1).map((c) => c.label).join("\n")}
-                            className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[11px] font-medium text-zinc-600 hover:bg-zinc-200"
-                          >
-                            +{order.channels.length - 1}
-                          </button>
-                        ) : null}
-                      </span>
-                    ) : (
-                      <span className="text-zinc-400">—</span>
-                    )}
-                  </TD>
-                  {showCustomer ? (
-                    <TD className={cn(EDGE, "py-3 text-zinc-700")}>
-                      {order.customerName ?? <span className="text-zinc-500">—</span>}
-                    </TD>
-                  ) : null}
-                  <TD className={cn(EDGE, "py-3")}>
-                    {acceptable.length > 0 ? (
-                      <AcceptItemsButton
-                        itemIds={acceptable.map((item) => item.id)}
-                        label={acceptable.length > 1 ? `Accept ${acceptable.length}` : "Accept"}
-                        className="h-7 px-2.5"
-                      />
-                    ) : (
-                      <StatusDot tone={order.statusTone} label={order.statusLabel} />
-                    )}
-                    {order.withdrawRequests > 0 ? <WithdrawBadge className="mt-1" /> : null}
-                    {order.openRequests > 0 ? <RequestBadge count={order.openRequests} className="mt-1" /> : null}
-                  </TD>
-                  <TD className={cn(EDGE, "whitespace-nowrap py-3")}>
-                    {order.deadline ? (
-                      <DeadlineCountdown deadline={order.deadline} finished={order.finished} stacked className="items-start" />
-                    ) : (
-                      <span className="text-zinc-500">—</span>
-                    )}
-                  </TD>
-                  <TD className={cn(EDGE, "min-w-36 py-3")}>
-                    {order.progressPercent !== null ? (
-                      <div className="flex items-center gap-2.5">
-                        <ProgressBar percent={order.progressPercent} className="w-24" />
-                        <span className="tabular text-xs font-medium text-zinc-600">{order.progressPercent}%</span>
-                      </div>
-                    ) : (
-                      <span className="text-zinc-500">—</span>
-                    )}
-                  </TD>
-                  <TD className={cn(EDGE, "py-3 text-right tabular-nums text-zinc-600")}>{order.itemCount}</TD>
-                  {showAmount ? (
-                    <TD className={cn(EDGE, "whitespace-nowrap py-3 text-right font-medium tabular-nums text-zinc-900")}>
-                      {order.amountLabel}
-                    </TD>
-                  ) : null}
-                </TR>
-                {isOpen ? (
-                  <tr className="border-b border-zinc-100">
-                    <td colSpan={columnCount} className="bg-zinc-50/70 px-5 pb-4 pt-0">
-                      <div className="ml-10 rounded-[10px] border border-zinc-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-                        {order.items.length === 0 ? (
-                          <p className="px-3 py-2.5 text-xs text-zinc-500">No items visible.</p>
-                        ) : (
-                          <ul className="divide-y divide-zinc-100">
-                            {order.items.map((item) => (
-                              <li key={item.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-3 py-2.5 text-[13px]">
-                                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                                  <span className="font-medium text-zinc-900">{item.serviceName}</span>
-                                  <span className="text-zinc-500">{item.assigneeLabel}</span>
-                                  {item.channel ? <ChannelAnchor channel={item.channel} className="text-xs" /> : null}
-                                </div>
-                                <div className="flex items-center gap-4 text-xs text-zinc-500">
-                                  {item.metricLabel ? (
-                                    <span className="tabular-nums">
-                                      {(item.currentCount ?? 0).toLocaleString("en-US")} / {(item.targetCount ?? 0).toLocaleString("en-US")}{" "}
-                                      {item.metricLabel}
-                                    </span>
-                                  ) : null}
-                                  {item.canAccept ? (
-                                    <AcceptItemsButton itemIds={[item.id]} className="h-7 px-2.5" />
-                                  ) : (
-                                    <StatusDot tone={item.statusTone} label={item.statusLabel} />
-                                  )}
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : null}
-              </Fragment>
-            );
-          })}
-        </TBody>
-      </Table>
-    </TableWrap>
+      <div className={cn("hidden gap-x-4 border-b border-zinc-200/80 bg-zinc-50/80 px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-zinc-500 md:grid", GRID)}>
+        <span className="col-span-2">Order</span>
+        <span>{showAmount ? "Status & amount" : "Status"}</span>
+        <span className="text-right">Deadline</span>
+        <span className="sr-only">Actions</span>
+      </div>
+      <ul aria-label="Orders" className="divide-y divide-zinc-100">
+        {rows.map((order) => (
+          <OrderRow
+            key={order.id}
+            order={order}
+            showCustomer={showCustomer}
+            showAmount={showAmount}
+            open={expanded.has(order.id)}
+            onToggle={() => toggle(order.id)}
+            busy={busy}
+            onAccept={accept}
+          />
+        ))}
+      </ul>
     </>
   );
 }
 
-/** "120 / 1,000 watch hours delivered · now 775": what was delivered since the start, as the progress bar measures it. */
-function DeliveredLine({ item }: { item: OrdersTableItem }) {
-  const start = Math.max(0, item.startingCount ?? 0);
-  const delivered = Math.max(0, (item.currentCount ?? start) - start);
-  const required = Math.max(0, (item.targetCount ?? 0) - start);
-  return (
-    <p className="mt-1 text-xs tabular-nums text-zinc-600">
-      <span className="font-semibold text-zinc-900">{delivered.toLocaleString("en-US")}</span> / {required.toLocaleString("en-US")} {item.metricLabel} delivered
-      {item.currentCount !== null ? <span className="text-zinc-400"> · now {item.currentCount.toLocaleString("en-US")}</span> : null}
-    </p>
-  );
-}
-
-/**
- * One order on a phone. The whole card opens the order (a stretched link under
- * the content); the channel link and Accept sit above it so they stay tappable.
- */
-function OrderCard({ order, showCustomer, showAmount }: { order: OrdersTableRow; showCustomer: boolean; showAmount: boolean }) {
+function OrderRow({
+  order,
+  showCustomer,
+  showAmount,
+  open,
+  onToggle,
+  busy,
+  onAccept,
+}: {
+  order: OrdersTableRow;
+  showCustomer: boolean;
+  showAmount: boolean;
+  open: boolean;
+  onToggle: () => void;
+  busy: string | null;
+  onAccept: (key: string, itemIds: string[]) => void;
+}) {
   const acceptable = order.items.filter((item) => item.canAccept);
   const first = order.items[0];
-  const services = order.items.length > 1 ? `${first?.serviceName ?? "Items"} +${order.items.length - 1} more` : (first?.serviceName ?? null);
-  const metric = order.items.length === 1 && first?.metricLabel && first.targetCount !== null ? first : null;
   const channel = order.channels[0];
+  const accepting = busy === order.id;
+
+  const menu: ActionMenuItem[] = [
+    ...(acceptable.length > 0
+      ? [
+          {
+            label: accepting ? "Accepting…" : acceptable.length > 1 ? `Accept ${acceptable.length} tasks` : "Accept task",
+            icon: CheckCircle2,
+            tone: "primary" as const,
+            disabled: accepting,
+            onSelect: () => onAccept(order.id, acceptable.map((item) => item.id)),
+          },
+          "separator" as const,
+        ]
+      : []),
+    { label: "Open order", icon: Eye, href: `/orders/${order.id}` },
+    ...(order.items.length > 0 ? [{ label: open ? "Hide items" : `Show items (${order.items.length})`, icon: ListTree, onSelect: onToggle }] : []),
+    ...(channel ? [{ label: isYoutube(channel.href) ? "Open on YouTube" : "Open link", icon: ExternalLink, href: channel.href, external: true }] : []),
+  ];
 
   return (
-    <li className="relative px-4 py-4 transition-colors active:bg-zinc-50">
+    <li className={cn("relative transition-colors hover:bg-zinc-50/70", open && "bg-zinc-50/70")}>
       <Link href={`/orders/${order.id}`} className="absolute inset-0" aria-label={`Open order #${order.orderNumber}`} />
 
-      <div className="flex items-start justify-between gap-3">
+      <div className={cn("grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-x-3 px-4 py-3.5 md:items-center md:gap-x-4 md:px-5", GRID)}>
+        <Ring percent={order.progressPercent} />
+
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-xs text-zinc-500">
-            <span className="font-semibold tabular-nums text-zinc-900">#{order.orderNumber}</span>
-            {showCustomer && order.customerName ? <span className="truncate">{order.customerName}</span> : null}
+          <p className="flex min-w-0 items-baseline gap-2">
+            <span className="text-[14px] font-semibold tabular-nums text-zinc-900">#{order.orderNumber}</span>
+            {showCustomer && order.customerName ? <span className="truncate text-[13px] text-zinc-500">{order.customerName}</span> : null}
           </p>
-          {services ? <p className="mt-0.5 truncate text-[13px] text-zinc-600">{services}</p> : null}
+          {first ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              aria-label={`${open ? "Hide" : "Show"} the items of order #${order.orderNumber}`}
+              className="relative mt-0.5 inline-flex max-w-full items-center gap-1.5 rounded-[6px] text-[13px] font-medium text-zinc-800 hover:text-indigo-700"
+            >
+              <ServiceLogo item={first} />
+              <span className="truncate">{first.serviceTitle ?? first.serviceName}</span>
+              {order.items.length > 1 ? <span className="shrink-0 text-xs font-normal text-zinc-500">+{order.items.length - 1} more</span> : null}
+              <ChevronDown aria-hidden="true" className={cn("size-3.5 shrink-0 text-zinc-400 transition-transform", open && "rotate-180")} />
+            </button>
+          ) : null}
+          {channel ? (
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+              <ChannelAnchor channel={channel} />
+              {order.channels.length > 1 ? (
+                <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[11px] font-medium text-zinc-600" title={order.channels.slice(1).map((c) => c.label).join("\n")}>
+                  +{order.channels.length - 1}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {/* Phones: status and amount under the link. */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 md:hidden">
+            <StatusBadge tone={order.statusTone} label={order.statusLabel} className="px-2 py-0.5" />
+            {showAmount && order.amountLabel ? <span className="text-[13px] font-semibold tabular-nums text-zinc-900">{order.amountLabel}</span> : null}
+          </div>
+          <Flags order={order} />
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+
+        <div className="hidden md:block">
           <StatusBadge tone={order.statusTone} label={order.statusLabel} className="px-2 py-0.5" />
-          {order.withdrawRequests > 0 ? <WithdrawBadge /> : null}
-          {order.openRequests > 0 ? <RequestBadge count={order.openRequests} /> : null}
+          {showAmount && order.amountLabel ? <p className="mt-1 text-[13px] font-semibold tabular-nums text-zinc-900">{order.amountLabel}</p> : null}
+        </div>
+
+        {/* Phones: deadline and the menu top right; from md each is its own column. */}
+        <div className="flex items-start gap-1 md:contents">
+          <div className="text-right">
+            {order.deadline ? (
+              <DeadlineCountdown deadline={order.deadline} finished={order.finished} stacked className="items-end" />
+            ) : (
+              <span className="text-xs text-zinc-400">No deadline</span>
+            )}
+          </div>
+          <ActionMenu label={`Actions for order #${order.orderNumber}`} items={menu} className="relative -mr-1.5 md:mr-0" />
         </div>
       </div>
 
-      {channel ? (
-        <div className="relative mt-2.5 flex min-w-0 items-center gap-1.5">
-          <ChannelAnchor channel={channel} className="max-w-full text-sm" />
-          {order.channels.length > 1 ? (
-            <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[11px] font-medium text-zinc-600">+{order.channels.length - 1}</span>
-          ) : null}
-        </div>
-      ) : null}
-
-      {order.progressPercent !== null ? (
-        <div className="mt-3">
-          <div className="flex items-center gap-2.5">
-            <ProgressBar percent={order.progressPercent} className="flex-1" />
-            <span className="tabular text-xs font-semibold text-zinc-700">{order.progressPercent}%</span>
-          </div>
-          {metric ? <DeliveredLine item={metric} /> : null}
-        </div>
-      ) : null}
-
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="min-w-0 text-xs text-zinc-500">
-          {order.deadline ? (
-            <DeadlineCountdown deadline={order.deadline} finished={order.finished} showDate={false} />
+      {open ? (
+        <ul aria-label={`Items of order #${order.orderNumber}`} className="relative mx-4 mb-3 divide-y divide-zinc-100 rounded-[10px] border border-zinc-200/80 bg-white md:ml-[76px] md:mr-5">
+          {order.items.length === 0 ? (
+            <li className="px-3 py-2.5 text-xs text-zinc-500">No items visible.</li>
           ) : (
-            <span>
-              {order.itemCount} {order.itemCount === 1 ? "item" : "items"}
-            </span>
+            order.items.map((item) => <ItemLine key={item.id} item={item} busy={busy === item.id} onAccept={() => onAccept(item.id, [item.id])} />)
           )}
-        </div>
-        <div className="flex shrink-0 items-center gap-3">
-          {showAmount && order.amountLabel ? (
-            <span className="text-sm font-semibold tabular-nums text-zinc-900">{order.amountLabel}</span>
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+/** One item under an opened order: ring, logo + service, who has it, delivered, status. */
+function ItemLine({ item, busy, onAccept }: { item: OrdersTableItem; busy: boolean; onAccept: () => void }) {
+  const progress = itemProgress(item);
+  const menu: ActionMenuItem[] = [
+    ...(item.canAccept ? [{ label: busy ? "Accepting…" : "Accept task", icon: CheckCircle2, tone: "primary" as const, disabled: busy, onSelect: onAccept }] : []),
+    ...(item.channel ? [{ label: isYoutube(item.channel.href) ? "Open on YouTube" : "Open link", icon: ExternalLink, href: item.channel.href, external: true }] : []),
+  ];
+  const assigned = item.assigned ?? item.assigneeLabel !== "Unassigned";
+  return (
+    <li className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 text-[13px]">
+      <Ring percent={progress?.percent ?? null} size={28} />
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-center gap-1.5 font-medium text-zinc-900">
+          <ServiceLogo item={item} size={16} />
+          <span className="truncate">{item.serviceTitle ?? item.serviceName}</span>
+        </p>
+        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "flex size-4 items-center justify-center rounded-full text-[9px] font-semibold",
+                assigned ? "bg-indigo-600 text-white" : "border border-dashed border-zinc-300 text-zinc-400",
+              )}
+            >
+              {assigned ? initials(item.assigneeLabel) : ""}
+            </span>
+            <span className={assigned ? "text-zinc-700" : undefined}>{item.assigneeLabel}</span>
+          </span>
+          {progress ? (
+            <span className="tabular-nums">
+              <span className="font-medium text-zinc-700">{numberFormat.format(progress.delivered)}</span> of {numberFormat.format(progress.required)} {item.metricLabel}
+              {item.currentCount !== null ? <span className="text-zinc-400"> · now {numberFormat.format(item.currentCount)}</span> : null}
+            </span>
           ) : null}
-          {acceptable.length > 0 ? (
-            <AcceptItemsButton
-              itemIds={acceptable.map((item) => item.id)}
-              label={acceptable.length > 1 ? `Accept ${acceptable.length}` : "Accept"}
-              className="relative h-9 px-3.5"
-            />
-          ) : null}
-        </div>
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        <StatusDot tone={item.statusTone} label={item.statusLabel} />
+        {menu.length > 0 ? <ActionMenu label={`Actions for ${item.serviceTitle ?? item.serviceName}`} items={menu} buttonClassName="size-7" /> : null}
       </div>
     </li>
   );
 }
 
-/** A worker can't continue and what's left isn't reassigned yet (2026-11-11). */
-function WithdrawBadge({ className }: { className?: string }) {
+/** Delivered since the start, out of what was asked for, as the ring measures it. */
+function itemProgress(item: OrdersTableItem): { delivered: number; required: number; percent: number } | null {
+  if (!item.metricLabel || item.targetCount === null) return null;
+  const start = Math.max(0, item.startingCount ?? 0);
+  const delivered = Math.max(0, (item.currentCount ?? start) - start);
+  const required = Math.max(0, item.targetCount - start);
+  return { delivered, required, percent: required > 0 ? Math.min(100, Math.round((delivered / required) * 100)) : 0 };
+}
+
+function ServiceLogo({ item, size = 18 }: { item: OrdersTableItem; size?: number }) {
+  if (!item.categoryName) return null;
+  return <CategoryThumb name={item.categoryName} imageUrl={item.categoryImageUrl ?? null} size={size} className="rounded-[5px]" />;
+}
+
+/** Progress as a ring with the percentage inside. */
+function Ring({ percent, size = 44 }: { percent: number | null; size?: number }) {
+  const stroke = size <= 28 ? 3 : 4;
+  const r = (size - stroke) / 2 - 1;
+  const c = 2 * Math.PI * r;
+  const value = percent === null ? 0 : Math.max(0, Math.min(100, percent));
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-200",
-        className,
-      )}
-    >
-      <Ban aria-hidden="true" className="size-3.5" />
-      Can&apos;t continue
-    </span>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={percent === null ? "No progress to show" : `${value}% done`} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-zinc-200/80" />
+      {percent !== null && value > 0 ? (
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c.toFixed(2)}
+          strokeDashoffset={(c * (1 - value / 100)).toFixed(2)}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          className={value >= 100 ? "stroke-emerald-500" : "stroke-indigo-600"}
+        />
+      ) : null}
+      {size > 28 ? (
+        <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="fill-zinc-800 text-[11px] font-semibold tabular-nums">
+          {percent === null ? "—" : `${value}%`}
+        </text>
+      ) : null}
+    </svg>
   );
 }
 
-/** A worker asked for screenshots and nobody has answered yet (2026-11-11). */
-function RequestBadge({ count, className }: { count: number; className?: string }) {
+function Flags({ order }: { order: OrdersTableRow }) {
+  if (order.withdrawRequests === 0 && order.openRequests === 0) return null;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200",
-        className,
-      )}
-    >
-      <Camera aria-hidden="true" className="size-3.5" />
-      {count === 1 ? "Screenshots requested" : `${count} screenshot requests`}
-    </span>
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {order.withdrawRequests > 0 ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 ring-1 ring-inset ring-red-200">
+          <Ban aria-hidden="true" className="size-3" />
+          Can&apos;t continue
+        </span>
+      ) : null}
+      {order.openRequests > 0 ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+          <Camera aria-hidden="true" className="size-3" />
+          {order.openRequests === 1 ? "Screenshots requested" : `${order.openRequests} screenshot requests`}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
 /** Opens the client's channel in a new tab; never fetched by the server. */
-function ChannelAnchor({ channel, className }: { channel: ChannelLink; className?: string }) {
+function ChannelAnchor({ channel }: { channel: ChannelLink }) {
   return (
     <a
       href={channel.href}
       target="_blank"
       rel="noreferrer noopener"
       title={channel.href}
-      className={cn(
-        "group inline-flex min-w-0 items-center gap-1 text-[13px] text-indigo-600 hover:text-indigo-800",
-        className,
-      )}
+      className="relative inline-flex min-w-0 max-w-full items-center gap-1 font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
     >
-      {channel.title ? (
-        <span className="min-w-0">
-          <span className="block truncate font-medium text-zinc-900 group-hover:underline">{channel.title}</span>
-          <span className="flex min-w-0 items-center gap-1 text-xs">
-            <span className="truncate">{channel.label}</span>
-            <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-          </span>
-        </span>
-      ) : (
-        <>
-          <span className="truncate group-hover:underline">{channel.label}</span>
-          <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-        </>
-      )}
+      {isYoutube(channel.href) ? <SiYoutube aria-hidden="true" className="size-3.5 shrink-0 text-[#FF0000]" /> : null}
+      <span className="truncate">{channel.title ?? channel.label}</span>
       <span className="sr-only">(opens in a new tab)</span>
     </a>
   );
+}
+
+function isYoutube(href: string): boolean {
+  return /youtube\.com|youtu\.be/i.test(href);
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase() || "?";
 }

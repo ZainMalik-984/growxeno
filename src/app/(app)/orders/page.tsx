@@ -30,6 +30,7 @@ import {
 } from "@/lib/orders/queries";
 import { aggregateProgress } from "@/lib/orders/progress";
 import { completionBlocker } from "@/lib/orders/completion";
+import { STAT_KEY_LABELS } from "@/lib/services/tracked-stats";
 import { earliest, orderVisibility, redactOrderListItems } from "@/lib/orders/visibility";
 import { listAssignableServices } from "@/lib/services/queries";
 import { CLOSED_ORDER_STATUSES, deriveOrderStatus, ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, ORDER_STATUS_VALUES } from "@/lib/orders/state-machine";
@@ -210,7 +211,11 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
         channel: channelLinks([{ link: item.channelLink, title: item.channelTitle }])[0] ?? null,
         canAccept: canAcceptItem(item),
         serviceName: item.serviceName,
+        serviceTitle: item.serviceTitle,
+        categoryName: item.categoryName,
+        categoryImageUrl: item.categoryImageUrl,
         assigneeLabel: item.worker?.fullName ?? item.outsourcedWorker?.name ?? "Unassigned",
+        assigned: Boolean(item.worker || item.outsourcedWorker),
         statusLabel: ORDER_ITEM_STATUS_LABELS[item.status],
         statusTone: ITEM_STATUS_TONE[item.status],
         metricLabel: item.metricType ? SERVICE_METRIC_TYPE_LABELS[item.metricType].toLowerCase() : null,
@@ -607,10 +612,14 @@ function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean): WorkerTaskRo
     orderId: task.orderId,
     orderNumber: task.orderNumber,
     serviceName: task.serviceName,
+    serviceTitle: task.serviceTitle,
+    categoryName: task.categoryName,
+    categoryImageUrl: task.categoryImageUrl,
     channel: channelLinks([{ link: task.channelLink, title: null }])[0] ?? null,
     channelTitle: task.channelTitle,
     isYoutube: task.channelLink ? /youtube\.com|youtu\.be/i.test(task.channelLink) : false,
     studioUrl: task.studioUrl,
+    channelIdUrl: task.channelIdUrl,
     isWatchHours: task.metricType === "WATCH_HOURS",
     // A done task waits for the team to accept the delivery (2026-11-12).
     statusLabel: task.status === "DONE" ? (task.deliveryAccepted ? "Accepted" : "Awaiting acceptance") : ORDER_ITEM_STATUS_LABELS[task.status],
@@ -646,16 +655,11 @@ function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean): WorkerTaskRo
     earningsLabel: task.workerCost ? formatPay(task.workerCost, task.workerCostCurrency) : null,
     description: task.description,
     stats: task.stats
-      ? channelStats
-        ? [
-            { label: "Subscribers", value: task.stats.subscribers },
-            { label: "Total views", value: task.stats.views },
-          ]
-        : [
-            { label: "Views", value: task.stats.views },
-            { label: "Likes", value: task.stats.likes },
-            { label: "Comments", value: task.stats.comments },
-          ]
+      ? // Only what the service follows (2026-11-13).
+        task.trackedStats.map((key) => ({
+          label: key === "views" && channelStats ? "Total views" : STAT_KEY_LABELS[key],
+          value: task.stats![key],
+        }))
       : null,
     statsAt: task.stats?.at ?? null,
     links: task.links.flatMap((link) => {

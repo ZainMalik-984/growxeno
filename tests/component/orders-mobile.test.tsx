@@ -69,25 +69,37 @@ function order(overrides: Partial<OrdersTableRow> = {}): OrdersTableRow {
   };
 }
 
-/** The phone card list is the first list; the desktop table is hidden by CSS from `md` up. */
-const cards = () => within(screen.getAllByRole("list")[0]!);
+/** The orders list: one row per order, the same markup on phones and desktop (2026-11-15). */
+const cards = () => within(screen.getByRole("list", { name: "Orders" }));
 
-describe("Orders on a phone", () => {
-  it("shows one card per order that opens the order", () => {
+describe("Orders list", () => {
+  it("shows one row per order that opens the order", () => {
     render(<OrdersTable rows={[order()]} showCustomer showAmount />);
     const card = cards();
     expect(card.getByRole("link", { name: "Open order #3" })).toHaveAttribute("href", "/orders/order-3");
+    expect(card.getByRole("img", { name: "12% done" })).toBeInTheDocument();
     expect(card.getByText("#3")).toBeInTheDocument();
     expect(card.getByText("Said")).toBeInTheDocument();
     expect(card.getByText("Youtube · Watch Hours")).toBeInTheDocument();
     expect(card.getByText("Samir B")).toBeInTheDocument();
-    expect(card.getByText("Processing")).toBeInTheDocument();
-    expect(card.getByText("32 USD")).toBeInTheDocument();
+    expect(card.getAllByText("Processing").length).toBeGreaterThan(0);
+    expect(card.getAllByText("32 USD").length).toBeGreaterThan(0);
   });
 
-  it("shows delivered out of needed, not the channel's total", () => {
+  it("shows the category logo and the service's own name when given", () => {
+    const base = order().items[0]!;
+    render(<OrdersTable rows={[order({ items: [{ ...base, serviceTitle: "Watch Hours", categoryName: "Youtube", categoryImageUrl: null }] })]} showCustomer showAmount />);
+    expect(cards().getByText("Watch Hours")).toBeInTheDocument();
+    expect(cards().queryByText("Youtube · Watch Hours")).toBeNull();
+  });
+
+  it("opens the items with who has them and delivered out of needed", async () => {
+    const user = userEvent.setup();
     render(<OrdersTable rows={[order()]} showCustomer showAmount />);
-    expect(cards().getByText(/watch hours delivered/).closest("p")).toHaveTextContent("120 / 1,000 watch hours delivered · now 775");
+    await user.click(cards().getByRole("button", { name: "Show the items of order #3" }));
+    const items = within(screen.getByRole("list", { name: "Items of order #3" }));
+    expect(items.getByText("Inzmam")).toBeInTheDocument();
+    expect(items.getByText(/of 1,000 watch hours/)).toHaveTextContent("120 of 1,000 watch hours · now 775");
   });
 
   it("flags an order whose worker can't continue", () => {
@@ -106,7 +118,7 @@ describe("Orders on a phone", () => {
     expect(cards().queryByText("32 USD")).toBeNull();
   });
 
-  it("names the extra services and offers Accept on the worker's own pending items", async () => {
+  it("names the extra services and offers Accept on the worker's own pending items in the menu", async () => {
     const user = userEvent.setup();
     const base = order().items[0]!;
     render(
@@ -124,8 +136,11 @@ describe("Orders on a phone", () => {
         showAmount
       />,
     );
-    expect(cards().getByText("Youtube · Watch Hours +1 more")).toBeInTheDocument();
-    await user.click(cards().getByRole("button", { name: /Accept 2/ }));
+    expect(cards().getByText("+1 more")).toBeInTheDocument();
+    await user.click(cards().getByRole("button", { name: "Actions for order #3" }));
+    const menu = within(screen.getByRole("menu", { name: "Actions for order #3" }));
+    expect(menu.getByRole("menuitem", { name: "Open order" })).toHaveAttribute("href", "/orders/order-3");
+    await user.click(menu.getByRole("menuitem", { name: "Accept 2 tasks" }));
     expect(changeStatus).toHaveBeenCalledWith({ itemId: "p1", status: "PROCESSING" });
     expect(changeStatus).toHaveBeenCalledWith({ itemId: "p2", status: "PROCESSING" });
   });

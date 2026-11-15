@@ -10,6 +10,8 @@ import { MetaList } from "@/components/ui/page";
 import { CURRENCIES } from "@/lib/finance/money";
 import { updateServiceAction } from "@/lib/services/actions";
 import { SERVICE_METRIC_TYPE_LABELS, SERVICE_METRIC_TYPES, type ServiceMetricType } from "@/lib/services/metric-type";
+import { defaultTrackedStats, effectiveTrackedStats, STAT_KEY_LABELS, type StatKey } from "@/lib/services/tracked-stats";
+import { TrackedStatsSwitches } from "@/components/catalog/tracked-stats-switches";
 import type { ServiceDetail } from "@/lib/services/queries";
 
 export function ServiceProfileForm({
@@ -29,6 +31,7 @@ export function ServiceProfileForm({
   const [basePrice, setBasePrice] = useState(service.basePrice ?? "");
   const [currency, setCurrency] = useState(service.currency);
   const [metricType, setMetricType] = useState<ServiceMetricType | "">(service.metricType ?? "");
+  const [trackedStats, setTrackedStats] = useState<StatKey[]>(service.trackedStats);
   const [error, setError] = useState<string | undefined>();
 
   if (!canEdit) {
@@ -48,6 +51,12 @@ export function ServiceProfileForm({
             label: "Metric type",
             value: service.metricType ? SERVICE_METRIC_TYPE_LABELS[service.metricType] : <span className="text-ink-faint">—</span>,
           },
+          {
+            label: "YouTube stats",
+            value: service.metricType
+              ? effectiveTrackedStats(service.trackedStats, service.metricType).map((key) => STAT_KEY_LABELS[key]).join(", ") || "None"
+              : <span className="text-ink-faint">—</span>,
+          },
           { label: "Description", value: service.description ?? <span className="text-ink-faint">—</span> },
         ]}
       />
@@ -66,6 +75,7 @@ export function ServiceProfileForm({
         basePrice: basePrice || undefined,
         currency,
         metricType: metricType || null,
+        trackedStats,
       });
       if (result.ok) {
         toast.success(result.message);
@@ -136,7 +146,12 @@ export function ServiceProfileForm({
         <select
           id="edit-service-metric-type"
           value={metricType}
-          onChange={(event) => setMetricType(event.target.value as ServiceMetricType | "")}
+          onChange={(event) => {
+            const next = event.target.value as ServiceMetricType | "";
+            setMetricType(next);
+            // New kind of service: start from that kind's usual switches.
+            setTrackedStats(defaultTrackedStats(next || null));
+          }}
           className="h-9 w-full rounded-[8px] border border-zinc-200 bg-white px-3 text-[13px] text-ink shadow-[0_1px_1px_rgba(16,24,40,0.03)] hover:border-zinc-300 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
         >
           <option value="">Not a metric service</option>
@@ -147,6 +162,10 @@ export function ServiceProfileForm({
           ))}
         </select>
       </Field>
+
+      {metricType ? (
+        <TrackedStatsSwitches metricType={metricType} value={trackedStats} onChange={setTrackedStats} disabled={pending} />
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-[13px] text-red-600">
