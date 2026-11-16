@@ -12,7 +12,6 @@ import {
   FileText,
   Hourglass,
   Link2,
-  Loader2,
   MessageSquareText,
   RefreshCw,
   StickyNote,
@@ -45,6 +44,7 @@ import {
   ItemUpdatesSheet,
   progressSentence,
 } from "@/components/orders/item-updates";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * The orders list as an External Worker sees it (owner request, 2026-11-03:
@@ -404,7 +404,7 @@ function AcceptOffer({ task, actions, busy, className }: { task: WorkerTaskRow; 
         disabled={busy}
         className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-indigo-600 px-3 text-[13px] font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 max-md:h-9 max-md:flex-1 max-md:justify-center"
       >
-        {busy ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <CheckCircle2 aria-hidden="true" className="size-3.5" />}
+        {busy ? <GrowXenoLoader size="xs" variant="light" label="" /> : <CheckCircle2 aria-hidden="true" className="size-3.5" />}
         {busy ? "Accepting…" : "Accept"}
       </button>
       <button
@@ -601,7 +601,7 @@ function CompleteTaskDialog({ task, onClose }: { task: WorkerTaskRow; onClose: (
             disabled={pending}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {pending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <CheckCheck aria-hidden="true" className="size-4" />}
+            {pending ? <GrowXenoLoader size="xs" variant="light" label="" /> : <CheckCheck aria-hidden="true" className="size-4" />}
             {task.isRefill ? "Refill done" : "Complete"}
           </button>
         </div>

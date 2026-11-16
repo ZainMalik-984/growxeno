@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { changeOrderItemStatusAction } from "@/lib/orders/actions";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Accepts one or more of the signed-in worker's own pending items, moving them
@@ -53,7 +54,7 @@ export function AcceptItemsButton({
       disabled={pending || itemIds.length === 0}
       onClick={accept}
     >
-      {pending ? <Loader2 aria-hidden="true" className="animate-spin" /> : <CheckCircle2 aria-hidden="true" />}
+      {pending ? <GrowXenoLoader size="xs" variant="light" label="" /> : <CheckCircle2 aria-hidden="true" />}
       {pending ? "Accepting…" : label}
     </Button>
   );

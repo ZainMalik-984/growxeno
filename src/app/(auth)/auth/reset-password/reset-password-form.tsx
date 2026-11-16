@@ -1,11 +1,11 @@
 "use client";
 
-import { Check, Eye, EyeOff } from "lucide-react";
+import { Check, Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { type ReactNode, useActionState, useState } from "react";
 
-import { AUTH_BUTTON_CLASS, AUTH_FIELD_CLASS } from "@/components/auth/auth-shell";
+import { AUTH_ALERT_CLASS, AUTH_BUTTON_CLASS, AUTH_FIELD_CLASS, AUTH_FIELD_ICON_CLASS, AuthField, AuthSubmitLabel } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { updatePasswordAction, type UpdatePasswordState } from "@/lib/auth/actions";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +26,7 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
 
   return (
     <form action={formAction} className="space-y-5" noValidate>
-      <Field label="Password" htmlFor="password" error={state.fieldErrors?.password}>
+      <AuthField label="Password" htmlFor="password" error={state.fieldErrors?.password} icon={<LockKeyhole />}>
         <div className="relative">
           <Input
             id="password"
@@ -34,7 +34,7 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
             type={visible ? "text" : "password"}
             autoComplete="new-password"
             placeholder={`At least ${MIN_LENGTH} characters`}
-            className={cn(AUTH_FIELD_CLASS, "pr-11")}
+            className={cn(AUTH_FIELD_CLASS, AUTH_FIELD_ICON_CLASS, "pr-12")}
             required
             minLength={MIN_LENGTH}
             value={password}
@@ -45,14 +45,14 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
           <button
             type="button"
             onClick={() => setVisible((v) => !v)}
-            className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-[8px] text-zinc-400 transition hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/10"
+            className="absolute inset-y-0 right-0 grid w-12 place-items-center rounded-r-[14px] text-[var(--gx-dim)] transition-colors hover:text-[var(--gx-text)] focus-visible:text-[var(--gx-text)] focus-visible:outline-none"
             aria-label={visible ? "Hide password" : "Show password"}
             aria-pressed={visible}
           >
             {visible ? <EyeOff aria-hidden="true" className="size-4" /> : <Eye aria-hidden="true" className="size-4" />}
           </button>
         </div>
-      </Field>
+      </AuthField>
 
       {/* Live strength meter: four segments, filled as the password gets stronger. */}
       <div id="password-checks" className="-mt-2 space-y-2.5">
@@ -62,7 +62,7 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
               key={i}
               className={cn(
                 "h-1 flex-1 rounded-full transition-colors duration-300",
-                i < strength.score ? strength.barClass : "bg-zinc-200",
+                i < strength.score ? strength.barClass : "bg-[var(--gx-line)]",
               )}
             />
           ))}
@@ -73,21 +73,21 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
         </div>
       </div>
 
-      <Field label="Confirm password" htmlFor="confirmPassword" error={state.fieldErrors?.confirmPassword}>
+      <AuthField label="Confirm password" htmlFor="confirmPassword" error={state.fieldErrors?.confirmPassword} icon={<LockKeyhole />}>
         <Input
           id="confirmPassword"
           name="confirmPassword"
           type={visible ? "text" : "password"}
           autoComplete="new-password"
           placeholder="Type it again"
-          className={AUTH_FIELD_CLASS}
+          className={cn(AUTH_FIELD_CLASS, AUTH_FIELD_ICON_CLASS)}
           required
           minLength={MIN_LENGTH}
           value={confirm}
           onChange={(event) => setConfirm(event.target.value)}
           aria-invalid={state.fieldErrors?.confirmPassword ? true : undefined}
         />
-      </Field>
+      </AuthField>
       {confirm && !state.fieldErrors?.confirmPassword ? (
         <p className="-mt-3 text-xs">
           <Requirement met={matches}>{matches ? "Passwords match" : "Passwords don't match yet"}</Requirement>
@@ -95,13 +95,13 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
       ) : null}
 
       {state.error ? (
-        <p role="alert" className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+        <p role="alert" className={AUTH_ALERT_CLASS}>
           {state.error}
         </p>
       ) : null}
 
       <Button type="submit" variant="primary" size="lg" disabled={pending} className={AUTH_BUTTON_CLASS}>
-        {pending ? "Saving…" : submitLabel}
+        <AuthSubmitLabel pending={pending} idle={submitLabel} busy="Saving…" />
       </Button>
     </form>
   );
@@ -109,11 +109,11 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
 
 function Requirement({ met, children }: { met: boolean; children: ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 transition-colors", met ? "text-emerald-700" : "text-ink-muted")}>
+    <span className={cn("inline-flex items-center gap-1.5 transition-colors", met ? "text-[var(--gx-accent)]" : "text-[var(--gx-muted)]")}>
       <span
         className={cn(
           "grid size-4 place-items-center rounded-full transition-colors",
-          met ? "bg-emerald-500 text-white" : "bg-zinc-200 text-transparent",
+          met ? "bg-[var(--gx-accent)] text-[var(--gx-accent-ink)]" : "bg-[var(--gx-line)] text-transparent",
         )}
         aria-hidden="true"
       >
@@ -134,11 +134,11 @@ function passwordStrength(value: string) {
   if (/\d/.test(value) && /[^A-Za-z0-9]/.test(value)) score += 1;
   if (value.length < MIN_LENGTH) score = Math.min(score, 1) || 1;
   const levels = [
-    { label: "Too short", barClass: "bg-red-400", textClass: "text-red-600" },
-    { label: "Weak", barClass: "bg-red-400", textClass: "text-red-600" },
-    { label: "Fair", barClass: "bg-amber-400", textClass: "text-amber-700" },
-    { label: "Good", barClass: "bg-emerald-400", textClass: "text-emerald-700" },
-    { label: "Strong", barClass: "bg-emerald-500", textClass: "text-emerald-700" },
+    { label: "Too short", barClass: "bg-red-400", textClass: "text-red-300" },
+    { label: "Weak", barClass: "bg-red-400", textClass: "text-red-300" },
+    { label: "Fair", barClass: "bg-amber-400", textClass: "text-amber-300" },
+    { label: "Good", barClass: "bg-[var(--gx-accent-hi)]", textClass: "text-[var(--gx-accent-hi)]" },
+    { label: "Strong", barClass: "bg-[var(--gx-accent)]", textClass: "text-[var(--gx-accent)]" },
   ];
   const level = value.length < MIN_LENGTH ? levels[0] : levels[Math.min(score, 4)];
   return { score, ...level };

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Clock, Mail } from "lucide-react";
 
-import { AuthHeading, AuthShell } from "@/components/auth/auth-shell";
+import { AUTH_BUTTON_CLASS, AUTH_GHOST_CLASS, AuthHeading, AuthShell } from "@/components/auth/auth-shell";
 import { buttonVariants } from "@/components/ui/button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ResetPasswordForm } from "./reset-password-form";
@@ -27,20 +27,20 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<"/au
   if (!user) {
     return (
       <AuthShell>
-        <div className="rounded-[12px] border border-zinc-200/80 bg-white/80 p-6 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-14px_rgba(16,24,40,0.12)]">
-          <span className="grid size-10 place-items-center rounded-[10px] bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200/70">
+        <div>
+          <span className="grid size-11 place-items-center rounded-[12px] border border-amber-300/25 bg-amber-400/10 text-amber-300">
             <Clock aria-hidden="true" className="size-5" />
           </span>
-          <h1 className="mt-4 text-lg font-semibold tracking-[-0.01em] text-ink-strong">This link has expired</h1>
-          <p className="mt-1.5 text-sm text-ink-muted">
+          <h1 className="gx-display mt-5 text-[2rem] tracking-[-0.04em] text-[var(--gx-text)]">This link has expired</h1>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--gx-muted)]">
             Links work once and only for a limited time. Request a new one, or ask your coordinator to resend your
             invitation.
           </p>
-          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Link href="/forgot-password" className={buttonVariants({ variant: "primary", className: "h-10 flex-1 rounded-[8px] bg-[#0f171b] hover:bg-[#1b262c]" })}>
+          <div className="mt-7 flex flex-col gap-2.5">
+            <Link href="/forgot-password" className={buttonVariants({ variant: "primary", className: AUTH_BUTTON_CLASS })}>
               Request a new link
             </Link>
-            <Link href="/login" className={buttonVariants({ variant: "secondary", className: "h-10 flex-1 rounded-[8px]" })}>
+            <Link href="/login" className={AUTH_GHOST_CLASS}>
               Back to sign in
             </Link>
           </div>
@@ -64,13 +64,13 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<"/au
       />
 
       {user.email ? (
-        <div className="mb-6 flex items-center gap-3 rounded-[10px] border border-zinc-200/80 bg-white/80 px-3.5 py-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/70">
+        <div className="mb-6 flex items-center gap-3 rounded-[12px] border border-[var(--gx-line)] bg-[var(--gx-s1)] px-3.5 py-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[rgb(8_229_47/0.12)] text-[var(--gx-accent)]">
             <Mail aria-hidden="true" className="size-4" />
           </span>
           <div className="min-w-0 leading-tight">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">You&apos;ll sign in with</p>
-            <p className="truncate text-sm font-medium text-ink-strong">{user.email}</p>
+            <p className="gx-eyebrow text-[0.625rem] text-[var(--gx-dim)]">You&apos;ll sign in with</p>
+            <p className="mt-0.5 truncate text-sm font-medium text-[var(--gx-text)]">{user.email}</p>
           </div>
         </div>
       ) : null}

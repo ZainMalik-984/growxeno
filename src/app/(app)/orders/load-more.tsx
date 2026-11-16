@@ -1,9 +1,9 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Phones only (2026-11-11): instead of Previous / Next pages, the first page
@@ -58,7 +58,7 @@ export function LoadMoreOnScroll({
         </Link>
       ) : (
         <span className="inline-flex items-center gap-2">
-          {pending ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : null}
+          {pending ? <GrowXenoLoader size="xs" label="" /> : null}
           {pending ? "Loading more…" : `Showing ${shown} of ${total}`}
         </span>
       )}

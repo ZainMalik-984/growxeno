@@ -61,6 +61,9 @@ const supabaseHost = (() => {
 const nextConfig: NextConfig = {
   // Do not advertise the framework and version on every response.
   poweredByHeader: false,
+  // Development only: lets an ngrok tunnel load the dev server's scripts and live reload,
+  // which Next.js otherwise blocks for any host but localhost. No effect on production builds.
+  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app"],
   images: {
     remotePatterns: supabaseHost
       ? [

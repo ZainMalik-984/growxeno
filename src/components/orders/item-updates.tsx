@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Camera, CheckCircle2, Clock, ImagePlus, Loader2, MessageSquareText, Send, X } from "lucide-react";
+import { Ban, Camera, CheckCircle2, Clock, ImagePlus, MessageSquareText, Send, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/order-updates/rules";
 import type { ItemUpdatesThread, ItemUpdateView } from "@/lib/order-updates/service";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * The updates thread on an order item (2026-11-11, owner request): "the
@@ -142,10 +143,9 @@ export function ItemUpdatesSheet({ itemId, onClose }: { itemId: string; onClose:
             {error}
           </p>
         ) : !thread ? (
-          <p className="flex items-center justify-center gap-2 py-10 text-[13px] text-zinc-500">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-            Loading updates…
-          </p>
+          <div className="grid place-items-center py-12">
+            <GrowXenoLoader size="md" label="Loading updates" />
+          </div>
         ) : thread.updates.length === 0 ? (
           <div className="py-10 text-center">
             <MessageSquareText aria-hidden="true" className="mx-auto size-6 text-zinc-300" />
@@ -519,7 +519,7 @@ function Composer({ thread, onPosted }: { thread: ItemUpdatesThread; onPosted: (
           aria-label="Send update"
           className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-indigo-600 text-white transition hover:bg-indigo-700 disabled:opacity-40"
         >
-          {pending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <Send aria-hidden="true" className="size-4" />}
+          {pending ? <GrowXenoLoader size="xs" variant="light" label="" /> : <Send aria-hidden="true" className="size-4" />}
         </button>
       </div>
       {error ? (
@@ -677,7 +677,7 @@ function AskScreenshotsInline({ itemId, onSent, autoFocus = false }: { itemId: s
         disabled={pending}
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-amber-500 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:opacity-60"
       >
-        {pending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <Camera aria-hidden="true" className="size-4" />}
+        {pending ? <GrowXenoLoader size="xs" variant="light" label="" /> : <Camera aria-hidden="true" className="size-4" />}
         {message.trim() ? "Send request" : "Just notify the team"}
       </button>
     </div>
@@ -804,7 +804,7 @@ export function CantContinueDialog({
             disabled={pending}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-red-600 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
           >
-            {pending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
+            {pending ? <GrowXenoLoader size="xs" variant="light" label="" /> : null}
             Tell the team
           </button>
         </div>

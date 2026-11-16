@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCheck, Loader2, RefreshCw } from "lucide-react";
+import { CheckCheck, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { changeOrderItemStatusAction } from "@/lib/orders/actions";
 import { refreshOrderItemStatsAction } from "@/lib/youtube/actions";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Marks one of the signed-in worker's own tasks done from the Orders page
@@ -74,7 +75,7 @@ export function CompleteTaskButton({
           aria-label="Check the count on YouTube again"
           title="Check YouTube again"
         >
-          <RefreshCw aria-hidden="true" className={cn(pending && "animate-spin")} />
+          {pending ? <GrowXenoLoader size="xs" label="" /> : <RefreshCw aria-hidden="true" />}
         </Button>
         <span id={`complete-${itemId}-why`} className="sr-only">
           {blocker}
@@ -91,7 +92,7 @@ export function CompleteTaskButton({
       disabled={pending}
       onClick={() => (confirming ? complete() : setConfirming(true))}
     >
-      {pending ? <Loader2 aria-hidden="true" className="animate-spin" /> : <CheckCheck aria-hidden="true" />}
+      {pending ? <GrowXenoLoader size="xs" variant={confirming ? "light" : "default"} label="" /> : <CheckCheck aria-hidden="true" />}
       {pending ? "Saving…" : confirming ? "Confirm" : refill ? "Refill done" : "Complete"}
     </Button>
   );

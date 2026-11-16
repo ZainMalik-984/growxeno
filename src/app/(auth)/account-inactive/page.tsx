@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { Button } from "@/components/ui/button";
+import { AUTH_GHOST_CLASS, AuthHeading, AuthShell } from "@/components/auth/auth-shell";
 import { signOut } from "@/lib/auth/actions";
 
 export const metadata: Metadata = { title: "Account inactive" };
@@ -10,21 +10,20 @@ export const metadata: Metadata = { title: "Account inactive" };
  *
  * This route lives OUTSIDE the (app) group deliberately: the app layout calls
  * requireActor(), which redirects inactive users here, so rendering it inside
- * that layout would loop.
+ * that layout would loop. Uses the shared signed-out frame (2026-11-16).
  */
 export default function AccountInactivePage() {
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-6 py-16">
-      <h1 className="text-lg font-medium tracking-[-0.01em] text-ink-strong">Account inactive</h1>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        This account has been deactivated, so it currently has no access. Your work history is
-        preserved. Contact an administrator if this is unexpected.
-      </p>
-      <form action={signOut} className="mt-6">
-        <Button type="submit" variant="secondary">
+    <AuthShell>
+      <AuthHeading
+        title="Account inactive"
+        description="This account has been deactivated, so it currently has no access. Your work history is preserved. Contact an administrator if this is unexpected."
+      />
+      <form action={signOut}>
+        <button type="submit" className={AUTH_GHOST_CLASS}>
           Sign out
-        </Button>
+        </button>
       </form>
-    </main>
+    </AuthShell>
   );
 }

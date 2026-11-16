@@ -1,10 +1,11 @@
 "use client";
 
-import { CircleAlert, Loader2 } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Shared pieces for every Settings section (2026-11-04 redesign), so each
@@ -73,7 +74,7 @@ export function SaveBar({
           <Button variant="accent" className="rounded-[8px]" onClick={onSave} disabled={pending || saveDisabled || !dirty}>
             {pending ? (
               <>
-                <Loader2 aria-hidden="true" className="animate-spin" />
+                <GrowXenoLoader size="xs" variant="light" label="" />
                 Saving…
               </>
             ) : (

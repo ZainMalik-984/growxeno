@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { AuthHeading, AuthShell } from "@/components/auth/auth-shell";
+import { AUTH_LINK_CLASS, AuthHeading, AuthShell } from "@/components/auth/auth-shell";
 import { isDatabaseConfigured, isSupabaseConfigured } from "@/lib/env";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
@@ -13,7 +13,7 @@ export default function ForgotPasswordPage() {
   return (
     <AuthShell
       footer={
-        <Link href="/login" className="font-medium text-ink-muted hover:text-ink hover:underline">
+        <Link href="/login" className={AUTH_LINK_CLASS}>
           Back to sign in
         </Link>
       }
@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
       {ready ? (
         <ForgotPasswordForm />
       ) : (
-        <p className="text-[13px] text-ink-muted">This deployment is not configured yet. See docs/ENVIRONMENT.md.</p>
+        <p className="text-[13px] text-[var(--gx-muted)]">This deployment is not configured yet. See docs/ENVIRONMENT.md.</p>
       )}
     </AuthShell>
   );

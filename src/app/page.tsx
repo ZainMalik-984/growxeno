@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Instrument_Serif, Inter, Inter_Tight } from "next/font/google";
 
 import { getSiteContact } from "@/lib/settings/queries";
 import { MarketingHome } from "./marketing-home";
@@ -35,10 +36,10 @@ export const revalidate = 3600;
  * overrides the root layout's site-wide `noindex` (correct for an internal
  * tool, wrong for the one page meant to be found by customers).
  *
- * The Geist/Geist Mono stylesheet link below is the exact one
- * growxeno-project's root route links (its `styles.css` theme assumes this
- * family) — not `next/font/google`, which doesn't package Geist in this
- * Next.js version.
+ * Fonts (2026-11-16 premium redesign): Inter Tight for display type, Instrument
+ * Serif italic for emphasis, Inter for body text and labels, self-hosted
+ * through next/font. A Google Fonts <link> is blocked by this app's CSP
+ * (style-src 'self'), which is why the earlier Geist link never loaded.
  */
 export const metadata: Metadata = {
   title: { absolute: "Grow Xeno — Monetization, growth & web services, verified before handover" },
@@ -55,17 +56,15 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+const bodyFont = Inter({ subsets: ["latin"], variable: "--font-gx-body", display: "swap" });
+const displayFont = Inter_Tight({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-gx-display", display: "swap" });
+const serifFont = Instrument_Serif({ subsets: ["latin"], weight: "400", style: "italic", variable: "--font-gx-serif", display: "swap" });
+
 export default async function HomePage() {
   const contact = await getSiteContact();
   return (
-    <>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400;500&display=swap"
-      />
+    <div className={`${bodyFont.variable} ${displayFont.variable} ${serifFont.variable}`}>
       <MarketingHome contact={contact} />
-    </>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, Loader2, Lock, Pencil, ShieldCheck, UserRound } from "lucide-react";
+import { CircleAlert, Lock, Pencil, ShieldCheck, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { Field, Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { updateEmployeeProfileAction } from "@/lib/access/actions";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Edit Profile for an employee (2026-11-04, owner request). Saves through
@@ -401,7 +402,7 @@ function EditProfileDialog({
             <Button type="submit" variant="accent" className="rounded-[8px]" disabled={pending || !dirty}>
               {pending ? (
                 <>
-                  <Loader2 aria-hidden="true" className="animate-spin" />
+                  <GrowXenoLoader size="xs" variant="light" label="" />
                   Saving…
                 </>
               ) : (

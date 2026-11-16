@@ -11,6 +11,7 @@ import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { cn } from "@/lib/utils";
 import { refreshOrderItemStatsAction } from "@/lib/youtube/actions";
 import { isDayEndReading } from "@/lib/youtube/stat-day";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * An item's public YouTube stats (owner request, 2026-11-10): the latest
@@ -89,7 +90,7 @@ export function RefreshStatsButton({ itemId, fetchedAt }: { itemId: string; fetc
       title={fetchedAt ? `Updated ${ago(fetchedAt, now)}` : "Not read from YouTube yet"}
       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-700 shadow-[0_1px_1px_rgba(16,24,40,0.04)] hover:bg-zinc-50 disabled:opacity-60"
     >
-      <RefreshCw aria-hidden="true" className={cn("size-3.5", pending && "animate-spin")} />
+      {pending ? <GrowXenoLoader size="xs" label="" /> : <RefreshCw aria-hidden="true" className="size-3.5" />}
       {pending ? "Refreshing…" : "Refresh"}
     </button>
   );

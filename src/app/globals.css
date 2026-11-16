@@ -241,6 +241,398 @@
   animation: gx-fade-up 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+/*
+ * Grow Xeno home page (2026-11-16, premium agency redesign). Scoped to .gxo on
+ * the page root (src/app/marketing-home.tsx); nothing here touches the app.
+ *
+ * Tokens: black base with four graphite elevations, white type, electric green
+ * accent (secondary emerald), metallic silver, three shadow depths. Spacing follows a 4px scale
+ * with the section rhythm in --gx-section. Radii are deliberate: 6px controls,
+ * 14px panels, 24px large surfaces, full only on the two call-to-action buttons.
+ */
+.gxo {
+  /* Official palette: black and graphite, electric green, metallic silver. */
+  --gx-bg: #050706;
+  --gx-s1: #0d110f;
+  --gx-s2: #151a18;
+  --gx-s3: #1a201d;
+  --gx-s4: #212824;
+  --gx-line: #29312c;
+  --gx-line-2: #36403a;
+  --gx-text: #f4f5f4;
+  --gx-muted: #a0a8a2;
+  --gx-dim: #6a736d;
+  --gx-accent: #08e52f;
+  --gx-accent-hi: #00b95b;
+  --gx-silver: #c7c8cc;
+  --gx-accent-ink: #031407;
+  --gx-r-sm: 6px;
+  --gx-r-md: 14px;
+  --gx-r-lg: 24px;
+  --gx-section: clamp(5rem, 11vw, 10rem);
+  --gx-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --gx-shadow-1: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.5);
+  --gx-shadow-2: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 40px -18px rgb(0 0 0 / 0.8);
+  --gx-shadow-3: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 10px 24px -10px rgb(0 0 0 / 0.6), 0 50px 100px -40px rgb(0 0 0 / 0.95), 0 30px 80px -50px rgb(0 185 91 / 0.22);
+
+  color-scheme: dark;
+  background-color: var(--gx-bg);
+  color: var(--gx-text);
+  font-family: var(--font-gx-body), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.gxo ::selection {
+  background: rgb(8 229 47 / 0.35);
+}
+
+@utility gx-display {
+  font-family: var(--font-gx-display), var(--font-gx-body), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.96;
+}
+
+/* Metallic silver lettering for selected headings. */
+@utility gx-metal {
+  background-image: linear-gradient(180deg, #f4f5f4 0%, #d9dadd 38%, #a9adb0 62%, #e6e7e9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility gx-serif {
+  font-family: var(--font-gx-serif), Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+@utility gx-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+@utility gx-section {
+  padding-top: var(--gx-section);
+  padding-bottom: var(--gx-section);
+}
+
+/* Film grain: keeps the dark surfaces from looking rendered. */
+.gx-grain {
+  pointer-events: none;
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Masked words: each word sits in its own clip and rises into view. */
+.gxo .gx-word {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+.gxo .gx-word > span {
+  display: inline-block;
+  will-change: transform;
+}
+
+/* Hero intro start states (GSAP plays them in; noscript and reduced motion show them). */
+.gxo [data-hero-words] .gx-word > span {
+  transform: translateY(112%);
+}
+.gxo [data-hero] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Opening curtain: pure CSS, so it plays before scripts load and clears itself. */
+@keyframes gx-curtain-up {
+  from { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(0 0 100% 0); visibility: hidden; }
+}
+.gx-curtain {
+  animation: gx-curtain-up 0.75s var(--gx-ease) 1.25s forwards;
+}
+
+/* Scroll cue under the hero. */
+@keyframes gx-scrollcue {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+
+/* Slow ambient light behind the hero and footer. */
+@keyframes gx-ambient {
+  from { transform: translate3d(-4%, -2%, 0) scale(1); }
+  to { transform: translate3d(5%, 4%, 0) scale(1.12); }
+}
+.gx-ambient {
+  animation: gx-ambient 18s ease-in-out infinite alternate;
+}
+
+/* Custom cursor ring (fine pointers only; the page adds it). */
+.gx-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 90;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.gx-cursor[data-visible="1"] {
+  opacity: 1;
+}
+.gx-cursor > span {
+  position: absolute;
+  left: -16px;
+  top: -16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  border: 1px solid rgb(244 245 244 / 0.45);
+  transition:
+    transform 0.45s var(--gx-ease),
+    background-color 0.3s,
+    border-color 0.3s;
+}
+.gx-cursor[data-state="link"] > span {
+  transform: scale(1.75);
+  border-color: var(--gx-accent);
+  background-color: rgb(8 229 47 / 0.08);
+}
+.gx-cursor[data-state="down"] > span {
+  transform: scale(0.8);
+}
+
+/* Service panel progress (set by the pinned scroll). */
+.gx-progress {
+  transform-origin: top;
+  transform: scaleY(var(--gx-p, 0));
+}
+
+/* Verification: a check flips from pending to passed. */
+.gx-check[data-passed="true"] .gx-check-pending {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.gx-check:not([data-passed="true"]) .gx-check-passed {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.gx-stamp {
+  opacity: 0;
+  transform: scale(1.35) rotate(-14deg);
+  transition:
+    opacity 0.35s ease,
+    transform 0.55s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.gx-stamp[data-on="true"] {
+  opacity: 1;
+  transform: scale(1) rotate(-7deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gxo [data-hero-words] .gx-word > span {
+    transform: none;
+  }
+  .gxo [data-hero] {
+    opacity: 1;
+    visibility: visible;
+  }
+  .gx-curtain {
+    display: none;
+  }
+  .gx-ambient {
+    animation: none;
+  }
+  .gx-stamp {
+    opacity: 1;
+    transform: rotate(-7deg);
+    transition: none;
+  }
+  .gx-check .gx-check-pending {
+    opacity: 0;
+  }
+  .gx-check .gx-check-passed {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/*
+ * GrowXenoLoader (src/components/brand/grow-xeno-loader.tsx): the animated
+ * monogram that replaces spinners. One loop: a dot appears, the letterforms
+ * draw themselves, the arrow shoots out of the dot through the monogram, the
+ * logo fills and shines, then it all fades back. Percentages are shares of one
+ * loop (--gxl-duration, 3s). Only stroke-dashoffset, transform and opacity
+ * move; distances are in the logo's own SVG units, so it scales cleanly.
+ */
+@keyframes gxl-dot {
+  0% { opacity: 0; transform: scale(0); }
+  6% { opacity: 1; transform: scale(1.3); }
+  10%, 38% { opacity: 1; transform: scale(1); }
+  46%, 100% { opacity: 0; transform: scale(0.4); }
+}
+@keyframes gxl-dot-glow {
+  0% { opacity: 0; }
+  8%, 34% { opacity: 0.55; }
+  46%, 100% { opacity: 0; }
+}
+@keyframes gxl-draw {
+  0%, 8% { stroke-dashoffset: 1; opacity: 1; }
+  40% { stroke-dashoffset: 0; opacity: 1; }
+  50% { stroke-dashoffset: 0; opacity: 1; }
+  60%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes gxl-fill {
+  0%, 34% { opacity: 0; }
+  52%, 84% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes gxl-grow {
+  0%, 38% { transform: scaleX(0); }
+  58%, 100% { transform: scaleX(1); }
+}
+@keyframes gxl-arrow {
+  0%, 36% { opacity: 0; }
+  38%, 86% { opacity: 1; }
+  95%, 100% { opacity: 0; }
+}
+@keyframes gxl-head {
+  0%, 38% { transform: translateX(0); opacity: 0; }
+  41% { opacity: 1; }
+  58% { transform: translateX(640px); opacity: 1; }
+  66%, 100% { transform: translateX(640px); opacity: 0; }
+}
+@keyframes gxl-glow {
+  0%, 52% { opacity: 0; }
+  66% { opacity: 0.55; }
+  84% { opacity: 0.25; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes gxl-shine {
+  0%, 58% { transform: translateX(0); }
+  84%, 100% { transform: translateX(1500px); }
+}
+@keyframes gxl-breathe {
+  0%, 56% { transform: scale(1); }
+  70% { transform: scale(1.025); }
+  84%, 100% { transform: scale(1); }
+}
+@keyframes gxl-still {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.gx-loader {
+  --gxl-ease: cubic-bezier(0.65, 0, 0.35, 1);
+}
+.gx-loader .gxl-mark,
+.gx-loader .gxl-dot,
+.gx-loader .gxl-grow {
+  transform-box: fill-box;
+}
+.gx-loader .gxl-mark {
+  transform-origin: center;
+  animation: gxl-breathe var(--gxl-duration, 3s) ease-in-out infinite;
+}
+.gx-loader .gxl-dot {
+  transform-origin: center;
+  animation: gxl-dot var(--gxl-duration, 3s) var(--gxl-ease) infinite;
+}
+.gx-loader .gxl-dot-glow {
+  animation: gxl-dot-glow var(--gxl-duration, 3s) ease-in-out infinite;
+}
+.gx-loader .gxl-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: gxl-draw var(--gxl-duration, 3s) var(--gxl-ease) infinite;
+}
+.gx-loader .gxl-fill {
+  animation: gxl-fill var(--gxl-duration, 3s) ease-in-out infinite;
+}
+.gx-loader .gxl-grow {
+  transform-origin: left center;
+  animation: gxl-grow var(--gxl-duration, 3s) cubic-bezier(0.7, 0, 0.2, 1) infinite;
+}
+.gx-loader .gxl-arrow {
+  animation: gxl-arrow var(--gxl-duration, 3s) linear infinite;
+}
+.gx-loader .gxl-head {
+  animation: gxl-head var(--gxl-duration, 3s) cubic-bezier(0.7, 0, 0.2, 1) infinite;
+}
+.gx-loader .gxl-glow {
+  animation: gxl-glow var(--gxl-duration, 3s) ease-in-out infinite;
+}
+.gx-loader .gxl-shine {
+  animation: gxl-shine var(--gxl-duration, 3s) cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+/* xs and sm: the logo is already drawn; only the dot and the arrow run through it. */
+.gx-loader[data-mode="compact"] .gxl-line {
+  display: none;
+}
+.gx-loader[data-mode="compact"] .gxl-fill {
+  animation: none;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-loader *,
+  .gx-loader .gxl-line {
+    animation: none !important;
+  }
+  .gx-loader .gxl-line,
+  .gx-loader .gxl-dot,
+  .gx-loader .gxl-dot-glow,
+  .gx-loader .gxl-head,
+  .gx-loader .gxl-shine {
+    opacity: 0;
+  }
+  .gx-loader .gxl-fill,
+  .gx-loader .gxl-arrow {
+    opacity: 1;
+  }
+  .gx-loader .gxl-grow {
+    transform: none;
+  }
+  .gx-loader .gxl-glow {
+    opacity: 0.2;
+  }
+  .gx-loader {
+    animation: gxl-still 2.4s ease-in-out infinite;
+  }
+}
+
+/* Sign-in pages (src/components/auth): the form column and headline rise in; the panels float up one by one. */
+@keyframes gx-auth-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes gx-auth-float {
+  from { opacity: 0; transform: translateY(26px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.gx-auth-rise {
+  animation: gx-auth-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+.gx-auth-float {
+  animation: gx-auth-float 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gx-auth-rise,
+  .gx-auth-float {
+    animation: none;
+  }
+}
+
 /* Top navigation progress bar (src/components/layout/navigation-progress.tsx). */
 @keyframes nav-progress {
   from {

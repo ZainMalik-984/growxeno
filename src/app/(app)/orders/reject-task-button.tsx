@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, X, XCircle } from "lucide-react";
+import { X, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Modal, SHEET_CLASS } from "@/components/ui/modal";
 import { rejectTaskAction } from "@/lib/orders/actions";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Reject a task the worker hasn't accepted (2026-11-12, owner request: before
@@ -102,7 +103,7 @@ export function RejectTaskDialog({ itemId, serviceName, onClose }: { itemId: str
             disabled={pending}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-red-600 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
           >
-            {pending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
+            {pending ? <GrowXenoLoader size="xs" variant="light" label="" /> : null}
             Reject task
           </button>
         </div>

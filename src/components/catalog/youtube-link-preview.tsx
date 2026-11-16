@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, ExternalLink, Loader2 } from "lucide-react";
+import { AlertTriangle, BarChart3, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SiYoutube } from "react-icons/si";
 
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { lookupYoutubeLinkAction, type YoutubePreviewResult } from "@/lib/youtube/actions";
 import { STAT_KEY_LABELS } from "@/lib/services/tracked-stats";
 import { isYoutubeNotFound, kindMismatch, metricValueFrom, parseYoutubeLink, readableChannelLink } from "@/lib/youtube/link";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * Live look-up of a YouTube link while an item is being filled in (owner
@@ -126,7 +127,7 @@ export function YoutubeLinkPreview({
   if (!current) {
     return (
       <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500" role="status">
-        <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+        <GrowXenoLoader size="xs" label="" />
         Looking up on YouTube…
       </p>
     );

@@ -1,63 +1,165 @@
 "use client";
 
-import { Code2, Mail, Phone, Share2 } from "lucide-react";
-import { createContext, useContext, useState, useTransition, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { useGSAP } from "@gsap/react";
+import { gsap } from "gsap";
+import { Flip } from "gsap/Flip";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { ArrowRight, ArrowUpRight, Check, Mail, Menu, Phone, Play, Plus, ShoppingBag, X } from "lucide-react";
+import dynamic from "next/dynamic";
+import Image from "next/image";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { SiFacebook, SiGoogleadsense, SiInstagram, SiShopify, SiTiktok, SiWhatsapp, SiX, SiYoutube } from "react-icons/si";
 
-import { BrandWordmark } from "@/components/brand/brand-logo";
+import { NAV, audiences, comparison, faqs, handoverChecks, services, steps, whyPoints, type ServiceId } from "@/components/marketing/content";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
+import { CursorRing, Magnetic, MaskWords, REDUCED, Tilt, useMedia } from "@/components/marketing/motion";
 import { submitInquiryAction } from "@/lib/inquiries/actions";
 import { HONEYPOT_FIELD } from "@/lib/inquiries/schema";
 import { DEFAULT_SITE_CONTACT, telHref, whatsappHref, type SiteContact } from "@/lib/settings/site-contact";
 
 /**
- * Ported verbatim from growxeno-project/src/routes/index.tsx, confirmed
- * directly (2026-10-05): "this project has the correct UI for the frontend
- * of Growxeno, apply this completely in current project, exactly same
- * design and structure and UI and UX nothing changed just convert this in
- * our home page." Structure, copy, classNames and component boundaries are
- * unchanged from the source. What changed is only what the framework swap
- * (TanStack Router/Vite -> Next.js App Router) required:
+ * The public Grow Xeno home page (2026-11-16, premium agency redesign).
  *
- *  - Route metadata (`createFileRoute(...).head`) moved to this app's own
- *    `metadata` export in src/app/page.tsx.
- *  - The hero image import became a plain `/grow-xeno-hero.jpg` path served
- *    from `public/`, instead of a Vite asset import.
- *  - The whole page is one Client Component (the source is a Vite SPA, so
- *    everything was already client-rendered) rather than split into Server
- *    and Client Components — this preserves the exact original behaviour
- *    rather than risking a subtly different one by splitting it.
- *  - The source page has no link back into the internal app (no "Sign in").
- *    That's intentional fidelity to "nothing changed" — see docs/ or ask
- *    before assuming one should be added back.
+ * Design system: `.gxo` tokens in src/app/globals.css (charcoal surfaces in
+ * four elevations, white type, electric green accent, metallic silver, three
+ * shadow depths; official brand palette since the 2026-11-16 brand correction).
+ * Type: Inter Tight display, Instrument Serif italic for emphasis, Inter body.
  *
- * Theme tokens (colours, radius, the Geist typeface) are scoped to the `.gx`
- * class on the root element, not the app's global tokens — see the "Grow
- * Xeno" block at the bottom of src/app/globals.css for why.
+ * Every section has its own composition and motion:
+ *  - Hero: a real three.js scene (src/components/marketing/hero-scene.tsx,
+ *    lazy-loaded, simplified on phones) under floating interface panels that
+ *    follow the pointer and separate in depth on scroll.
+ *  - Services: an illustrated bento; "Learn more" expands a card to its full
+ *    details while the others reflow (GSAP Flip). "Get a quote" pre-selects
+ *    that service in the form.
+ *  - Audience: four different interface compositions that tilt in 3D.
+ *  - Why: a recessed "market" panel against a raised Grow Xeno panel.
+ *  - Process: pinned horizontal timeline with oversized numbers.
+ *  - Verification: an inspection report whose checks pass as you scroll.
+ *  - FAQ, contact (inquiry form unchanged), footer with the wordmark.
  *
- * Service icons (confirmed directly, 2026-10-05: "use logos of the social
- * apps thats being used") are the one deliberate addition on top of the
- * verbatim port above — real platform marks (react-icons/si) for the four
- * services that name an actual platform, generic lucide icons for the two
- * that don't. Rendered in the surrounding text colour, not each brand's own
- * colour — this page's palette is deliberately restrained (one primary
- * accent, not a different hue per card), and four unrelated brand colours
- * side by side would fight that rather than fit it.
+ * Motion is GSAP + ScrollTrigger, scoped with useGSAP so it cleans up, and
+ * wrapped in matchMedia so prefers-reduced-motion gets a still page. All
+ * content stays semantic HTML; the 3D and the panels are decorative.
+ *
+ * Contact details come from Settings → Website → Contact details through
+ * context; phone, WhatsApp and socials appear only when set.
  */
 
-/**
- * Contact details come from Settings → Website → Contact details (2026-11-04),
- * passed in from the server page and read here through context so every
- * section uses the same values. Phone and WhatsApp only appear when set.
- */
+gsap.registerPlugin(ScrollTrigger, Flip, useGSAP);
+
+const HeroScene = dynamic(() => import("@/components/marketing/hero-scene"), { ssr: false, loading: () => null });
+
 const ContactContext = createContext<SiteContact>(DEFAULT_SITE_CONTACT);
 const useContact = () => useContext(ContactContext);
 
-/**
- * WhatsApp and social profiles as logo buttons (2026-11-04). Only the ones
- * set in Settings appear; nothing renders when none are set. WhatsApp opens
- * with the message from Settings already typed in.
- */
-function SocialLinks({ tone = "light", size = "md", className = "" }: { tone?: "light" | "dark"; size?: "sm" | "md"; className?: string }) {
+/** Event a service's "Get a quote" sends so the form selects that service. */
+const SERVICE_EVENT = "gx:service";
+
+/* ---------- primitives ---------- */
+
+const ring =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gx-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--gx-bg)]";
+
+function Container({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`mx-auto w-full max-w-[1400px] px-5 sm:px-8 lg:px-12 ${className}`}>{children}</div>;
+}
+
+function Btn({
+  href,
+  children,
+  variant = "primary",
+  className = "",
+  onClick,
+}: {
+  href: string;
+  children: ReactNode;
+  variant?: "primary" | "ghost";
+  className?: string;
+  onClick?: () => void;
+}) {
+  const base = `group relative inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-full px-6 text-[0.9375rem] font-medium transition-[color,border-color,box-shadow] duration-500 ${ring}`;
+  if (variant === "ghost") {
+    return (
+      <a href={href} onClick={onClick} className={`${base} border border-[var(--gx-line-2)] text-[var(--gx-text)] hover:border-[var(--gx-text)]/50 ${className}`}>
+        <span className="relative">{children}</span>
+      </a>
+    );
+  }
+  return (
+    <a
+      href={href}
+      onClick={onClick}
+      className={`${base} bg-[var(--gx-accent)] text-[var(--gx-accent-ink)] shadow-[0_10px_30px_-12px_rgb(8_229_47/0.75)] hover:shadow-[0_14px_40px_-10px_rgb(8_229_47/0.9)] ${className}`}
+    >
+      {/* A lighter fill rises from below on hover. */}
+      <span aria-hidden className="absolute inset-0 translate-y-full rounded-full bg-[var(--gx-accent-hi)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-y-0" />
+      <span className="relative inline-flex items-center gap-2">{children}</span>
+    </a>
+  );
+}
+
+function Eyebrow({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <p className={`gx-eyebrow flex items-center gap-3 text-[var(--gx-muted)] ${className}`}>
+      <span aria-hidden className="h-px w-7 bg-[var(--gx-accent)]" />
+      {children}
+    </p>
+  );
+}
+
+/** A section heading whose words rise out of masks when it scrolls in. */
+function SplitHeading({
+  as: Tag = "h2",
+  text,
+  serif,
+  className = "",
+}: {
+  as?: "h2" | "h3";
+  text: string;
+  /** A second sentence set in the serif italic. */
+  serif?: string;
+  className?: string;
+}) {
+  return (
+    <Tag data-split className={`gx-display ${className}`}>
+      <span className="sr-only">
+        {text}
+        {serif ? ` ${serif}` : ""}
+      </span>
+      <span aria-hidden>
+        <MaskWords text={text} />
+        {serif ? (
+          <>
+            {" "}
+            <MaskWords text={serif} className="gx-serif text-[1.06em] text-[var(--gx-text)]/90" />
+          </>
+        ) : null}
+      </span>
+    </Tag>
+  );
+}
+
+function Logo({ className = "", size = "md" }: { className?: string; size?: "md" | "lg" }) {
+  return (
+    <span className={`flex items-center gap-2.5 ${className}`}>
+      <Image src="/brand/gx-symbol-light.svg" alt="" aria-hidden width={1050} height={780} className={size === "lg" ? "h-9 w-auto" : "h-6 w-auto"} priority />
+      <span className={`gx-display tracking-[-0.03em] text-[var(--gx-text)] ${size === "lg" ? "text-2xl" : "text-[1.0625rem]"}`}>Grow Xeno</span>
+    </span>
+  );
+}
+
+function SocialLinks({ className = "" }: { className?: string }) {
   const { whatsapp, whatsappMessage, instagram, twitter, facebook } = useContact();
   const links = [
     whatsapp ? { label: "WhatsApp", href: whatsappHref(whatsapp, whatsappMessage), Icon: SiWhatsapp } : null,
@@ -66,12 +168,6 @@ function SocialLinks({ tone = "light", size = "md", className = "" }: { tone?: "
     facebook ? { label: "Facebook", href: facebook, Icon: SiFacebook } : null,
   ].filter((link) => link !== null);
   if (links.length === 0) return null;
-  const box = size === "sm" ? "h-7 w-7" : "h-10 w-10";
-  const icon = size === "sm" ? "h-3.5 w-3.5" : "h-[18px] w-[18px]";
-  const colors =
-    tone === "dark"
-      ? "border-navy-line text-navy-muted hover:border-navy-foreground/40 hover:text-navy-foreground"
-      : "border-input bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground";
   return (
     <ul className={`flex flex-wrap items-center gap-2 ${className}`}>
       {links.map(({ label, href, Icon }) => (
@@ -82,9 +178,9 @@ function SocialLinks({ tone = "light", size = "md", className = "" }: { tone?: "
             rel="noreferrer noopener"
             aria-label={label}
             title={label}
-            className={`grid ${box} place-items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${colors}`}
+            className={`grid size-10 place-items-center rounded-[var(--gx-r-sm)] border border-[var(--gx-line-2)] text-[var(--gx-muted)] transition-colors duration-300 hover:border-[var(--gx-accent)] hover:text-[var(--gx-text)] ${ring}`}
           >
-            <Icon className={icon} />
+            <Icon className="size-4" />
           </a>
         </li>
       ))}
@@ -92,509 +188,1642 @@ function SocialLinks({ tone = "light", size = "md", className = "" }: { tone?: "
   );
 }
 
-/* ---------- content (source: growxeno.com) ---------- */
-
-type Service = {
-  id: string;
-  name: string;
-  short: string;
-  audience: string;
-  summary: string;
-  includes: string[];
-  target: [string, string][];
-  outcome: string;
-  icon: ComponentType<{ className?: string }>;
-};
-
-const services: Service[] = [
-  {
-    id: "youtube",
-    icon: SiYoutube,
-    name: "YouTube Monetization",
-    short: "Channels built to Partner Program eligibility",
-    audience: "Creators and buyers who want a monetization-ready channel",
-    summary:
-      "We build channels up to YouTube's monetization threshold, and handle buying and selling of channels that are already monetized.",
-    includes: ["Channel growth to the eligibility threshold", "Buying already-monetized channels", "Selling your monetized channel", "Handover walkthrough & securing the account"],
-    target: [["Subscribers", "1,000"], ["Watch hours", "4,000"]],
-    outcome: "A channel that meets YouTube's monetization requirements — verified before it's handed over.",
-  },
-  {
-    id: "tiktok",
-    icon: SiTiktok,
-    name: "TikTok Growth",
-    short: "Accounts grown to monetization eligibility",
-    audience: "Creators and brands who need an eligible TikTok presence",
-    summary:
-      "Accounts grown to 10,000 followers with 1M+ views in the trailing 28 days — monetization-eligible. We also buy and sell established accounts.",
-    includes: ["Follower growth to eligibility", "Qualified view volume in the trailing 28 days", "Buying & selling accounts", "Direct handover with walkthrough"],
-    target: [["Followers", "10,000"], ["Views / 28 days", "1M+"]],
-    outcome: "A monetization-eligible TikTok account, checked against the numbers that were agreed.",
-  },
-  {
-    id: "adsense",
-    icon: SiGoogleadsense,
-    name: "Google AdSense",
-    short: "Approval support and pin-verified accounts",
-    audience: "Website owners and publishers ready to earn from ads",
-    summary:
-      "AdSense approval support for sites across Pakistan, the UK, the US, India and beyond — plus fresh, pin-verified AdSense accounts.",
-    includes: ["Approval support for your website", "Fresh, pin-verified accounts", "Guidance across multiple regions", "Post-delivery support"],
-    target: [["Regions", "PK · UK · US · IN +"], ["Accounts", "Pin-verified"]],
-    outcome: "An approved, working AdSense setup so your site can start earning.",
-  },
-  {
-    id: "smm",
-    icon: Share2,
-    name: "Social Media Marketing",
-    short: "SMM panels three ways, plus coaching",
-    audience: "Marketers and resellers building a social media business",
-    summary:
-      "SMM panel access the way that suits you — your own panel, a rented panel, or a reseller setup — plus hands-on marketing coaching.",
-    includes: ["Your own SMM panel", "Rented panel access", "Reseller setup", "Hands-on marketing coaching"],
-    target: [["Panel options", "Own · Rent · Resell"], ["Coaching", "Included option"]],
-    outcome: "A working panel setup and the know-how to run it.",
-  },
-  {
-    id: "web",
-    icon: Code2,
-    name: "Website & App Design",
-    short: "Websites, web apps and SaaS products",
-    audience: "Businesses that need a site or product that represents them properly",
-    summary:
-      "User-friendly websites and web apps, SaaS products included — built so your digital presence actually represents your business.",
-    includes: ["Business websites", "Web applications", "SaaS products", "Usability-focused design"],
-    target: [["Scope", "Sites · Apps · SaaS"], ["Focus", "Usability"]],
-    outcome: "A site or app your customers find easy to use — and you're proud to send people to.",
-  },
-  {
-    id: "shopify",
-    icon: SiShopify,
-    name: "Shopify Growth",
-    short: "SEO, Google Ads and technical fixes",
-    audience: "Owners of existing Shopify stores who want more sales",
-    summary:
-      "SEO and Google Ads to grow an existing store, plus hands-on help resolving the technical issues that quietly cost you sales.",
-    includes: ["Store SEO", "Google Ads campaigns", "Technical issue resolution", "Ongoing growth support"],
-    target: [["Channels", "SEO · Google Ads"], ["Store", "Existing Shopify"]],
-    outcome: "More qualified traffic and fewer technical leaks in your store.",
-  },
-];
-
-const steps = [
-  { t: "Tell us what you need", d: "Send a quick message about your goal — a channel, an account, a store or a site.", when: "Day one" },
-  { t: "Get a straight quote", d: "A clear price for exactly what you asked for. No bundled upsells.", when: "Before any payment" },
-  { t: "We deliver & verify", d: "The work is checked against what was promised before it's called done.", when: "Before handover" },
-  { t: "Ongoing support", d: "Questions after delivery get answered. It isn't a one-and-done handoff.", when: "After delivery" },
-];
-
-const faqs: [string, string][] = [
-  ["How is a channel or account “delivered”?", "Account credentials and any required transfer steps are handed over directly, with a walkthrough so you know exactly what you're receiving and how to secure it."],
-  ["What if the numbers don't match what was promised?", "Delivery is verified against what was agreed before handover. If anything doesn't match, raise it with us directly and we'll work through it with you as part of after-delivery support."],
-  ["Do you only work with clients in Pakistan?", "No. Grow Xeno is remote-first and works with clients worldwide."],
-  ["Can I get ongoing marketing help, not just a one-time account?", "Yes. Alongside one-time deliveries we offer hands-on marketing coaching and ongoing growth work for stores and brands."],
-  ["Will I be pushed into a bigger package?", "No. You get a quote for exactly what you asked for — we don't bundle in extras you didn't request."],
-];
-
-/* ---------- primitives ---------- */
-
-function Container({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`mx-auto w-full max-w-[1200px] px-5 md:px-8 ${className}`}>{children}</div>;
-}
-
-function Btn({ href, children, variant = "primary", className = "" }: { href: string; children: ReactNode; variant?: "primary" | "outline" | "light"; className?: string }) {
-  const v = {
-    primary: "bg-primary text-primary-foreground hover:brightness-110 shadow-sm",
-    outline: "border border-input bg-background text-foreground hover:bg-secondary",
-    light: "bg-navy-foreground text-navy hover:bg-background",
-  }[variant];
-  return (
-    <a href={href} className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-[0.9375rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${v} ${className}`}>
-      {children}
-    </a>
-  );
-}
-
-function Tick({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 20 20" className={`shrink-0 ${className}`} aria-hidden>
-      <circle cx="10" cy="10" r="10" className="fill-accent" />
-      <path d="M6 10.2l2.6 2.6L14 7.5" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="stroke-primary" />
-    </svg>
-  );
-}
-
-function SectionHead({ kicker, title, sub, center }: { kicker: string; title: string; sub?: string; center?: boolean }) {
-  return (
-    <div className={center ? "mx-auto max-w-2xl text-center" : "max-w-2xl"}>
-      <p className="kicker">{kicker}</p>
-      <h2 className="mt-3 text-3xl font-semibold md:text-[2.5rem] md:leading-[1.1]">{title}</h2>
-      {sub && <p className="mt-4 text-lg text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
-
 /* ---------- page ---------- */
 
 export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: SiteContact }) {
+  const root = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add("(prefers-reduced-motion: no-preference)", () => {
+        // Hero intro, timed to follow the opening curtain.
+        gsap
+          .timeline({ delay: 1.35, defaults: { ease: "expo.out" } })
+          .to(".gx-hero-word", { y: 0, duration: 1.35, stagger: 0.045 })
+          .fromTo("[data-hero='fade']", { y: 26 }, { y: 0, autoAlpha: 1, duration: 1.1, stagger: 0.09 }, 0.35)
+          .fromTo("[data-hero='stage']", { scale: 1.06 }, { scale: 1, autoAlpha: 1, duration: 1.9, ease: "power2.out" }, 0.15)
+          .fromTo(
+            "[data-hero='panel']",
+            { y: 80, z: -140, rotationX: 24, transformPerspective: 900 },
+            { y: 0, z: 0, rotationX: 0, autoAlpha: 1, duration: 1.5, stagger: 0.14 },
+            0.55,
+          );
+
+        // Hero scroll-out: copy lifts away, the stage sinks, panels separate in depth.
+        gsap
+          .timeline({ scrollTrigger: { trigger: "#top", start: "top top", end: "bottom top", scrub: 0.6 } })
+          .to("[data-hero-copy]", { y: -110, autoAlpha: 0.1, ease: "none" }, 0)
+          .to("[data-hero-depth]", { y: 150, scale: 0.94, ease: "none" }, 0)
+          .to("[data-speed]", { y: (_i: number, el: HTMLElement) => -Number(el.dataset.speed) * 150, ease: "none" }, 0);
+
+        // Section headings: words rise out of their masks.
+        gsap.utils.toArray<HTMLElement>("[data-split]").forEach((heading) => {
+          gsap.from(heading.querySelectorAll(".gx-word > span"), {
+            yPercent: 115,
+            duration: 1.15,
+            ease: "expo.out",
+            stagger: 0.035,
+            scrollTrigger: { trigger: heading, start: "top 86%", once: true },
+          });
+        });
+
+        // Blocks that enter with depth (used sparingly, not on every element).
+        gsap.utils.toArray<HTMLElement>("[data-rise]").forEach((el) => {
+          gsap.from(el, {
+            y: 90,
+            rotationX: 9,
+            autoAlpha: 0,
+            transformPerspective: 1400,
+            transformOrigin: "50% 100%",
+            duration: 1.35,
+            ease: "expo.out",
+            delay: Number(el.dataset.rise || 0),
+            scrollTrigger: { trigger: el, start: "top 90%", once: true },
+          });
+        });
+
+        // Visuals open from a smaller window, and their imagery settles in scale while scrolling.
+        gsap.utils.toArray<HTMLElement>("[data-clip]").forEach((el) => {
+          gsap.fromTo(
+            el,
+            { clipPath: "inset(14% 10% 14% 10% round 28px)" },
+            { clipPath: "inset(0% 0% 0% 0% round 14px)", duration: 1.6, ease: "expo.out", scrollTrigger: { trigger: el, start: "top 88%", once: true } },
+          );
+        });
+        gsap.utils.toArray<HTMLElement>("[data-zoom]").forEach((el) => {
+          gsap.fromTo(el, { scale: 1.2 }, { scale: 1, ease: "none", scrollTrigger: { trigger: el, start: "top bottom", end: "bottom top", scrub: true } });
+        });
+
+        // Footer wordmark rises as the page ends.
+        gsap.fromTo(
+          "[data-wordmark]",
+          { yPercent: 45, autoAlpha: 0.2 },
+          { yPercent: 0, autoAlpha: 1, ease: "none", scrollTrigger: { trigger: "[data-wordmark]", start: "top bottom", end: "bottom bottom", scrub: true } },
+        );
+      });
+
+      // Pinned sections are created by the section components first; order and measure everything once.
+      ScrollTrigger.sort();
+      ScrollTrigger.refresh();
+      void document.fonts?.ready.then(() => ScrollTrigger.refresh());
+    },
+    { scope: root },
+  );
+
   return (
     <ContactContext.Provider value={contact}>
-    <div className="gx min-h-screen">
-      <Header />
-      <main>
-        <Hero />
-        <Services />
-        <Audience />
-        <Difference />
-        <Process />
-        <Faq />
-        <Contact />
-      </main>
-      <Footer />
-      <MobileCta />
-    </div>
+      <noscript>
+        <style>{`.gxo [data-hero]{opacity:1!important;visibility:visible!important}.gxo [data-hero-words] .gx-word>span{transform:none!important}`}</style>
+      </noscript>
+      <div ref={root} className="gxo min-h-screen overflow-x-clip">
+        <Curtain />
+        <CursorRing />
+        <Nav />
+        <main>
+          <Hero />
+          <Services />
+          <Audience />
+          <Why />
+          <Process />
+          <Verification />
+          <Faq />
+          <Contact />
+        </main>
+        <Footer />
+        <MobileCta />
+      </div>
     </ContactContext.Provider>
   );
 }
 
-function Header() {
-  const { email: EMAIL, phone } = useContact();
-  const [open, setOpen] = useState(false);
-  const links: [string, string][] = [["Services", "#services"], ["Why us", "#why"], ["Process", "#process"], ["FAQ", "#faq"]];
+/**
+ * Opening curtain: the animated logo alone on the page background (2026-11-16:
+ * no wordmark, no bar). Runs one fast loop of the loader, then lifts. CSS-only
+ * timing, never blocks clicks, hidden for reduced motion.
+ */
+function Curtain() {
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur">
-      <div className="hidden border-b bg-navy text-navy-muted md:block">
-        <Container className="flex h-9 items-center justify-between text-xs">
-          <span>Remote-first · Serving clients worldwide</span>
-          <span className="flex items-center gap-4">
-            {phone ? (
-              <a href={telHref(phone)} className="inline-flex items-center gap-1.5 hover:text-navy-foreground transition-colors">
-                <Phone className="h-3 w-3" aria-hidden />{phone}
-              </a>
-            ) : null}
-            <a href={`mailto:${EMAIL}`} className="inline-flex items-center gap-1.5 hover:text-navy-foreground transition-colors">
-              <Mail className="h-3 w-3" aria-hidden />{EMAIL}
-            </a>
-            <SocialLinks tone="dark" size="sm" className="gap-1.5" />
-          </span>
-        </Container>
-      </div>
-      <Container className="flex h-16 items-center justify-between">
-        <a href="#top" className="flex items-center" aria-label="Grow Xeno home">
-          <BrandWordmark className="h-10" />
-        </a>
-        <nav className="hidden items-center gap-1 md:flex">
-          {links.map(([l, h]) => (
-            <a key={h} href={h} className="rounded-md px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">{l}</a>
-          ))}
-        </nav>
-        <div className="hidden items-center gap-2 md:flex">
-          <Btn href={`mailto:${EMAIL}`} variant="outline" className="h-10">Email us</Btn>
-          <Btn href="#contact" className="h-10">Book a meeting</Btn>
-        </div>
-        <button onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Toggle menu" className="grid h-10 w-10 place-items-center rounded-md border md:hidden">
-          <svg viewBox="0 0 20 20" className="h-5 w-5" aria-hidden>
-            {open ? <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" /> : <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.6" />}
-          </svg>
-        </button>
-      </Container>
-      {open && (
-        <div className="border-t bg-background md:hidden">
-          <Container className="py-3">
-            {links.map(([l, h]) => (
-              <a key={h} href={h} onClick={() => setOpen(false)} className="flex items-center justify-between border-b py-4 font-medium last:border-0">
-                {l} <span className="text-muted-foreground">→</span>
-              </a>
-            ))}
-            <div className="grid grid-cols-2 gap-2 py-4">
-              <Btn href={`mailto:${EMAIL}`} variant="outline">Email us</Btn>
-              <Btn href="#contact">Book a meeting</Btn>
-            </div>
-            {/* The contact bar above the header is desktop-only, so its details live here on phones. */}
-            <div className="space-y-2.5 border-t pt-4 pb-2 text-sm text-muted-foreground">
-              {phone ? (
-                <a href={telHref(phone)} className="flex items-center gap-2 hover:text-foreground"><Phone className="h-4 w-4" aria-hidden />{phone}</a>
-              ) : null}
-              <a href={`mailto:${EMAIL}`} className="flex items-center gap-2 break-all hover:text-foreground"><Mail className="h-4 w-4 shrink-0" aria-hidden />{EMAIL}</a>
-              <SocialLinks size="sm" className="pt-1" />
-            </div>
-          </Container>
-        </div>
-      )}
-    </header>
+    <div aria-hidden className="gx-curtain pointer-events-none fixed inset-0 z-[100] grid place-items-center bg-[var(--gx-bg)]">
+      <GrowXenoLoader size="xl" variant="light" speed={2} label="" />
+    </div>
   );
 }
 
+/* ---------- navigation ---------- */
+
+function subscribeScroll(cb: () => void) {
+  window.addEventListener("scroll", cb, { passive: true });
+  return () => window.removeEventListener("scroll", cb);
+}
+
+function Nav() {
+  const { email: EMAIL, phone } = useContact();
+  const [open, setOpen] = useState(false);
+  const header = useRef<HTMLElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const scrolled = useSyncExternalStore(subscribeScroll, () => window.scrollY > 40, () => false);
+  const reduced = useMedia(REDUCED);
+
+  // Hide while scrolling down the page, return on the way up.
+  useEffect(() => {
+    const el = header.current;
+    if (!el || reduced) return;
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (open) return;
+      if (y > 480 && y > last + 6) gsap.to(el, { yPercent: -120, duration: 0.5, ease: "power3.out" });
+      else if (y < last - 6 || y < 480) gsap.to(el, { yPercent: 0, duration: 0.6, ease: "expo.out" });
+      last = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [open, reduced]);
+
+  // Mobile menu: lock the page and stagger the links in.
+  useEffect(() => {
+    document.documentElement.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.documentElement.style.overflow = "";
+    };
+  }, [open]);
+  useGSAP(
+    () => {
+      if (!open || reduced || !menu.current) return;
+      gsap.fromTo(menu.current, { clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", duration: 0.7, ease: "expo.out" });
+      gsap.fromTo(menu.current.querySelectorAll("[data-menu-item]"), { yPercent: 120 }, { yPercent: 0, duration: 0.9, stagger: 0.06, ease: "expo.out", delay: 0.12 });
+    },
+    { dependencies: [open, reduced] },
+  );
+
+  return (
+    <>
+      <header
+        ref={header}
+        className={`fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-500 ${
+          scrolled || open ? "border-b border-[var(--gx-line)] bg-[var(--gx-bg)]/75 backdrop-blur-xl" : "border-b border-transparent"
+        }`}
+      >
+        <Container className="flex h-[76px] items-center justify-between gap-6">
+          <a href="#top" aria-label="Grow Xeno home" className={`rounded-[var(--gx-r-sm)] ${ring}`}>
+            <Logo />
+          </a>
+          <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
+            {NAV.map(([label, href]) => (
+              <a
+                key={href}
+                href={href}
+                className={`group rounded-[var(--gx-r-sm)] px-3.5 py-2 text-sm text-[var(--gx-muted)] ${ring}`}
+              >
+                {/* The label rolls up and a brighter copy rolls in under it. */}
+                <span className="relative block overflow-hidden">
+                  <span className="block transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-full">{label}</span>
+                  <span aria-hidden className="absolute inset-0 block translate-y-full text-[var(--gx-text)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-y-0">
+                    {label}
+                  </span>
+                </span>
+              </a>
+            ))}
+          </nav>
+          <div className="hidden items-center gap-6 md:flex">
+            <p className="gx-eyebrow hidden text-right leading-[1.5] text-[var(--gx-dim)] lg:block">
+              Remote-first
+              <br />
+              <span className="text-[var(--gx-muted)]">Worldwide</span>
+            </p>
+            <Magnetic>
+              <Btn href="#contact" className="h-10 px-5 text-sm">
+                Book a meeting
+              </Btn>
+            </Magnetic>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+            aria-label={open ? "Close menu" : "Open menu"}
+            className={`grid size-11 place-items-center rounded-[var(--gx-r-sm)] border border-[var(--gx-line-2)] text-[var(--gx-text)] md:hidden ${ring}`}
+          >
+            {open ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
+          </button>
+        </Container>
+      </header>
+
+      {open ? (
+        <div ref={menu} id="mobile-menu" className="fixed inset-0 z-40 flex flex-col bg-[var(--gx-bg)] pt-[76px] md:hidden">
+          <div aria-hidden className="pointer-events-none absolute -right-1/3 top-1/4 h-2/3 w-[120%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.14),transparent)]" />
+          <nav aria-label="Mobile" className="relative flex-1 px-5 pt-8">
+            {NAV.map(([label, href], i) => (
+              <div key={href} className="overflow-hidden border-b border-[var(--gx-line)]">
+                <a
+                  href={href}
+                  data-menu-item
+                  onClick={() => setOpen(false)}
+                  className="gx-display flex items-baseline justify-between py-5 text-[2.5rem] text-[var(--gx-text)]"
+                >
+                  {label}
+                  <span className="text-xs font-normal tabular-nums tracking-normal text-[var(--gx-dim)]">0{i + 1}</span>
+                </a>
+              </div>
+            ))}
+          </nav>
+          <div className="relative space-y-3 border-t border-[var(--gx-line)] px-5 py-6 text-sm text-[var(--gx-muted)]">
+            <Btn href="#contact" onClick={() => setOpen(false)} className="w-full">
+              Book a meeting <ArrowRight className="size-4" aria-hidden />
+            </Btn>
+            <a href={`mailto:${EMAIL}`} className="flex items-center gap-2 break-all pt-2 hover:text-[var(--gx-text)]">
+              <Mail className="size-4 shrink-0" aria-hidden />
+              {EMAIL}
+            </a>
+            {phone ? (
+              <a href={telHref(phone)} className="flex items-center gap-2 tabular-nums hover:text-[var(--gx-text)]">
+                <Phone className="size-4" aria-hidden />
+                {phone}
+              </a>
+            ) : null}
+            <p className="gx-eyebrow pt-1 text-[var(--gx-dim)]">Remote-first · Worldwide</p>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/* ---------- hero ---------- */
+
 function Hero() {
   return (
-    <section id="top" className="relative overflow-hidden bg-surface">
-      <Container className="grid items-center gap-12 py-14 md:py-20 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
-        <div className="animate-fade-up">
-          <span className="mt-2 block text-sm font-medium text-muted-foreground">Digital growth services, run honestly</span>
-          <h1 className="mt-5 text-[2.5rem] font-semibold leading-[1.05] md:text-6xl">
-            Real growth for your channels, store and brand.
-          </h1>
-          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
-            Grow Xeno handles YouTube and TikTok monetization, Google AdSense, social media marketing, and website &amp; Shopify builds. Every delivery is verified before handover — and supported after it.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Btn href="#contact" className="h-12 px-6">Book a meeting →</Btn>
-            <Btn href="#services" variant="outline" className="h-12 px-6">Explore services</Btn>
+    <section id="top" className="relative isolate overflow-hidden">
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="gx-ambient absolute -top-1/4 right-[-15%] h-[85vh] w-[70vw] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.13),transparent)]" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[var(--gx-bg)]" />
+        <div className="gx-grain absolute inset-0" />
+      </div>
+
+      <Container className="relative grid grid-cols-12 items-center gap-y-6 pb-14 pt-28 sm:pt-32 lg:min-h-[100svh] lg:gap-x-8 lg:pb-20 lg:pt-28">
+        <div data-hero-copy className="relative z-10 col-span-12 lg:col-span-6">
+          <div data-hero="fade">
+            <Eyebrow>Digital growth services, run honestly</Eyebrow>
           </div>
-          <ul className="mt-10 grid gap-3 border-t pt-6 text-sm sm:grid-cols-3">
-            {["Verified before handover", "Direct communication, no ticket queue", "No bundled upsells"].map((t) => (
-              <li key={t} className="flex items-start gap-2.5"><Tick className="mt-0.5 h-4 w-4" />{t}</li>
+          <h1 data-hero-words className="gx-display mt-6 text-[clamp(2.9rem,6.4vw,6.4rem)] text-[var(--gx-text)]">
+            <span className="sr-only">Real growth for your channels, store and brand.</span>
+            <span aria-hidden>
+              <MaskWords text="Real growth for your channels, store" wordClassName="gx-hero-word" />{" "}
+              <MaskWords text="and brand" wordClassName="gx-hero-word gx-serif" />
+              <span className="gx-word">
+                <span className="gx-hero-word text-[var(--gx-accent)]">.</span>
+              </span>
+            </span>
+          </h1>
+          <p data-hero="fade" className="mt-7 max-w-[46ch] text-[1.0625rem] leading-[1.65] text-[var(--gx-muted)] sm:text-lg">
+            Grow Xeno handles YouTube and TikTok monetization, Google AdSense, social media marketing, and website &amp; Shopify builds. Every delivery is verified before handover, and supported after it.
+          </p>
+          <div data-hero="fade" className="mt-9 flex flex-wrap items-center gap-3">
+            <Magnetic>
+              <Btn href="#contact">
+                Book a meeting <ArrowUpRight className="size-4 transition-transform duration-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden />
+              </Btn>
+            </Magnetic>
+            <Btn href="#services" variant="ghost">
+              Explore services
+            </Btn>
+          </div>
+          <ul data-hero="fade" className="mt-12 grid max-w-xl grid-cols-3 border-t border-[var(--gx-line)] text-[0.8125rem] leading-snug text-[var(--gx-muted)]">
+            {["Verified before handover", "Direct communication", "No bundled upsells"].map((t, i) => (
+              <li key={t} className={`pt-4 ${i > 0 ? "border-l border-[var(--gx-line)] pl-4" : "pr-4"}`}>
+                <span className="mb-1.5 block text-[0.6875rem] tabular-nums text-[var(--gx-accent)]">0{i + 1}</span>
+                {t}
+              </li>
             ))}
           </ul>
         </div>
 
-        <div className="relative animate-fade-up [animation-delay:120ms]">
-          <img src="/grow-xeno-hero.jpg" alt="A Grow Xeno specialist working directly on a client project" width={1280} height={1440} className="aspect-[4/4.2] w-full rounded-2xl object-cover shadow-panel" />
-          <div className="absolute -bottom-6 left-4 right-4 rounded-xl border bg-card p-5 shadow-panel sm:left-auto sm:right-6 sm:w-80">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Before every handover</p>
-              <span className="rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">Checked</span>
-            </div>
-            <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-              {["Delivered against the agreed quote", "Numbers verified against the promise", "Walkthrough to secure your account"].map((t) => (
-                <li key={t} className="flex items-center gap-2.5"><Tick />{t}</li>
-              ))}
-            </ul>
-          </div>
+        <div className="col-span-12 lg:col-span-6">
+          <HeroStage />
         </div>
       </Container>
-      <div className="h-6" />
+
+      <div data-hero="fade" aria-hidden className="absolute bottom-7 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-3 lg:flex">
+        <span className="gx-eyebrow text-[var(--gx-dim)]">Scroll</span>
+        <span className="relative block h-10 w-px overflow-hidden bg-[var(--gx-line-2)]">
+          <span className="absolute inset-x-0 top-0 block h-1/2 animate-[gx-scrollcue_2s_ease-in-out_infinite] bg-[var(--gx-accent)] motion-reduce:animate-none" />
+        </span>
+      </div>
     </section>
   );
 }
 
-function Services() {
-  const [active, setActive] = useState(0);
-  const s = services[active] ?? services[0]!;
+function HeroStage() {
+  const stage = useRef<HTMLDivElement>(null);
+  const layers = useRef<HTMLDivElement>(null);
+  const simplified = useMedia("(max-width: 1023px)");
+  const reduced = useMedia(REDUCED);
+  const [mountScene, setMountScene] = useState(false);
+  const [inView, setInView] = useState(true);
+  const [ready, setReady] = useState(false);
+
+  // Load three.js just after first paint, and render only while the hero is on screen.
+  useEffect(() => {
+    const t = window.setTimeout(() => setMountScene(true), 300);
+    return () => window.clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([entry]) => setInView(entry?.isIntersecting ?? true), { rootMargin: "120px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  // Panels drift with the pointer, nearer ones further.
+  useEffect(() => {
+    const host = layers.current;
+    if (!host || reduced || !window.matchMedia("(pointer: fine)").matches) return;
+    const items = Array.from(host.querySelectorAll<HTMLElement>("[data-mouse]")).map((el) => ({
+      depth: Number(el.dataset.mouse),
+      x: gsap.quickTo(el, "x", { duration: 1.1, ease: "power3.out" }),
+      y: gsap.quickTo(el, "y", { duration: 1.1, ease: "power3.out" }),
+    }));
+    const move = (e: PointerEvent) => {
+      const px = e.clientX / window.innerWidth - 0.5;
+      const py = e.clientY / window.innerHeight - 0.5;
+      items.forEach((it) => {
+        it.x(px * it.depth);
+        it.y(py * it.depth);
+      });
+    };
+    window.addEventListener("pointermove", move, { passive: true });
+    return () => window.removeEventListener("pointermove", move);
+  }, [reduced]);
+
   return (
-    <section id="services" className="py-16 md:py-28">
-      <Container>
-        <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
-          <SectionHead kicker="Services" title="Six services, held to one standard: it actually works." sub="Pick a service to see who it's for, what's included, and what you end up with." />
-          <Btn href="#contact" variant="outline" className="self-start md:self-auto">Not sure? Ask us</Btn>
+    <div data-hero-depth className="relative h-[400px] sm:h-[520px] lg:h-[min(720px,80vh)]">
+      <div
+        ref={stage}
+        data-hero="stage"
+        className="absolute -inset-x-5 inset-y-0 sm:inset-x-0 lg:-right-12 lg:-left-6"
+        style={{
+          // Feather every edge so the scene melts into the page instead of sitting in a box.
+          maskImage: "linear-gradient(to right, transparent, #000 16%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 80%, transparent)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent, #000 16%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 80%, transparent)",
+          maskComposite: "intersect",
+          WebkitMaskComposite: "source-in",
+        }}
+      >
+        <div
+          aria-hidden
+          className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-0" : "opacity-100"} bg-[radial-gradient(60%_50%_at_60%_60%,rgb(8_229_47/0.18),transparent_70%)]`}
+        />
+        {mountScene ? <HeroScene simplified={simplified} reducedMotion={reduced} active={inView} onReady={() => setReady(true)} /> : null}
+      </div>
+
+      <div ref={layers} aria-hidden className="pointer-events-none absolute inset-0 [perspective:1100px]">
+        <div data-speed="0.55" className="absolute left-0 top-[4%] sm:left-[2%] lg:left-[-2%] lg:top-[8%]">
+          <div data-mouse="34">
+            <div data-hero="panel">
+              <PerformancePanel />
+            </div>
+          </div>
+        </div>
+        <div data-speed="0.9" className="absolute bottom-[3%] right-0 sm:bottom-auto sm:right-[4%] sm:top-[2%] lg:top-[6%]">
+          <div data-mouse="52">
+            <div data-hero="panel">
+              <VerifiedChip />
+            </div>
+          </div>
+        </div>
+        <div data-speed="0.35" className="absolute bottom-[4%] right-0 hidden sm:block lg:bottom-[10%] lg:right-[-2%]">
+          <div data-mouse="22">
+            <div data-hero="panel">
+              <StatusPanel />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Bar({ value }: { value: number }) {
+  return (
+    <span className="mt-2 block h-1 overflow-hidden rounded-full bg-[var(--gx-line)]">
+      <span className="block h-full rounded-full bg-gradient-to-r from-[var(--gx-accent)] to-[var(--gx-accent-hi)]" style={{ width: `${value}%` }} />
+    </span>
+  );
+}
+
+const panelSurface =
+  "rounded-[var(--gx-r-md)] border border-[var(--gx-line-2)] bg-[var(--gx-s2)]/90 shadow-[var(--gx-shadow-3)] backdrop-blur-md";
+
+function PerformancePanel() {
+  return (
+    <div className={`w-[236px] p-4 sm:w-[268px] ${panelSurface}`}>
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-[0.8125rem] font-medium text-[var(--gx-text)]">
+          <SiYoutube className="size-4 text-[var(--gx-accent)]" />
+          Channel performance
+        </span>
+        <span className="gx-eyebrow text-[0.5625rem] text-[var(--gx-dim)]">Target</span>
+      </div>
+      <svg viewBox="0 0 240 70" className="mt-3 h-14 w-full" aria-hidden>
+        <defs>
+          <linearGradient id="gx-area" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="#08E52F" stopOpacity="0.35" />
+            <stop offset="1" stopColor="#08E52F" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M0 62 C 30 60, 45 54, 70 50 S 110 44, 130 34 S 170 22, 195 14 S 225 6, 240 4 L 240 70 L 0 70 Z" fill="url(#gx-area)" />
+        <path d="M0 62 C 30 60, 45 54, 70 50 S 110 44, 130 34 S 170 22, 195 14 S 225 6, 240 4" fill="none" stroke="#08E52F" strokeWidth="1.6" />
+        <circle cx="240" cy="4" r="3" fill="#E9FFEC" />
+      </svg>
+      <div className="mt-2 space-y-3 text-[0.75rem]">
+        <div>
+          <div className="flex justify-between text-[var(--gx-muted)]">
+            <span>Subscribers</span>
+            <span className="tabular-nums text-[var(--gx-text)]">1,000 / 1,000</span>
+          </div>
+          <Bar value={100} />
+        </div>
+        <div>
+          <div className="flex justify-between text-[var(--gx-muted)]">
+            <span>Watch hours</span>
+            <span className="tabular-nums text-[var(--gx-text)]">4,000 / 4,000</span>
+          </div>
+          <Bar value={100} />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between border-t border-[var(--gx-line)] pt-3 text-[0.75rem]">
+        <span className="text-[var(--gx-muted)]">Partner Program</span>
+        <span className="flex items-center gap-1.5 font-medium text-[var(--gx-accent-hi)]">
+          <span className="size-1.5 rounded-full bg-[var(--gx-accent)]" />
+          Eligible
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function StatusPanel() {
+  const rows: { Icon: typeof SiYoutube; label: string; value: string }[] = [
+    { Icon: SiYoutube, label: "YouTube", value: "Monetized" },
+    { Icon: SiGoogleadsense, label: "AdSense", value: "PIN verified" },
+    { Icon: SiTiktok, label: "TikTok", value: "10K · 1M+ / 28d" },
+  ];
+  return (
+    <div className={`w-[248px] p-4 ${panelSurface}`}>
+      <p className="gx-eyebrow text-[0.5625rem] text-[var(--gx-dim)]">Monetization status</p>
+      <ul className="mt-3 divide-y divide-[var(--gx-line)] text-[0.75rem]">
+        {rows.map(({ Icon, label, value }) => (
+          <li key={label} className="flex items-center justify-between py-2.5">
+            <span className="flex items-center gap-2 text-[var(--gx-muted)]">
+              <Icon className="size-3.5 text-[var(--gx-text)]" />
+              {label}
+            </span>
+            <span className="tabular-nums text-[var(--gx-text)]">{value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function VerifiedChip() {
+  return (
+    <div className={`flex items-center gap-3 py-3 pl-3 pr-4 ${panelSurface}`}>
+      <span className="grid size-8 place-items-center rounded-full bg-[var(--gx-accent)] text-[var(--gx-accent-ink)]">
+        <Check className="size-4" strokeWidth={2.5} />
+      </span>
+      <span className="text-[0.75rem] leading-tight">
+        <span className="block font-medium text-[var(--gx-text)]">Verified before handover</span>
+        <span className="tabular-nums text-[var(--gx-dim)]">Checks 3 / 3 passed</span>
+      </span>
+    </div>
+  );
+}
+
+/* ---------- services ---------- */
+
+/*
+ * Services as a bento (2026-11-16, owner reference): six illustrated cards.
+ * Large screens: YouTube and TikTok wide on top; AdSense and Website & App
+ * Design tall at the sides with Social Media Marketing and Shopify stacked
+ * between them. "Learn more" expands a card to the full width with all its
+ * details while the others settle into a row beneath it (GSAP Flip animates
+ * every card from where it was to where it lands). Smaller screens: the
+ * cards stack and a card opens in place.
+ */
+
+type Layout = "overlay" | "textTop" | "visualTop";
+
+const BENTO: Record<ServiceId, { span: string; layout: Layout; art: () => ReactNode }> = {
+  youtube: { span: "lg:col-span-6", layout: "overlay", art: () => <YouTubeArt /> },
+  tiktok: { span: "lg:col-span-6", layout: "overlay", art: () => <TikTokArt /> },
+  adsense: { span: "lg:col-span-4 lg:row-span-2", layout: "textTop", art: () => <AdSenseArt /> },
+  smm: { span: "lg:col-span-4", layout: "textTop", art: () => <SmmArt /> },
+  web: { span: "lg:col-span-4 lg:row-span-2", layout: "textTop", art: () => <WebArt /> },
+  shopify: { span: "lg:col-span-4", layout: "visualTop", art: () => <ShopifyArt /> },
+};
+
+/** Which side each card slides in from on large screens: -1 left, 1 right, 0 from below. */
+const ENTER_FROM: Record<ServiceId, number> = { youtube: -1, tiktok: 1, adsense: -1, smm: 0, web: 1, shopify: 0 };
+
+/** Spans while one card is open: the others line up as 4 + 4 + 4, then 6 + 6. */
+const COMPACT = ["lg:col-span-4", "lg:col-span-4", "lg:col-span-4", "lg:col-span-6", "lg:col-span-6"];
+
+function Services() {
+  const reduced = useMedia(REDUCED);
+  const [open, setOpen] = useState<number | null>(null);
+  const grid = useRef<HTMLDivElement>(null);
+  const flip = useRef<Flip.FlipState | null>(null);
+
+  // Each card slides in from its side of the grid with a little depth, then its
+  // illustration layers and its text follow in sequence. Once per card; nothing
+  // moves for reduced motion. Inline styles are cleared afterwards so the
+  // expand animation (Flip) starts from clean boxes.
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add({ motion: "(prefers-reduced-motion: no-preference)", wide: "(min-width: 1024px)" }, (ctx) => {
+        if (!ctx.conditions?.motion) return;
+        const wide = Boolean(ctx.conditions.wide);
+        gsap.utils.toArray<HTMLElement>("[data-card]").forEach((card, i) => {
+          const dir = wide ? Number(card.dataset.from ?? 0) : 0;
+          const art = card.querySelectorAll<HTMLElement>("[data-art] > *");
+          const text = card.querySelectorAll<HTMLElement>("[data-slide]");
+          gsap
+            .timeline({
+              scrollTrigger: { trigger: card, start: "top 90%", once: true },
+              onComplete: () => gsap.set([card, ...art, ...text], { clearProps: "transform,transformOrigin,opacity,visibility" }),
+            })
+            .from(card, {
+              x: dir * 140,
+              y: dir ? 40 : 110,
+              rotationY: dir * -10,
+              rotationX: dir ? 0 : 12,
+              transformPerspective: 1400,
+              transformOrigin: dir < 0 ? "100% 50%" : dir > 0 ? "0% 50%" : "50% 100%",
+              autoAlpha: 0,
+              duration: 1.25,
+              ease: "expo.out",
+              delay: wide ? (i % 3) * 0.08 : 0,
+            })
+            .from(art, { y: 46, x: dir * 36, scale: 0.92, autoAlpha: 0, duration: 1, stagger: 0.07, ease: "expo.out" }, "-=0.95")
+            .from(text, { y: 30, x: dir * 24, autoAlpha: 0, duration: 0.9, stagger: 0.07, ease: "expo.out" }, "-=0.85");
+        });
+      });
+    },
+    { scope: grid },
+  );
+
+  const toggle = (i: number | null) => {
+    if (!reduced && grid.current) flip.current = Flip.getState(grid.current.querySelectorAll("[data-card]"));
+    setOpen((prev) => (prev === i ? null : i));
+  };
+
+  // Close with Escape.
+  useEffect(() => {
+    if (open === null) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") toggle(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Every card travels from its old box to its new one; the opened card's details then arrive.
+  useGSAP(
+    () => {
+      const state = flip.current;
+      flip.current = null;
+      const host = grid.current;
+      if (!host) return;
+      const opened = open === null ? null : host.querySelector<HTMLElement>(`[data-card="${services[open]!.id}"]`);
+      // Where the opened card ends up, measured before Flip moves anything back to its old spot.
+      const target = opened ? opened.getBoundingClientRect().top + window.scrollY - 96 : null;
+      if (state) {
+        Flip.from(state, {
+          duration: 0.95,
+          ease: "expo.inOut",
+          nested: true,
+          onComplete: () => ScrollTrigger.refresh(),
+        });
+      }
+      if (opened) {
+        if (!reduced) {
+          gsap.fromTo(
+            opened.querySelectorAll("[data-detail]"),
+            { autoAlpha: 0, y: 22 },
+            { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.05, delay: state ? 0.45 : 0, ease: "expo.out" },
+          );
+        }
+        if (target !== null) window.scrollTo({ top: target, behavior: reduced ? "auto" : "smooth" });
+      }
+    },
+    { dependencies: [open], scope: grid },
+  );
+
+  let compactIndex = 0;
+
+  return (
+    <section id="services" className="gx-section relative scroll-mt-20 border-t border-[var(--gx-line)] bg-[var(--gx-s1)]">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[40rem] bg-[radial-gradient(60%_50%_at_50%_0%,rgb(0_185_91/0.08),transparent_70%)]" />
+      <Container className="relative">
+        <div className="grid grid-cols-12 items-end gap-y-6">
+          <div className="col-span-12 lg:col-span-8">
+            <Eyebrow>Services</Eyebrow>
+            <SplitHeading text="Six services, held to one standard:" serif="it actually works." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+          </div>
+          <p className="col-span-12 max-w-[40ch] leading-[1.65] text-[var(--gx-muted)] lg:col-span-4 lg:justify-self-end">
+            Pick a service to see who it&apos;s for, what&apos;s included, and what you end up with.
+          </p>
         </div>
 
-        <div className="mt-12 grid gap-6 lg:grid-cols-[340px_1fr]">
-          <div role="tablist" aria-label="Services" className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-2 lg:mx-0 lg:flex-col lg:gap-1 lg:overflow-visible lg:px-0 lg:pb-0">
-            {services.map((x, i) => (
-              <button
-                key={x.id}
-                role="tab"
-                aria-selected={active === i}
-                onClick={() => setActive(i)}
-                className={`group shrink-0 rounded-lg border px-4 py-3 text-left transition-all lg:flex lg:items-center lg:justify-between lg:py-4 ${
-                  active === i ? "border-primary bg-accent" : "border-transparent bg-secondary hover:border-input lg:bg-transparent"
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <x.icon aria-hidden="true" className={`size-4 shrink-0 lg:size-5 ${active === i ? "text-primary" : "text-muted-foreground"}`} />
-                  <span>
-                    <span className={`block whitespace-nowrap text-sm font-semibold lg:text-base ${active === i ? "text-accent-foreground" : ""}`}>{x.name}</span>
-                    <span className="mt-0.5 hidden text-sm text-muted-foreground lg:block">{x.short}</span>
-                  </span>
-                </span>
-                <span className={`hidden transition-transform lg:block ${active === i ? "translate-x-0 text-primary" : "-translate-x-1 text-muted-foreground opacity-0 group-hover:opacity-100"}`}>→</span>
-              </button>
-            ))}
-          </div>
-
-          <article key={s.id} role="tabpanel" className="animate-fade-up sm:rounded-2xl sm:border sm:bg-card sm:p-6 sm:shadow-panel md:p-10">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-                  <s.icon aria-hidden="true" className="size-5" />
-                </span>
-                <div>
-                  <p className="text-sm text-muted-foreground">Service {String(active + 1).padStart(2, "0")} of 06</p>
-                  <h3 className="mt-1 text-2xl font-semibold md:text-3xl">{s.name}</h3>
-                </div>
-              </div>
-              <Btn href="#contact" className="h-10">Get a quote</Btn>
-            </div>
-            <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">{s.summary}</p>
-
-            <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:mt-8 sm:rounded-xl">
-              {s.target.map(([k, v]) => (
-                <div key={k} className="bg-surface p-3.5 sm:p-5">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{k}</p>
-                  <p className="mt-1 text-base font-semibold tabular-nums sm:mt-1.5 sm:text-2xl">{v}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 grid gap-8 md:grid-cols-2">
-              <div>
-                <h4 className="text-sm font-semibold">What&apos;s included</h4>
-                <ul className="mt-4 space-y-3">
-                  {s.includes.map((i) => <li key={i} className="flex items-start gap-3 text-[0.9375rem]"><Tick className="mt-0.5 h-4 w-4" />{i}</li>)}
-                </ul>
-              </div>
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-semibold">Who it&apos;s for</h4>
-                  <p className="mt-2 text-[0.9375rem] text-muted-foreground">{s.audience}</p>
-                </div>
-                <div className="rounded-lg border-l-2 border-primary bg-accent/50 p-4">
-                  <h4 className="text-sm font-semibold">Where it leads</h4>
-                  <p className="mt-1 text-[0.9375rem] text-muted-foreground">{s.outcome}</p>
-                </div>
-              </div>
-            </div>
-          </article>
+        <div
+          ref={grid}
+          className={`mt-14 grid grid-flow-row-dense gap-4 sm:grid-cols-2 lg:mt-20 lg:grid-cols-12 ${open === null ? "lg:auto-rows-[minmax(260px,auto)]" : "lg:auto-rows-auto"}`}
+        >
+          {services.map((s, i) => {
+            const isOpen = open === i;
+            const b = BENTO[s.id];
+            const span = open === null ? b.span : isOpen ? "lg:col-span-12 lg:order-first" : COMPACT[compactIndex++]!;
+            return (
+              <ServiceCard key={s.id} service={s} index={i} span={span} layout={b.layout} art={b.art()} isOpen={isOpen} compact={open !== null && !isOpen} onToggle={() => toggle(i)} />
+            );
+          })}
         </div>
       </Container>
     </section>
+  );
+}
+
+function ServiceCard({
+  service: s,
+  index,
+  span,
+  layout,
+  art,
+  isOpen,
+  compact,
+  onToggle,
+}: {
+  service: (typeof services)[number];
+  index: number;
+  span: string;
+  layout: Layout;
+  art: ReactNode;
+  isOpen: boolean;
+  compact: boolean;
+  onToggle: () => void;
+}) {
+  const quote = () => window.dispatchEvent(new CustomEvent(SERVICE_EVENT, { detail: s.name }));
+  const spot = (e: React.PointerEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+    e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+  };
+  const detailId = `svc-detail-${s.id}`;
+
+  const learnMore = (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      aria-controls={detailId}
+      className={`group/btn relative inline-flex h-11 items-center gap-2 overflow-hidden rounded-full border border-[var(--gx-line-2)] bg-[var(--gx-s3)] px-5 text-sm font-medium text-[var(--gx-text)] shadow-[var(--gx-shadow-1)] transition-[border-color,box-shadow,color] duration-500 hover:border-[var(--gx-accent)]/60 hover:text-[var(--gx-accent-ink)] hover:shadow-[0_0_0_4px_rgb(8_229_47/0.12),0_10px_30px_-10px_rgb(8_229_47/0.6)] ${ring}`}
+    >
+      <span aria-hidden className="absolute inset-0 translate-y-full rounded-full bg-[var(--gx-accent)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/btn:translate-y-0" />
+      <span className="relative">Learn more</span>
+      <ArrowRight className="relative size-4 transition-transform duration-500 group-hover/btn:translate-x-0.5" aria-hidden />
+    </button>
+  );
+
+  const head = (
+    <>
+      <p data-slide className="text-xs tabular-nums text-[var(--gx-dim)]">0{index + 1}</p>
+      <h3 data-slide className={`gx-display gx-metal mt-2 ${compact ? "text-[1.6rem]" : "text-[clamp(1.9rem,2.6vw,2.6rem)]"}`}>{s.name}</h3>
+    </>
+  );
+
+  return (
+    <article
+      data-card={s.id}
+      data-from={ENTER_FROM[s.id]}
+      onPointerMove={spot}
+      className={`group relative isolate flex flex-col overflow-hidden rounded-[22px] border bg-[var(--gx-s2)] shadow-[var(--gx-shadow-2)] transition-[border-color,box-shadow] duration-500 ${span} ${
+        isOpen ? "border-[var(--gx-line-2)] sm:col-span-2" : "border-[var(--gx-line)] hover:border-[var(--gx-line-2)]"
+      }`}
+    >
+      {/* Light catching the top edge, and a soft emerald spotlight that follows the pointer. */}
+      <span aria-hidden className="pointer-events-none absolute inset-x-10 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+        style={{ background: "radial-gradient(460px circle at var(--mx, 50%) var(--my, 0%), rgb(8 229 47 / 0.07), transparent 60%)" }}
+      />
+
+      {isOpen ? (
+        <div className="grid flex-1 lg:grid-cols-12">
+          <div className="relative min-h-[260px] overflow-hidden border-b border-[var(--gx-line)] lg:col-span-5 lg:min-h-[520px] lg:border-b-0 lg:border-r">{art}</div>
+          <div id={detailId} role="region" aria-label={`${s.name} details`} className="p-6 sm:p-10 lg:col-span-7 lg:p-12">
+            <div data-detail className="flex items-start justify-between gap-6">
+              <div>{head}</div>
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-label={`Close ${s.name}`}
+                className={`grid size-11 shrink-0 place-items-center rounded-full border border-[var(--gx-line-2)] text-[var(--gx-muted)] transition-colors duration-300 hover:border-[var(--gx-accent)] hover:text-[var(--gx-text)] ${ring}`}
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+            <p data-detail className="mt-5 max-w-[58ch] leading-[1.7] text-[var(--gx-muted)] sm:text-lg">
+              {s.summary}
+            </p>
+            <dl data-detail className="mt-8 grid grid-cols-2 border-y border-[var(--gx-line)]">
+              {s.target.map(([k, v], i) => (
+                <div key={k} className={`py-5 ${i === 1 ? "border-l border-[var(--gx-line)] pl-5 sm:pl-8" : "pr-5"}`}>
+                  <dt className="gx-eyebrow text-[var(--gx-dim)]">{k}</dt>
+                  <dd className="gx-display gx-metal mt-2 text-[clamp(1.4rem,2.6vw,2.4rem)] tabular-nums tracking-[-0.03em]">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-8 grid gap-8 md:grid-cols-[1.15fr_1fr]">
+              <div data-detail>
+                <p className="gx-eyebrow text-[var(--gx-dim)]">What&apos;s included</p>
+                <ol className="mt-4 space-y-3">
+                  {s.includes.map((item, i) => (
+                    <li key={item} className="flex gap-4 text-[0.9375rem] text-[var(--gx-text)]/90">
+                      <span className="pt-0.5 text-xs tabular-nums text-[var(--gx-accent)]">0{i + 1}</span>
+                      {item}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div data-detail className="space-y-6">
+                <div>
+                  <p className="gx-eyebrow text-[var(--gx-dim)]">Who it&apos;s for</p>
+                  <p className="mt-3 leading-[1.6] text-[var(--gx-text)]/90">{s.audience}</p>
+                </div>
+                <div className="border-l border-[var(--gx-accent)] pl-4">
+                  <p className="gx-eyebrow text-[var(--gx-accent)]">Where it leads</p>
+                  <p className="mt-2 leading-[1.6] text-[var(--gx-text)]/90">{s.outcome}</p>
+                </div>
+              </div>
+            </div>
+            <div data-detail className="mt-9 flex flex-wrap items-center gap-3">
+              <Magnetic>
+                <Btn href="#contact" onClick={quote}>
+                  Get a quote <ArrowRight className="size-4" aria-hidden />
+                </Btn>
+              </Magnetic>
+              <button type="button" onClick={onToggle} className={`rounded-full px-4 py-2 text-sm text-[var(--gx-muted)] transition-colors hover:text-[var(--gx-text)] ${ring}`}>
+                Back to all services
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : compact ? (
+        <div className="flex flex-1 items-end gap-5 p-6">
+          <div className="relative size-24 shrink-0 overflow-hidden rounded-[var(--gx-r-md)] border border-[var(--gx-line)] bg-[var(--gx-bg)]">
+            <div className="absolute inset-0 origin-top-left scale-[0.42]" style={{ width: "238%", height: "238%" }}>
+              {art}
+            </div>
+          </div>
+          <div className="min-w-0 flex-1">
+            {head}
+            <div className="mt-4">{learnMore}</div>
+          </div>
+        </div>
+      ) : layout === "overlay" ? (
+        <div className="relative flex min-h-[360px] flex-1 flex-col justify-end sm:min-h-[400px]">
+          <div className="absolute inset-0">{art}</div>
+          <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-[var(--gx-s2)] via-[var(--gx-s2)]/80 to-transparent" />
+          <div className="relative p-7 sm:p-8">
+            {head}
+            <p data-slide className="mt-3 max-w-[52ch] leading-[1.6] text-[var(--gx-muted)]">{s.summary}</p>
+            <div data-slide className="mt-6">{learnMore}</div>
+          </div>
+        </div>
+      ) : layout === "textTop" ? (
+        <div className="flex flex-1 flex-col">
+          <div className="relative p-7 sm:p-8">
+            {head}
+            <p data-slide className="mt-3 leading-[1.6] text-[var(--gx-muted)]">{s.summary}</p>
+            <div data-slide className="mt-6">{learnMore}</div>
+          </div>
+          <div className="relative min-h-[220px] flex-1">{art}</div>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col">
+          <div className="relative h-[190px]">{art}</div>
+          <div className="relative p-7 pt-2 sm:p-8 sm:pt-2">
+            {head}
+            <p data-slide className="mt-3 leading-[1.6] text-[var(--gx-muted)]">{s.summary}</p>
+            <div data-slide className="mt-6">{learnMore}</div>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+/* Card illustrations: interface fragments built from the brand palette, layered for depth. */
+
+const glass = "border border-white/10 bg-[linear-gradient(180deg,rgb(255_255_255/0.07),rgb(255_255_255/0.02))] shadow-[0_20px_40px_-18px_rgb(0_0_0/0.9)] backdrop-blur-sm";
+
+function Keycap({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <span
+      className={`absolute grid h-14 min-w-14 place-items-center rounded-[12px] border border-white/15 bg-[linear-gradient(160deg,#2a322d,#141917)] px-3 text-xs font-medium tabular-nums text-[var(--gx-silver)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_14px_24px_-10px_rgb(0_0_0/0.9),0_0_0_1px_rgb(0_0_0/0.4)] transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function YouTubeArt() {
+  return (
+    <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
+      <div className="absolute left-1/2 top-[-6%] h-[70%] w-[78%] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(0_185_91/0.22),transparent)]" />
+      <div className={`absolute left-[16%] top-[9%] h-[62%] w-[66%] rounded-[14px] transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1.5 ${glass}`}>
+        <div className="flex items-center gap-1.5 px-3 py-2.5">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-1.5 rounded-full bg-white/25" />
+          ))}
+          <span className="ml-3 rounded-full bg-white/[0.06] px-2.5 py-0.5 text-[0.5625rem] text-white/45">youtube.com/@yourchannel</span>
+        </div>
+        <div className="relative mx-3 mt-1 h-[62%] overflow-hidden rounded-[8px] bg-[radial-gradient(80%_80%_at_70%_20%,rgb(0_185_91/0.35),transparent_65%),linear-gradient(160deg,#1c2420,#0b0f0d)]">
+          <span className="absolute left-1/2 top-1/2 grid size-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--gx-silver)] text-[var(--gx-bg)] shadow-[0_10px_30px_-6px_rgb(0_0_0/0.8)]">
+            <Play className="ml-0.5 size-4 fill-current" />
+          </span>
+          <span className="absolute inset-x-3 bottom-3 h-1 overflow-hidden rounded-full bg-white/15">
+            <span className="block h-full w-[64%] rounded-full bg-[var(--gx-accent)] shadow-[0_0_10px_rgb(8_229_47/0.8)]" />
+          </span>
+        </div>
+      </div>
+      <Keycap className="left-[7%] top-[12%] -rotate-[14deg] group-hover:-rotate-[8deg]">1,000</Keycap>
+      <Keycap className="right-[6%] top-[38%] rotate-[12deg] group-hover:rotate-[6deg]">4,000 h</Keycap>
+    </div>
+  );
+}
+
+function TikTokArt() {
+  return (
+    <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
+      <div className="absolute right-[8%] top-[-10%] h-[80%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.14),transparent)]" />
+      <div className={`absolute left-[40%] top-[6%] h-[78%] w-[26%] min-w-[130px] -rotate-6 rounded-[22px] p-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-rotate-3 ${glass}`}>
+        <div className="relative h-full overflow-hidden rounded-[16px] bg-[linear-gradient(170deg,#1d2621,#090c0a)]">
+          <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(70%_60%_at_40%_40%,rgb(0_185_91/0.4),transparent_70%)]" />
+          <div className="absolute bottom-3 left-3 space-y-1.5">
+            <span className="block h-1.5 w-16 rounded-full bg-white/60" />
+            <span className="block h-1.5 w-10 rounded-full bg-white/25" />
+          </div>
+          <div className="absolute bottom-3 right-2 flex flex-col items-center gap-2 text-[0.5rem] text-white/60">
+            <span className="grid size-6 place-items-center rounded-full bg-white/10">♥</span>
+            <span className="grid size-6 place-items-center rounded-full bg-white/10">↗</span>
+          </div>
+        </div>
+      </div>
+      <div className={`absolute left-[14%] top-[22%] w-[26%] min-w-[120px] rounded-[12px] p-3 transition-transform duration-700 group-hover:translate-x-1 ${glass}`}>
+        <span className="flex items-center gap-2 text-[0.625rem] text-white/55">
+          <SiTiktok className="size-3 text-[var(--gx-silver)]" />
+          Followers
+        </span>
+        <span className="mt-1 block text-lg font-medium tabular-nums text-[var(--gx-text)]">10,000</span>
+        <span className="mt-2 block h-1 overflow-hidden rounded-full bg-white/10">
+          <span className="block h-full w-full rounded-full bg-[var(--gx-accent)]" />
+        </span>
+      </div>
+      <Keycap className="right-[10%] top-[16%] rotate-[10deg] group-hover:rotate-[4deg]">1M+</Keycap>
+    </div>
+  );
+}
+
+function AdSenseArt() {
+  return (
+    <div aria-hidden data-art className="absolute inset-0 grid place-items-center overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(50%_45%_at_50%_55%,rgb(0_185_91/0.16),transparent_70%)]" />
+      {[0, 1, 2, 3, 4].map((i) => (
+        <span
+          key={i}
+          className="absolute rounded-[22px] border border-white/[0.07] bg-[linear-gradient(180deg,rgb(255_255_255/0.025),transparent)] transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
+          style={{ width: `${88 - i * 14}%`, height: `${82 - i * 13}%`, transitionDelay: `${i * 40}ms` }}
+        />
+      ))}
+      <span className="relative grid size-24 place-items-center rounded-[18px] border border-[var(--gx-accent)]/40 bg-[linear-gradient(160deg,#1d2a22,#0b100d)] shadow-[0_0_40px_-6px_rgb(8_229_47/0.55),inset_0_1px_0_rgb(255_255_255/0.1)]">
+        <SiGoogleadsense className="size-9 text-[var(--gx-accent)] drop-shadow-[0_0_10px_rgb(8_229_47/0.7)]" />
+      </span>
+      <span className={`absolute bottom-[12%] right-[10%] flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.625rem] font-medium text-[var(--gx-text)] ${glass}`}>
+        <Check className="size-3 text-[var(--gx-accent)]" strokeWidth={3} />
+        PIN verified
+      </span>
+    </div>
+  );
+}
+
+function SmmArt() {
+  const dots: [number, number, boolean][] = [
+    [150, 40, true],
+    [92, 70, false],
+    [208, 70, false],
+    [60, 110, false],
+    [240, 110, true],
+    [120, 100, false],
+    [180, 96, false],
+  ];
+  return (
+    <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
+      <svg viewBox="0 0 300 160" className="absolute bottom-0 left-1/2 h-full w-[115%] -translate-x-1/2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1" preserveAspectRatio="xMidYMax meet">
+        <defs>
+          <radialGradient id="gx-fan" cx="50%" cy="100%" r="100%">
+            <stop offset="0" stopColor="#08E52F" stopOpacity="0.45" />
+            <stop offset="1" stopColor="#00B95B" stopOpacity="0.05" />
+          </radialGradient>
+        </defs>
+        {[140, 110, 80, 50].map((r) => (
+          <path key={r} d={`M ${150 - r} 160 A ${r} ${r} 0 0 1 ${150 + r} 160`} fill="none" stroke="rgb(255 255 255 / 0.1)" />
+        ))}
+        {[-60, -30, 0, 30, 60].map((a) => {
+          const rad = ((a - 90) * Math.PI) / 180;
+          return <line key={a} x1="150" y1="160" x2={150 + Math.cos(rad) * 140} y2={160 + Math.sin(rad) * 140} stroke="rgb(255 255 255 / 0.08)" />;
+        })}
+        <path d="M150 160 L 80 39 A 140 140 0 0 1 220 39 Z" fill="url(#gx-fan)" />
+        {dots.map(([x, y, hot], i) => (
+          <circle key={i} cx={x} cy={y} r={hot ? 3.5 : 2} fill={hot ? "#08E52F" : "#C7C8CC"} opacity={hot ? 1 : 0.6} />
+        ))}
+        <circle cx="150" cy="160" r="14" fill="#151A18" stroke="rgb(255 255 255 / 0.15)" />
+      </svg>
+    </div>
+  );
+}
+
+function WebArt() {
+  const t = "text-white/40";
+  const a = "text-[var(--gx-silver)]";
+  const v = "text-[var(--gx-accent)]";
+  return (
+    <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
+      <div className="absolute -right-10 bottom-0 h-3/4 w-3/4 rounded-full bg-[radial-gradient(closest-side,rgb(0_185_91/0.14),transparent)]" />
+      <div className="absolute left-[8%] top-[4%] h-[110%] w-[110%] rounded-[16px] border border-white/[0.06]" />
+      <div className={`absolute left-[14%] top-[10%] h-[110%] w-[100%] rounded-[16px] transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-x-1.5 ${glass}`}>
+        <div className="flex gap-1.5 px-4 py-3">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-2 rounded-full bg-white/20" />
+          ))}
+        </div>
+        <pre className="px-5 font-mono text-[0.6875rem] leading-[2.1]">
+          <span className={t}>&lt;head&gt;</span>
+          {"\n  "}
+          <span className={t}>&lt;meta </span>
+          <span className={a}>charset</span>=<span className={v}>&apos;UTF-8&apos;</span>
+          <span className={t}>&gt;</span>
+          {"\n  "}
+          <span className={t}>&lt;meta </span>
+          <span className={a}>name</span>=<span className={v}>&apos;viewport&apos;</span>
+          <span className={t}>&gt;</span>
+          {"\n  "}
+          <span className={t}>&lt;title&gt;</span>
+          <span className="text-white/80">Your business</span>
+          <span className={t}>&lt;/title&gt;</span>
+          {"\n  "}
+          <span className={t}>&lt;link </span>
+          <span className={a}>rel</span>=<span className={v}>&apos;stylesheet&apos;</span>
+          <span className={t}>&gt;</span>
+          {"\n"}
+          <span className={t}>&lt;/head&gt;</span>
+          {"\n"}
+          <span className={t}>&lt;body&gt;</span>
+          {"\n  "}
+          <span className={t}>&lt;main </span>
+          <span className={a}>class</span>=<span className={v}>&apos;fast usable&apos;</span>
+          <span className={t}>&gt;</span>
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function ShopifyArt() {
+  return (
+    <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
+      <div className="absolute left-1/2 top-0 h-full w-2/3 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.12),transparent)]" />
+      <svg viewBox="0 0 300 150" className="absolute inset-x-6 bottom-2 h-[78%] w-[calc(100%-3rem)]" preserveAspectRatio="none">
+        {[22, 30, 26, 40, 46, 58, 72, 92, 118].map((h, i) => (
+          <rect
+            key={i}
+            x={8 + i * 32}
+            y={150 - h}
+            width="18"
+            height={h}
+            rx="3"
+            fill={i > 6 ? "#08E52F" : "rgb(199 200 204 / 0.22)"}
+            className="origin-bottom transition-transform duration-700 group-hover:scale-y-110"
+            style={{ transformBox: "fill-box", transitionDelay: `${i * 30}ms` }}
+          />
+        ))}
+      </svg>
+      <span className="absolute left-7 top-6 grid size-14 place-items-center rounded-[14px] border border-white/15 bg-[linear-gradient(160deg,#26302a,#121614)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_14px_24px_-10px_rgb(0_0_0/0.9)]">
+        <SiShopify className="size-6 text-[var(--gx-silver)]" />
+      </span>
+      <span className={`absolute right-7 top-7 rounded-full px-3 py-1.5 text-[0.625rem] font-medium text-[var(--gx-text)] ${glass}`}>SEO · Google Ads</span>
+    </div>
+  );
+}
+
+/* ---------- audience ---------- */
+
+function CreatorsVisual() {
+  return (
+    <div className="relative aspect-[16/10] overflow-hidden rounded-[var(--gx-r-md)] bg-[var(--gx-s3)] shadow-[var(--gx-shadow-3)]">
+      <div data-zoom className="absolute inset-0 bg-[radial-gradient(90%_70%_at_75%_15%,rgb(8_229_47/0.45),transparent_60%),linear-gradient(155deg,#1F2622_0%,#141417_70%)]" />
+      <div aria-hidden className="absolute -bottom-1/3 -left-1/4 size-[80%] rounded-full border border-white/10" />
+      <div aria-hidden className="absolute -bottom-1/4 -left-[15%] size-[60%] rounded-full border border-white/10" />
+      <div data-depth="24" className="absolute left-5 top-5 flex items-center gap-3">
+        <span className="size-9 rounded-full bg-gradient-to-br from-[var(--gx-accent-hi)] to-[#005A2C]" />
+        <span className="space-y-1.5">
+          <span className="block h-2 w-28 rounded-full bg-white/70" />
+          <span className="block h-1.5 w-16 rounded-full bg-white/30" />
+        </span>
+      </div>
+      <div data-depth="60" className="absolute left-1/2 top-1/2 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--gx-text)] text-[var(--gx-bg)] shadow-[0_20px_40px_-10px_rgb(0_0_0/0.6)]">
+        <Play className="ml-1 size-6 fill-current" />
+      </div>
+      <div data-depth="18" className="absolute inset-x-5 bottom-5">
+        <div className="h-1 overflow-hidden rounded-full bg-white/20">
+          <div className="h-full w-[62%] rounded-full bg-[var(--gx-accent)]" />
+        </div>
+        <div className="mt-2 flex justify-between text-[0.6875rem] tabular-nums text-white/60">
+          <span>8:41</span>
+          <span>14:02</span>
+        </div>
+      </div>
+      <div data-depth="80" className="absolute right-4 top-1/4 w-44 rounded-[var(--gx-r-sm)] border border-white/15 bg-[var(--gx-bg)]/80 p-3 text-[0.6875rem] backdrop-blur-md sm:right-6">
+        <p className="flex justify-between text-white/60">
+          Subscribers <span className="tabular-nums text-white">1,000</span>
+        </p>
+        <p className="mt-1.5 flex justify-between text-white/60">
+          Watch hours <span className="tabular-nums text-white">4,000</span>
+        </p>
+        <p className="mt-2.5 border-t border-white/10 pt-2 font-medium text-[var(--gx-accent-hi)]">Monetization eligible</p>
+      </div>
+    </div>
+  );
+}
+
+function PublishersVisual() {
+  return (
+    <div className="relative aspect-[4/5] overflow-hidden rounded-[var(--gx-r-md)] bg-[#E6E8E7] p-6 text-[#0D110F] shadow-[var(--gx-shadow-3)] sm:aspect-[5/6]">
+      <div data-zoom className="absolute inset-0 bg-[linear-gradient(180deg,#F4F5F4,#CDD1CF)]" />
+      <div className="relative">
+        <p className="gx-eyebrow text-[0.5625rem] text-[#0D110F]/50">Article</p>
+        <div className="mt-3 space-y-2">
+          <span className="block h-3.5 w-[92%] rounded-sm bg-[#0D110F]" />
+          <span className="block h-3.5 w-[64%] rounded-sm bg-[#0D110F]" />
+        </div>
+        <div className="mt-5 space-y-1.5">
+          {[100, 96, 88, 94, 70].map((w, i) => (
+            <span key={i} className="block h-1.5 rounded-full bg-[#0D110F]/20" style={{ width: `${w}%` }} />
+          ))}
+        </div>
+        <div data-depth="40" className="mt-5 grid h-24 place-items-center rounded-[var(--gx-r-sm)] border border-dashed border-[var(--gx-accent)] bg-[rgb(8_229_47/0.08)]">
+          <span className="text-[0.6875rem] font-medium text-[#00873F]">Ad · Google AdSense</span>
+        </div>
+        <div className="mt-5 space-y-1.5">
+          {[98, 90, 76].map((w, i) => (
+            <span key={i} className="block h-1.5 rounded-full bg-[#0D110F]/20" style={{ width: `${w}%` }} />
+          ))}
+        </div>
+      </div>
+      <div data-depth="70" className="absolute bottom-5 right-5 flex items-center gap-2 rounded-[var(--gx-r-sm)] bg-[#0D110F] px-3 py-2 text-[0.6875rem] text-[#F4F5F4] shadow-[0_16px_30px_-12px_rgb(0_0_0/0.5)]">
+        <SiGoogleadsense className="size-3.5 text-[var(--gx-accent-hi)]" />
+        Site approved
+      </div>
+    </div>
+  );
+}
+
+function StoreVisual() {
+  return (
+    <div className="relative aspect-[5/4] overflow-hidden rounded-[var(--gx-r-md)] bg-[var(--gx-s3)] shadow-[var(--gx-shadow-3)]">
+      <div data-zoom className="absolute inset-0 bg-[radial-gradient(70%_60%_at_30%_40%,#222A26,#141417_75%)]" />
+      <div data-depth="30" className="absolute left-5 top-5 w-[52%] rounded-[var(--gx-r-sm)] border border-white/10 bg-[var(--gx-s2)] p-3">
+        <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[4px] bg-[linear-gradient(160deg,#2A332E,#1b1a1f)]">
+          <span className="block h-[62%] w-[34%] rounded-t-[40%] rounded-b-md bg-[linear-gradient(90deg,#8D9290,#E4E6E8_45%,#9A9EA2)] shadow-[0_20px_30px_-10px_rgb(0_0_0/0.7)]" />
+        </div>
+        <span className="mt-3 block h-2 w-3/4 rounded-full bg-white/60" />
+        <span className="mt-1.5 block h-1.5 w-1/3 rounded-full bg-white/25" />
+        <span className="mt-3 flex items-center justify-center gap-1.5 rounded-[4px] bg-[var(--gx-accent)] py-1.5 text-[0.625rem] font-medium text-[var(--gx-accent-ink)]">
+          <ShoppingBag className="size-3" /> Add to cart
+        </span>
+      </div>
+      <div data-depth="70" className="absolute bottom-5 right-5 w-[44%] rounded-[var(--gx-r-sm)] border border-white/15 bg-[var(--gx-bg)]/85 p-3 backdrop-blur-md">
+        <p className="flex items-center justify-between text-[0.625rem] text-white/60">
+          <span className="flex items-center gap-1.5">
+            <SiShopify className="size-3 text-white" /> Store traffic
+          </span>
+          <span className="text-[var(--gx-accent-hi)]">SEO · Ads</span>
+        </p>
+        <svg viewBox="0 0 120 40" className="mt-2 h-10 w-full" aria-hidden>
+          {[8, 12, 10, 16, 15, 21, 24, 30, 34].map((h, i) => (
+            <rect key={i} x={i * 13.5} y={40 - h} width="8" height={h} rx="1.5" fill={i > 6 ? "#08E52F" : "rgb(244 245 244 / 0.25)"} />
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function BusinessVisual() {
+  return (
+    <div className="relative aspect-[16/9] overflow-hidden rounded-[var(--gx-r-md)] bg-[var(--gx-s3)] shadow-[var(--gx-shadow-3)] sm:aspect-[21/9]">
+      <div data-zoom className="absolute inset-0 bg-[radial-gradient(80%_90%_at_85%_100%,rgb(8_229_47/0.28),transparent_60%),linear-gradient(180deg,#1d1d22,#121215)]" />
+      <div data-depth="20" className="absolute left-5 top-5 bottom-5 w-[62%] overflow-hidden rounded-[var(--gx-r-sm)] border border-white/10 bg-[var(--gx-s2)]">
+        <div className="flex items-center gap-1.5 border-b border-white/10 px-3 py-2">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-2 rounded-full bg-white/15" />
+          ))}
+          <span className="ml-3 h-4 flex-1 rounded-[4px] bg-white/[0.06] px-2 text-[0.5625rem] leading-4 text-white/40">yourbrand.com</span>
+        </div>
+        <div className="grid grid-cols-5 gap-3 p-4">
+          <div className="col-span-3 space-y-2">
+            <span className="block h-3 w-[90%] rounded-sm bg-white/70" />
+            <span className="block h-3 w-[60%] rounded-sm bg-white/70" />
+            <span className="mt-3 block h-1.5 w-full rounded-full bg-white/15" />
+            <span className="block h-1.5 w-[80%] rounded-full bg-white/15" />
+            <span className="mt-3 inline-block h-5 w-20 rounded-full bg-[var(--gx-accent)]" />
+          </div>
+          <div className="col-span-2 rounded-[4px] bg-[linear-gradient(140deg,#2A332E,#1b1a1f)]" />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={`h-10 rounded-[4px] bg-white/[0.05] ${i === 2 ? "col-span-1" : "col-span-2"}`} />
+          ))}
+        </div>
+      </div>
+      <div data-depth="80" className="absolute bottom-6 right-5 w-[34%] min-w-[150px] rounded-[var(--gx-r-sm)] border border-white/15 bg-[var(--gx-bg)]/85 p-3 backdrop-blur-md sm:right-8">
+        <div className="flex items-center gap-2">
+          <span className="size-6 rounded-full bg-gradient-to-br from-[var(--gx-accent-hi)] to-[#005A2C]" />
+          <span className="h-1.5 w-16 rounded-full bg-white/50" />
+        </div>
+        <div className="mt-2.5 aspect-[4/3] rounded-[4px] bg-[linear-gradient(140deg,#0E3A22,#1b1a1f)]" />
+        <div className="mt-2 flex gap-3 text-[0.5625rem] tabular-nums text-white/60">
+          <span>♥ 2.4k</span>
+          <span>↻ 318</span>
+          <span className="ml-auto text-[var(--gx-accent-hi)]">SMM</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function Audience() {
-  const groups: [string, string, string][] = [
-    ["Creators", "Reach YouTube or TikTok monetization, or buy a channel that's already there.", "YouTube · TikTok"],
-    ["Publishers", "Get your website approved for AdSense and start earning from your traffic.", "Google AdSense"],
-    ["Store owners", "Grow an existing Shopify store with SEO, ads and technical fixes.", "Shopify Growth"],
-    ["Businesses & marketers", "Launch a website or app, or build a social media marketing operation.", "Web · SMM"],
-  ];
+  const visual = {
+    creators: <CreatorsVisual />,
+    publishers: <PublishersVisual />,
+    stores: <StoreVisual />,
+    business: <BusinessVisual />,
+  } as const;
+  // Each audience sits in its own place on the grid, so no two read alike.
+  const layout: Record<(typeof audiences)[number]["id"], { box: string; textFirst?: boolean }> = {
+    creators: { box: "lg:col-span-7" },
+    publishers: { box: "lg:col-span-4 lg:col-start-9 lg:mt-40", textFirst: true },
+    stores: { box: "lg:col-span-5 lg:col-start-2 lg:-mt-16" },
+    business: { box: "lg:col-span-6 lg:col-start-7 lg:mt-24" },
+  };
   return (
-    <section className="border-y bg-surface py-16 md:py-20">
+    <section className="gx-section relative overflow-hidden">
       <Container>
-        <div className="grid gap-10 lg:grid-cols-[1fr_2fr] lg:gap-16">
-          <SectionHead kicker="Who we work with" title="Built for people turning attention into income." />
-          <div className="grid gap-px overflow-hidden border-y bg-border sm:grid-cols-2 sm:rounded-xl sm:border">
-            {groups.map(([t, d, tag]) => (
-              <div key={t} className="bg-surface py-5 sm:bg-background sm:p-6">
-                <p className="text-xs font-medium text-primary">{tag}</p>
-                <h3 className="mt-2 text-lg font-semibold">{t}</h3>
-                <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">{d}</p>
-              </div>
-            ))}
+        <div className="grid grid-cols-12 items-end gap-y-6">
+          <div className="col-span-12 lg:col-span-9">
+            <Eyebrow>Who we work with</Eyebrow>
+            <SplitHeading text="Built for people turning" serif="attention into income." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
           </div>
         </div>
-      </Container>
-    </section>
-  );
-}
 
-function Difference() {
-  const rows: [string, string, string][] = [
-    ["Handover", "Anonymous handoff, then silence", "Every account or asset checked before it's handed to you"],
-    ["Communication", "Ticket queues and auto-replies", "You talk to the person doing the work"],
-    ["Pricing", "Bundled extras you didn't ask for", "A straight quote for exactly what you need"],
-    ["After delivery", "Relationship ends at payment", "Support continues if something needs adjusting"],
-    ["Transparency", "Vague promises", "Delivery checked against what was promised"],
-  ];
-  return (
-    <section id="why" className="bg-navy py-16 text-navy-foreground md:py-28">
-      <Container>
-        <div className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:gap-16">
-          <div>
-            <p className="text-sm font-medium text-navy-muted">Why Grow Xeno</p>
-            <h2 className="mt-3 text-3xl font-semibold md:text-[2.5rem] md:leading-[1.1]">Scams are common in this space. Accountability isn&apos;t.</h2>
-            <p className="mt-5 text-lg text-navy-muted">That&apos;s the bar we hold ourselves to on every order. Here&apos;s what it means in practice.</p>
-            <div className="mt-8 grid gap-5 sm:gap-4">
-              {[
-                ["Transparent, verified delivery", "No anonymous handoffs. Checked before it's yours — not after you've paid and gone quiet."],
-                ["Real people, direct communication", "Questions get answered, not auto-replied."],
-                ["Support after delivery", "If something needs adjusting afterwards, we're still here."],
-              ].map(([t, d]) => (
-                <div key={t} className="flex gap-4 sm:rounded-xl sm:border sm:border-navy-line sm:bg-navy-2 sm:p-5">
-                  <Tick className="mt-0.5 h-5 w-5" />
-                  <div><p className="font-semibold">{t}</p><p className="mt-1 text-sm text-navy-muted">{d}</p></div>
+        <div className="mt-16 grid grid-cols-12 gap-x-6 gap-y-16 lg:mt-24 lg:gap-y-10">
+          {audiences.map((a, i) => {
+            const l = layout[a.id];
+            const text = (
+              <div className={l.textFirst ? "mb-6" : "mt-6"}>
+                <p className="gx-eyebrow flex items-center gap-3 text-[var(--gx-accent-hi)]">
+                  <span className="tabular-nums text-[var(--gx-dim)]">0{i + 1}</span>
+                  {a.tag}
+                </p>
+                <h3 className="gx-display mt-3 text-[clamp(1.75rem,2.6vw,2.4rem)] text-[var(--gx-text)]">{a.t}</h3>
+                <p className="mt-3 max-w-[44ch] leading-[1.65] text-[var(--gx-muted)]">{a.d}</p>
+              </div>
+            );
+            return (
+              <article key={a.id} data-rise className={`col-span-12 ${l.box}`}>
+                {l.textFirst ? text : null}
+                <div data-clip>
+                  <Tilt max={5}>{visual[a.id]}</Tilt>
                 </div>
+                {!l.textFirst ? text : null}
+              </article>
+            );
+          })}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+/* ---------- why ---------- */
+
+function Why() {
+  const reduced = useMedia(REDUCED);
+  const stage = useRef<HTMLDivElement>(null);
+
+  // The market recedes while the Grow Xeno panel rises and its rows light up in turn.
+  useGSAP(
+    () => {
+      if (reduced) return;
+      const q = gsap.utils.selector(stage);
+      gsap
+        .timeline({ scrollTrigger: { trigger: stage.current, start: "top 85%", end: "center 45%", scrub: 0.8 } })
+        .fromTo(q("[data-market]"), { scale: 1, autoAlpha: 1 }, { scale: 0.965, autoAlpha: 0.6, ease: "none" }, 0)
+        .fromTo(q("[data-ours]"), { y: 110 }, { y: 0, ease: "none" }, 0)
+        .fromTo(q("[data-ours-row]"), { autoAlpha: 0.25 }, { autoAlpha: 1, stagger: 0.12, ease: "none" }, 0.1)
+        .fromTo(q("[data-ours-tick]"), { scale: 0 }, { scale: 1, stagger: 0.12, ease: "back.out(2)" }, 0.15);
+    },
+    { scope: stage, dependencies: [reduced] },
+  );
+
+  return (
+    <section id="why" className="gx-section relative scroll-mt-20 overflow-hidden border-y border-[var(--gx-line)] bg-[var(--gx-s1)]">
+      <div aria-hidden className="pointer-events-none absolute -right-1/4 top-1/3 h-[70%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.08),transparent)]" />
+      <Container className="relative">
+        <div className="grid grid-cols-12 gap-y-10">
+          <div className="col-span-12 lg:col-span-7">
+            <Eyebrow>Why Grow Xeno</Eyebrow>
+            <SplitHeading text="Scams are common in this space." serif="Accountability isn't." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+          </div>
+          <div className="col-span-12 lg:col-span-4 lg:col-start-9 lg:pt-10">
+            <p className="leading-[1.65] text-[var(--gx-muted)]">That&apos;s the bar we hold ourselves to on every order. Here&apos;s what it means in practice.</p>
+            <ul className="mt-8 divide-y divide-[var(--gx-line)] border-y border-[var(--gx-line)]">
+              {whyPoints.map(([t, d], i) => (
+                <li key={t} className="flex gap-4 py-4">
+                  <span className="pt-0.5 text-xs tabular-nums text-[var(--gx-accent)]">0{i + 1}</span>
+                  <span>
+                    <span className="block font-medium text-[var(--gx-text)]">{t}</span>
+                    <span className="mt-1 block text-sm leading-[1.6] text-[var(--gx-muted)]">{d}</span>
+                  </span>
+                </li>
               ))}
-            </div>
+            </ul>
+          </div>
+        </div>
+
+        <div ref={stage} className="relative mt-20 grid grid-cols-12 gap-y-4 lg:mt-28">
+          {/* Recessed: what is common in the market. */}
+          <div
+            data-market
+            className="col-span-12 rounded-[var(--gx-r-lg)] border border-[var(--gx-line)] bg-[var(--gx-bg)] p-6 shadow-[inset_0_2px_18px_rgb(0_0_0/0.55)] sm:p-9 lg:col-span-7 lg:col-start-1 lg:row-start-1 lg:pr-[31%]"
+          >
+            <p className="gx-eyebrow text-[var(--gx-dim)]">Common in the market</p>
+            <ul className="mt-6 divide-y divide-[var(--gx-line)]">
+              {comparison.map((c) => (
+                <li key={c.area} className="grid gap-1 py-4 sm:grid-cols-[1fr_1.2fr] sm:gap-6">
+                  <span className="text-xs text-[var(--gx-dim)]">{c.area}</span>
+                  <span className="flex gap-2.5 text-[0.9375rem] text-[var(--gx-dim)]">
+                    <X className="mt-1 size-3.5 shrink-0" aria-hidden />
+                    <span>
+                      <span className="sr-only">Common in the market: </span>
+                      {c.market}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* Phones: a divided list, since three columns leave 2-3 words per line at 375px. */}
-          <ul className="divide-y divide-navy-line border-y border-navy-line md:hidden">
-            {rows.map(([k, bad, good]) => (
-              <li key={k} className="py-4 text-sm">
-                <p className="text-xs font-medium uppercase tracking-wider text-navy-muted">{k}</p>
-                <p className="mt-2.5 flex gap-2 text-navy-muted"><span aria-hidden className="text-destructive">✕</span><span><span className="sr-only">Common in the market: </span>{bad}</span></p>
-                <p className="mt-2 flex gap-2 font-medium"><Tick className="mt-0.5 h-4 w-4" /><span><span className="sr-only">Grow Xeno: </span>{good}</span></p>
-              </li>
-            ))}
-          </ul>
-
-          <div className="hidden self-start overflow-hidden rounded-2xl border border-navy-line md:block lg:mt-24">
-            <div className="grid grid-cols-[0.8fr_1fr_1.2fr] bg-navy-2 text-xs font-medium uppercase tracking-wider text-navy-muted">
-              <div className="p-4 md:p-5" />
-              <div className="p-4 md:p-5">Common in the market</div>
-              <div className="border-l border-navy-line p-4 text-navy-foreground md:p-5">Grow Xeno</div>
-            </div>
-            {rows.map(([k, bad, good]) => (
-              <div key={k} className="grid grid-cols-[0.8fr_1fr_1.2fr] border-t border-navy-line text-sm">
-                <div className="p-4 font-medium md:p-5">{k}</div>
-                <div className="flex gap-2 p-4 text-navy-muted md:p-5"><span aria-hidden className="text-destructive">✕</span>{bad}</div>
-                <div className="flex gap-2 border-l border-navy-line bg-navy-2/50 p-4 md:p-5"><Tick className="mt-0.5 h-4 w-4" />{good}</div>
+          {/* Raised: the Grow Xeno approach. */}
+          <div data-ours className="relative z-10 col-span-12 lg:col-span-7 lg:col-start-6 lg:row-start-1 lg:mt-24">
+            <Tilt max={3}>
+              <div className="relative overflow-hidden rounded-[var(--gx-r-lg)] border border-[var(--gx-line-2)] bg-[var(--gx-s3)] p-6 shadow-[var(--gx-shadow-3)] sm:p-9">
+                <span aria-hidden className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[var(--gx-accent)] to-transparent" />
+                <div className="flex items-center justify-between">
+                  <Logo />
+                  <span className="gx-eyebrow text-[var(--gx-accent-hi)]">The Grow Xeno way</span>
+                </div>
+                <ul className="mt-6 divide-y divide-[var(--gx-line)]">
+                  {comparison.map((c) => (
+                    <li key={c.area} data-ours-row className="grid gap-1 py-4 sm:grid-cols-[1fr_1.4fr] sm:gap-6">
+                      <span className="text-xs font-medium text-[var(--gx-text)]">{c.area}</span>
+                      <span className="flex gap-3 text-[0.9375rem] text-[var(--gx-text)]">
+                        <span data-ours-tick className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-[var(--gx-accent)] text-[var(--gx-accent-ink)]">
+                          <Check className="size-2.5" strokeWidth={3} aria-hidden />
+                        </span>
+                        <span>
+                          <span className="sr-only">Grow Xeno: </span>
+                          {c.us}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            ))}
+            </Tilt>
           </div>
         </div>
       </Container>
     </section>
   );
 }
+
+/* ---------- process ---------- */
 
 function Process() {
+  const reduced = useMedia(REDUCED);
+  const section = useRef<HTMLElement>(null);
+  const pinEl = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLOListElement>(null);
+  const line = useRef<HTMLSpanElement>(null);
+  const vline = useRef<HTMLSpanElement>(null);
+
+  useGSAP(
+    () => {
+      if (reduced) return;
+      const mm = gsap.matchMedia();
+      const markSteps = (progress: number) => {
+        const reached = Math.floor(progress * steps.length + 0.15);
+        track.current?.querySelectorAll<HTMLElement>("[data-step]").forEach((el, i) => {
+          el.dataset.on = String(i < Math.max(1, reached));
+        });
+      };
+      // Large screens: the steps travel sideways while the section is pinned.
+      mm.add("(min-width: 1024px) and (min-height: 680px)", () => {
+        const distance = () => Math.max(0, (track.current?.scrollWidth ?? 0) - window.innerWidth + 96);
+        gsap
+          .timeline({
+            scrollTrigger: {
+              trigger: pinEl.current,
+              start: "top top",
+              end: () => `+=${distance() + window.innerHeight * 0.6}`,
+              pin: true,
+              scrub: 0.8,
+              anticipatePin: 1,
+              invalidateOnRefresh: true,
+              onUpdate: (self) => markSteps(self.progress),
+            },
+          })
+          .to(track.current, { x: () => -distance(), ease: "none" }, 0)
+          .fromTo(line.current, { scaleX: 0 }, { scaleX: 1, ease: "none" }, 0);
+      });
+      // Smaller screens: a vertical line draws down through the steps.
+      mm.add("(max-width: 1023px), (max-height: 679px)", () => {
+        gsap.fromTo(vline.current, { scaleY: 0 }, {
+          scaleY: 1,
+          ease: "none",
+          scrollTrigger: { trigger: track.current, start: "top 70%", end: "bottom 60%", scrub: 0.6, onUpdate: (self) => markSteps(self.progress) },
+        });
+      });
+    },
+    { scope: section, dependencies: [reduced] },
+  );
+
   return (
-    <section id="process" className="py-16 md:py-28">
-      <Container>
-        <SectionHead center kicker="How it works" title="What happens after you get in touch" sub="Four steps, start to finish. You'll always know where your order stands." />
-        <ol className="relative mt-10 grid gap-6 md:mt-14 md:grid-cols-4">
-          <div aria-hidden className="absolute left-0 right-0 top-5 hidden h-px bg-border md:block" />
-          {steps.map((s, i) => (
-            <li key={s.t} className="relative flex gap-4 md:block">
-              <span className="relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-primary bg-background text-sm font-semibold text-primary">{i + 1}</span>
-              <div className="flex-1 pt-0.5 md:mt-6 md:rounded-xl md:border md:bg-card md:p-5">
-                <p className="text-xs font-medium text-primary">{s.when}</p>
-                <h3 className="mt-1.5 font-semibold">{s.t}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.d}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-        <div className="-mx-5 mt-12 flex flex-col items-center justify-between gap-4 bg-surface px-5 py-8 text-center sm:mx-0 sm:rounded-2xl sm:p-6 sm:flex-row sm:text-left md:p-8">
-          <div>
-            <p className="font-semibold">Step one takes a couple of minutes.</p>
-            <p className="text-sm text-muted-foreground">Tell us your goal and we&apos;ll come back with a straight quote.</p>
+    <section ref={section} id="process" className="relative scroll-mt-20">
+      <div ref={pinEl} className="relative overflow-hidden lg:flex lg:min-h-screen lg:flex-col lg:justify-center">
+        <Container className="pt-[var(--gx-section)] lg:pt-24">
+          <div className="grid grid-cols-12 items-end gap-y-6">
+            <div className="col-span-12 lg:col-span-8">
+              <Eyebrow>How it works</Eyebrow>
+              <SplitHeading text="What happens after" serif="you get in touch." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+            </div>
+            <p className="col-span-12 max-w-[36ch] leading-[1.65] text-[var(--gx-muted)] lg:col-span-4 lg:justify-self-end">
+              Four steps, start to finish. You&apos;ll always know where your order stands.
+            </p>
           </div>
-          <Btn href="#contact">Start with step one →</Btn>
+        </Container>
+
+        <div className="relative mt-14 lg:mt-20">
+          <span aria-hidden className="absolute left-0 right-0 top-[clamp(4.5rem,8vw,7.5rem)] hidden h-px bg-[var(--gx-line)] lg:block">
+            <span ref={line} className="block h-full origin-left scale-x-0 bg-[var(--gx-accent)] motion-reduce:scale-x-100" />
+          </span>
+          <Container className="relative lg:max-w-none lg:px-0">
+            <span aria-hidden className="absolute bottom-6 left-[calc(1.25rem+1.4rem)] top-6 w-px bg-[var(--gx-line)] sm:left-[calc(2rem+1.4rem)] lg:hidden">
+              <span ref={vline} className="block h-full origin-top scale-y-0 bg-[var(--gx-accent)] motion-reduce:scale-y-100" />
+            </span>
+            <ol ref={track} className="relative space-y-12 lg:flex lg:w-max lg:space-y-0 lg:pl-12 lg:pr-[20vw]">
+              {steps.map((s, i) => (
+                <li key={s.t} data-step data-on={reduced || i === 0 ? "true" : "false"} className="group relative grid grid-cols-[2.8rem_1fr] gap-x-5 lg:block lg:w-[min(36vw,520px)] lg:pr-16">
+                  <span
+                    aria-hidden
+                    className="gx-display block text-[2.8rem] leading-none text-transparent transition-[color,-webkit-text-stroke-color] duration-700 [-webkit-text-stroke:1px_var(--gx-line-2)] group-data-[on=true]:text-[var(--gx-text)] group-data-[on=true]:[-webkit-text-stroke-color:transparent] lg:text-[clamp(9rem,15vw,15rem)] lg:tracking-[-0.06em]"
+                  >
+                    0{i + 1}
+                  </span>
+                  <span aria-hidden className="absolute left-0 top-[clamp(4.5rem,8vw,7.5rem)] hidden size-3 -translate-y-1/2 rounded-full border border-[var(--gx-line-2)] bg-[var(--gx-bg)] transition-colors duration-500 group-data-[on=true]:border-[var(--gx-accent)] group-data-[on=true]:bg-[var(--gx-accent)] lg:block" />
+                  <div className="lg:mt-10">
+                    <p className="gx-eyebrow text-[var(--gx-accent-hi)]">{s.when}</p>
+                    <h3 className="gx-display mt-3 text-[clamp(1.6rem,2.4vw,2.25rem)] text-[var(--gx-text)]">
+                      <span className="sr-only">Step {i + 1}: </span>
+                      {s.t}
+                    </h3>
+                    <p className="mt-3 max-w-[34ch] leading-[1.65] text-[var(--gx-muted)]">{s.d}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Container>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- verification ---------- */
+
+function Verification() {
+  const reduced = useMedia(REDUCED);
+  const box = useRef<HTMLDivElement>(null);
+  const count = useRef<HTMLSpanElement>(null);
+  const meter = useRef<HTMLSpanElement>(null);
+  const stamp = useRef<HTMLDivElement>(null);
+
+  // Scroll runs the inspection: each check passes in turn, then the report is stamped.
+  useGSAP(
+    () => {
+      const rows = box.current?.querySelectorAll<HTMLElement>("[data-qc]") ?? [];
+      const apply = (passed: number) => {
+        rows.forEach((row, i) => (row.dataset.passed = String(i < passed)));
+        if (count.current) count.current.textContent = String(passed);
+        if (meter.current) meter.current.style.transform = `scaleX(${passed / handoverChecks.length})`;
+        if (stamp.current) stamp.current.dataset.on = String(passed === handoverChecks.length);
+      };
+      if (reduced) {
+        apply(handoverChecks.length);
+        return;
+      }
+      apply(0);
+      ScrollTrigger.create({
+        trigger: box.current,
+        start: "top 70%",
+        end: "bottom 65%",
+        scrub: true,
+        onUpdate: (self) => apply(Math.min(handoverChecks.length, Math.floor(self.progress * (handoverChecks.length + 0.6)))),
+      });
+    },
+    { scope: box, dependencies: [reduced] },
+  );
+
+  return (
+    <section className="gx-section relative">
+      <Container>
+        <div
+          ref={box}
+          className="relative grid overflow-hidden rounded-[var(--gx-r-lg)] border border-[var(--gx-line-2)] bg-[var(--gx-s2)] shadow-[var(--gx-shadow-3)] lg:grid-cols-12"
+        >
+          <div aria-hidden className="gx-grain absolute inset-0" />
+          <div className="relative border-b border-[var(--gx-line)] p-6 sm:p-10 lg:col-span-5 lg:border-b-0 lg:border-r lg:p-12">
+            <Eyebrow className="text-[var(--gx-accent-hi)]">Pre-handover verification</Eyebrow>
+            <SplitHeading text="Before every" serif="handover." className="mt-5 text-[clamp(2.2rem,4vw,3.75rem)]" />
+            <p className="mt-6 max-w-[40ch] leading-[1.65] text-[var(--gx-muted)]">
+              The work is checked against what was promised before it&apos;s called done. Nothing is handed over until every check has passed.
+            </p>
+            <div className="mt-10">
+              <div className="flex items-baseline justify-between">
+                <span className="gx-eyebrow text-[var(--gx-dim)]">Checks passed</span>
+                <span className="gx-display text-3xl tabular-nums text-[var(--gx-text)]">
+                  <span ref={count}>{reduced ? handoverChecks.length : 0}</span>
+                  <span className="text-[var(--gx-dim)]"> / {handoverChecks.length}</span>
+                </span>
+              </div>
+              <span className="mt-3 block h-1 overflow-hidden rounded-full bg-[var(--gx-line)]">
+                <span ref={meter} className="block h-full origin-left rounded-full bg-[var(--gx-accent)] transition-transform duration-500" style={{ transform: `scaleX(${reduced ? 1 : 0})` }} />
+              </span>
+            </div>
+          </div>
+
+          <div className="relative p-6 sm:p-10 sm:pb-44 lg:col-span-7 lg:p-12 lg:pb-44">
+            <div className="hidden grid-cols-[4.5rem_1fr_6.5rem] gap-4 border-b border-[var(--gx-line)] pb-3 sm:grid">
+              {["Check", "What is verified", "Status"].map((h) => (
+                <span key={h} className="gx-eyebrow text-[var(--gx-dim)] last:text-right">
+                  {h}
+                </span>
+              ))}
+            </div>
+            <ol>
+              {handoverChecks.map((c) => (
+                <li
+                  key={c.code}
+                  data-qc
+                  data-passed={reduced ? "true" : "false"}
+                  className="gx-check grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-b border-[var(--gx-line)] py-6 sm:grid-cols-[4.5rem_1fr_6.5rem] sm:items-center"
+                >
+                  <span className="text-xs tabular-nums text-[var(--gx-accent)] sm:order-none">{c.code}</span>
+                  <span className="relative col-start-2 row-start-1 h-5 w-[6.5rem] justify-self-end sm:col-start-3">
+                    <span className="gx-check-pending absolute inset-0 flex items-center justify-end gap-2 text-xs text-[var(--gx-dim)] transition-all duration-500">
+                      <span className="size-1.5 animate-pulse rounded-full bg-[var(--gx-dim)] motion-reduce:animate-none" />
+                      Pending
+                    </span>
+                    <span className="gx-check-passed absolute inset-0 flex items-center justify-end gap-2 text-xs font-medium text-[var(--gx-accent-hi)] transition-all duration-500">
+                      <Check className="size-3.5" strokeWidth={3} aria-hidden />
+                      Passed
+                    </span>
+                  </span>
+                  <span className="col-span-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                    <span className="block font-medium text-[var(--gx-text)]">{c.t}</span>
+                    <span className="mt-1 block text-sm text-[var(--gx-muted)]">{c.how}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <div ref={stamp} data-on={reduced ? "true" : "false"} aria-hidden className="gx-stamp pointer-events-none mt-8 ml-auto w-max sm:absolute sm:bottom-8 sm:right-10 sm:mt-0">
+              <div className="grid size-28 place-items-center rounded-full border-2 border-[var(--gx-accent)] p-2 text-center text-[var(--gx-accent)]">
+                <div className="grid size-full place-items-center rounded-full border border-dashed border-[var(--gx-accent)]/60">
+                  <span className="gx-eyebrow text-[0.5625rem] leading-[1.5]">
+                    Cleared
+                    <br />
+                    for
+                    <br />
+                    handover
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 flex flex-col items-start justify-between gap-5 border-t border-[var(--gx-line)] pt-8 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-lg font-medium text-[var(--gx-text)]">Step one takes a couple of minutes.</p>
+            <p className="mt-1 text-[var(--gx-muted)]">Tell us your goal and we&apos;ll come back with a straight quote.</p>
+          </div>
+          <Magnetic>
+            <Btn href="#contact">
+              Start with step one <ArrowRight className="size-4" aria-hidden />
+            </Btn>
+          </Magnetic>
         </div>
       </Container>
     </section>
   );
 }
+
+/* ---------- FAQ ---------- */
 
 function Faq() {
   const { email: EMAIL } = useContact();
   const [open, setOpen] = useState(0);
   return (
-    <section id="faq" className="border-t bg-surface py-16 md:py-28">
-      <Container className="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:gap-16">
-        <div>
-          <SectionHead kicker="FAQ" title="Good to know before you reach out." />
-          <div className="mt-6 sm:mt-8 sm:rounded-xl sm:border sm:bg-background sm:p-5">
-            <p className="font-semibold">Have a different question?</p>
-            <p className="mt-1 text-sm text-muted-foreground">You&apos;ll get an answer from a real person.</p>
-            <a href={`mailto:${EMAIL}`} className="mt-3 inline-block text-sm font-medium text-primary hover:underline">{EMAIL} →</a>
+    <section id="faq" className="gx-section scroll-mt-20 border-t border-[var(--gx-line)]">
+      <Container className="grid grid-cols-12 gap-y-12 lg:gap-x-10">
+        <div className="col-span-12 lg:col-span-4">
+          <div className="lg:sticky lg:top-28">
+            <Eyebrow>FAQ</Eyebrow>
+            <SplitHeading text="Good to know" serif="before you reach out." className="mt-5 text-[clamp(2.2rem,4vw,3.75rem)]" />
+            <div className="mt-10 border-t border-[var(--gx-line)] pt-6">
+              <p className="font-medium text-[var(--gx-text)]">Have a different question?</p>
+              <p className="mt-1 text-sm text-[var(--gx-muted)]">You&apos;ll get an answer from a real person.</p>
+              <a href={`mailto:${EMAIL}`} className={`mt-4 inline-flex items-center gap-1.5 break-all rounded-[var(--gx-r-sm)] text-sm font-medium text-[var(--gx-accent-hi)] hover:text-[var(--gx-text)] ${ring}`}>
+                {EMAIL} <ArrowUpRight className="size-4 shrink-0" aria-hidden />
+              </a>
+            </div>
           </div>
         </div>
-        <div className="divide-y border-y sm:rounded-2xl sm:border sm:bg-background">
+        <div className="col-span-12 border-t border-[var(--gx-line)] lg:col-span-7 lg:col-start-6">
           {faqs.map(([q, a], i) => {
             const isOpen = open === i;
             return (
-              <div key={q}>
-                <button onClick={() => setOpen(isOpen ? -1 : i)} aria-expanded={isOpen} className="flex w-full items-center justify-between gap-6 py-5 text-left font-medium transition-colors hover:text-primary sm:p-5 md:p-6">
-                  {q}
-                  <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-muted-foreground transition-transform ${isOpen ? "rotate-45 border-primary text-primary" : ""}`} aria-hidden>+</span>
-                </button>
-                <div className={`grid transition-[grid-template-rows] duration-300 ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-                  <div className="overflow-hidden"><p className="pb-6 leading-relaxed text-muted-foreground sm:px-5 md:px-6">{a}</p></div>
+              <div key={q} className="border-b border-[var(--gx-line)]">
+                <h3>
+                  <button
+                    type="button"
+                    id={`faq-q-${i}`}
+                    aria-controls={`faq-a-${i}`}
+                    aria-expanded={isOpen}
+                    onClick={() => setOpen(isOpen ? -1 : i)}
+                    className={`group grid w-full grid-cols-[2.25rem_1fr_auto] items-start gap-x-3 py-6 text-left sm:py-7 ${ring}`}
+                  >
+                    <span className={`pt-1 text-xs tabular-nums transition-colors duration-500 ${isOpen ? "text-[var(--gx-accent)]" : "text-[var(--gx-dim)]"}`}>0{i + 1}</span>
+                    <span className={`text-[1.0625rem] font-medium leading-snug transition-colors duration-300 sm:text-xl ${isOpen ? "text-[var(--gx-text)]" : "text-[var(--gx-text)]/80 group-hover:text-[var(--gx-text)]"}`}>
+                      {q}
+                    </span>
+                    <span
+                      aria-hidden
+                      className={`grid size-9 place-items-center rounded-[var(--gx-r-sm)] border transition-colors duration-500 ${
+                        isOpen ? "border-[var(--gx-accent)] text-[var(--gx-accent)]" : "border-[var(--gx-line-2)] text-[var(--gx-muted)] group-hover:border-[var(--gx-text)]/40"
+                      }`}
+                    >
+                      <Plus className={`size-4 transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? "rotate-45" : ""}`} />
+                    </span>
+                  </button>
+                </h3>
+                <div
+                  id={`faq-a-${i}`}
+                  role="region"
+                  aria-labelledby={`faq-q-${i}`}
+                  className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+                >
+                  <div className="overflow-hidden">
+                    <p className="max-w-[62ch] pb-7 pl-[3rem] leading-[1.7] text-[var(--gx-muted)]">{a}</p>
+                  </div>
                 </div>
               </div>
             );
@@ -605,14 +1834,26 @@ function Faq() {
   );
 }
 
+/* ---------- contact ---------- */
+
 function Contact() {
-  const { email: EMAIL, phone, whatsapp, instagram, twitter, facebook } = useContact();
+  const { email: EMAIL, phone, whatsapp, whatsappMessage } = useContact();
   const [service, setService] = useState("");
   const [pending, startTransition] = useTransition();
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Saved as an Inquiry (2026-11-04) — it used to open the visitor's email
-  // app and store nothing. The server validates and rate-limits it.
+
+  // A service's "Get a quote" pre-selects it here.
+  useEffect(() => {
+    const pick = (e: Event) => {
+      const name = (e as CustomEvent<string>).detail;
+      if (typeof name === "string") setService(name);
+    };
+    window.addEventListener(SERVICE_EVENT, pick);
+    return () => window.removeEventListener(SERVICE_EVENT, pick);
+  }, []);
+
+  // Saved as an Inquiry (2026-11-04). The server validates and rate-limits it.
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (pending) return;
@@ -640,132 +1881,257 @@ function Contact() {
       }
     });
   };
-  const input = "mt-1.5 w-full rounded-md sm:rounded-lg border border-input bg-background px-3.5 py-2.5 text-[0.9375rem] outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-ring/15";
-  return (
-    <section id="contact" className="py-16 md:py-28">
-      <Container>
-        <div className="-mx-5 grid overflow-hidden sm:mx-0 sm:rounded-3xl sm:border sm:shadow-panel lg:grid-cols-[1fr_1.25fr]">
-          <div className="bg-navy p-6 text-navy-foreground sm:p-8 md:p-12">
-            <p className="text-sm font-medium text-navy-muted">Get started</p>
-            <h2 className="mt-3 text-3xl font-semibold md:text-4xl">Tell us what you need. Get a straight quote back.</h2>
-            <p className="mt-4 text-navy-muted">A channel, an account, a store or a site — describe your goal and we&apos;ll reply directly.</p>
-            <ul className="mt-8 space-y-4 text-sm">
-              {["A clear price for exactly what you asked for", "No bundled upsells", "Verified before handover, supported after"].map((t) => (
-                <li key={t} className="flex items-center gap-3"><Tick />{t}</li>
-              ))}
-            </ul>
-            <div className="mt-10 border-t border-navy-line pt-6 text-sm">
-              <p className="text-navy-muted">Prefer email?</p>
-              <a href={`mailto:${EMAIL}`} className="mt-1 inline-block break-all text-lg font-semibold hover:underline">{EMAIL}</a>
-              {phone ? (
-                <>
-                  <p className="mt-4 text-navy-muted">Or call us</p>
-                  <a href={telHref(phone)} className="mt-1 inline-flex items-center gap-2 font-semibold hover:underline">
-                    <Phone className="h-4 w-4" aria-hidden />{phone}
-                  </a>
-                </>
-              ) : null}
-              {whatsapp || instagram || twitter || facebook ? (
-                <>
-                  <p className="mt-4 text-navy-muted">Message or follow us</p>
-                  <SocialLinks tone="dark" className="mt-2" />
-                </>
-              ) : null}
-              <p className="mt-4 text-navy-muted">Remote-first · Worldwide</p>
-            </div>
-          </div>
 
-          {sent ? (
-            <div className="flex flex-col items-start justify-center bg-card p-6 sm:p-8 md:p-12" role="status">
-              <span className="grid h-11 w-11 place-items-center rounded-full bg-accent text-accent-foreground"><Tick /></span>
-              <h3 className="mt-5 text-2xl font-semibold">Thanks — your inquiry is in.</h3>
-              <p className="mt-2 text-muted-foreground">We&apos;ll reply to the email you gave us. Need to add something? Write to <a href={`mailto:${EMAIL}`} className="font-medium text-primary hover:underline">{EMAIL}</a>.</p>
-              <button type="button" onClick={() => setSent(false)} className="mt-6 text-sm font-medium text-primary hover:underline">Send another inquiry</button>
+  const input =
+    "mt-2 w-full rounded-[var(--gx-r-sm)] border border-[var(--gx-line-2)] bg-[var(--gx-s1)] px-4 py-3 text-[0.9375rem] text-[var(--gx-text)] outline-none transition-[border-color,box-shadow] duration-300 placeholder:text-[var(--gx-dim)] hover:border-[var(--gx-text)]/25 focus:border-[var(--gx-accent)] focus:shadow-[0_0_0_4px_rgb(8_229_47/0.15)]";
+
+  return (
+    <section id="contact" className="gx-section relative scroll-mt-20 overflow-hidden border-t border-[var(--gx-line)] bg-[var(--gx-s1)]">
+      <div aria-hidden className="pointer-events-none absolute -left-1/4 top-0 h-[80%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.09),transparent)]" />
+      <Container className="relative grid grid-cols-12 gap-y-14 lg:gap-x-12">
+        <div className="col-span-12 lg:col-span-5">
+          <Eyebrow>Get started</Eyebrow>
+          <SplitHeading text="Tell us what you need." serif="Get a straight quote back." className="mt-5 text-[clamp(2.4rem,4.6vw,4.5rem)]" />
+          <p className="mt-7 max-w-[42ch] leading-[1.65] text-[var(--gx-muted)] sm:text-lg">
+            A channel, an account, a store or a site. Describe your goal and we&apos;ll reply directly.
+          </p>
+          <ul className="mt-8 border-t border-[var(--gx-line)] text-[0.9375rem] text-[var(--gx-text)]/90">
+            {["A clear price for exactly what you asked for", "No bundled upsells", "Verified before handover, supported after"].map((t, i) => (
+              <li key={t} className="flex gap-4 border-b border-[var(--gx-line)] py-3.5">
+                <span className="pt-0.5 text-xs tabular-nums text-[var(--gx-accent)]">0{i + 1}</span>
+                {t}
+              </li>
+            ))}
+          </ul>
+
+          <dl className="mt-10 space-y-6">
+            <div>
+              <dt className="gx-eyebrow text-[var(--gx-dim)]">Email</dt>
+              <dd>
+                <a href={`mailto:${EMAIL}`} className={`gx-display mt-2 inline-block break-all rounded-[var(--gx-r-sm)] text-[clamp(1.4rem,2.2vw,1.9rem)] tracking-[-0.03em] text-[var(--gx-text)] transition-colors hover:text-[var(--gx-accent-hi)] ${ring}`}>
+                  {EMAIL}
+                </a>
+              </dd>
             </div>
-          ) : (
-          <form onSubmit={submit} className="bg-card p-6 sm:p-8 md:p-12" aria-busy={pending}>
-            {/* Honeypot: hidden from people and screen readers; bots tend to fill it. */}
-            <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
-              <label>Company<input type="text" name={HONEYPOT_FIELD} tabIndex={-1} autoComplete="off" /></label>
-            </div>
-            <p className="text-sm font-semibold">What can we help with?</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {[...services.map((s) => s.name), "Not sure yet"].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  onClick={() => setService(service === n ? "" : n)}
-                  aria-pressed={service === n}
-                  className={`rounded-md border px-3 py-2.5 text-left text-sm transition-colors sm:rounded-lg ${service === n ? "border-primary bg-accent font-medium text-accent-foreground" : "border-input hover:border-foreground/30"}`}
-                >
-                  {n}
+            {whatsapp ? (
+              <div>
+                <dt className="gx-eyebrow text-[var(--gx-dim)]">WhatsApp</dt>
+                <dd>
+                  <a
+                    href={whatsappHref(whatsapp, whatsappMessage)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className={`group mt-2 inline-flex items-center gap-3 rounded-[var(--gx-r-sm)] text-lg font-medium tabular-nums text-[var(--gx-text)] transition-colors hover:text-[var(--gx-accent-hi)] ${ring}`}
+                  >
+                    <SiWhatsapp className="size-5 text-[var(--gx-accent)]" />
+                    {whatsapp}
+                    <ArrowUpRight className="size-4 transition-transform duration-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden />
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+            {phone ? (
+              <div>
+                <dt className="gx-eyebrow text-[var(--gx-dim)]">Call us</dt>
+                <dd>
+                  <a href={telHref(phone)} className={`mt-2 inline-flex items-center gap-3 rounded-[var(--gx-r-sm)] text-lg font-medium tabular-nums text-[var(--gx-text)] transition-colors hover:text-[var(--gx-accent-hi)] ${ring}`}>
+                    <Phone className="size-5 text-[var(--gx-accent)]" aria-hidden />
+                    {phone}
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+          <p className="gx-eyebrow mt-8 text-[var(--gx-dim)]">Remote-first · Worldwide</p>
+        </div>
+
+        <div data-rise className="col-span-12 lg:col-span-7">
+          <div className="relative overflow-hidden rounded-[var(--gx-r-lg)] border border-[var(--gx-line-2)] bg-[var(--gx-s3)] shadow-[var(--gx-shadow-3)]">
+            <span aria-hidden className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[var(--gx-accent)] to-transparent" />
+            {sent ? (
+              <div className="flex min-h-[540px] flex-col items-start justify-center p-6 sm:p-12" role="status">
+                <span className="grid size-14 place-items-center rounded-full bg-[var(--gx-accent)] text-[var(--gx-accent-ink)] shadow-[0_12px_30px_-10px_rgb(8_229_47/0.8)]">
+                  <Check className="size-7" strokeWidth={2.5} aria-hidden />
+                </span>
+                <h3 className="gx-display mt-7 text-4xl text-[var(--gx-text)]">Thanks, your inquiry is in.</h3>
+                <p className="mt-3 max-w-[44ch] leading-[1.65] text-[var(--gx-muted)]">
+                  We&apos;ll reply to the email you gave us. Need to add something? Write to{" "}
+                  <a href={`mailto:${EMAIL}`} className="font-medium text-[var(--gx-accent-hi)] hover:underline">
+                    {EMAIL}
+                  </a>
+                  .
+                </p>
+                <button type="button" onClick={() => setSent(false)} className={`mt-7 rounded-[var(--gx-r-sm)] text-sm font-medium text-[var(--gx-accent-hi)] hover:underline ${ring}`}>
+                  Send another inquiry
                 </button>
-              ))}
-            </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm font-medium">Name<input required name="name" className={input} placeholder="Your name" /></label>
-              <label className="block text-sm font-medium">Email<input required type="email" name="email" className={input} placeholder="you@example.com" /></label>
-            </div>
-            <label className="mt-4 block text-sm font-medium">Your goal
-              <textarea required name="message" rows={4} className={`${input} resize-none`} placeholder="e.g. I want my YouTube channel to reach monetization" />
-            </label>
-            {error ? <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</p> : null}
-            <button type="submit" disabled={pending} className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-md bg-primary sm:rounded-lg px-6 font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-70">
-              {pending ? "Sending…" : "Send inquiry →"}
-            </button>
-            <p className="mt-3 text-center text-xs text-muted-foreground">We&apos;ll reply to the email you give us.</p>
-          </form>
-          )}
+              </div>
+            ) : (
+              <form onSubmit={submit} className="relative p-6 sm:p-10 lg:p-12" aria-busy={pending}>
+                {/* Honeypot: hidden from people and screen readers; bots tend to fill it. */}
+                <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+                  <label>
+                    Company
+                    <input type="text" name={HONEYPOT_FIELD} tabIndex={-1} autoComplete="off" />
+                  </label>
+                </div>
+                <fieldset>
+                  <legend className="gx-eyebrow text-[var(--gx-dim)]">What can we help with?</legend>
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {[...services.map((x) => x.name), "Not sure yet"].map((n) => (
+                      <button
+                        type="button"
+                        key={n}
+                        onClick={() => setService(service === n ? "" : n)}
+                        aria-pressed={service === n}
+                        className={`rounded-[var(--gx-r-sm)] border px-3.5 py-3 text-left text-[0.8125rem] font-medium leading-snug transition-[border-color,background-color,color] duration-300 sm:text-sm ${ring} ${
+                          service === n
+                            ? "border-[var(--gx-accent)] bg-[rgb(8_229_47/0.1)] text-[var(--gx-text)]"
+                            : "border-[var(--gx-line-2)] text-[var(--gx-muted)] hover:border-[var(--gx-text)]/30 hover:text-[var(--gx-text)]"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="mt-7 grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-[var(--gx-text)]">
+                    Name
+                    <input required name="name" autoComplete="name" className={input} placeholder="Your name" />
+                  </label>
+                  <label className="block text-sm font-medium text-[var(--gx-text)]">
+                    Email
+                    <input required type="email" name="email" autoComplete="email" className={input} placeholder="you@example.com" />
+                  </label>
+                </div>
+                <label className="mt-4 block text-sm font-medium text-[var(--gx-text)]">
+                  Your goal
+                  <textarea required name="message" rows={5} className={`${input} resize-none`} placeholder="e.g. I want my YouTube channel to reach monetization" />
+                </label>
+                {error ? (
+                  <p role="alert" className="mt-4 rounded-[var(--gx-r-sm)] border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {error}
+                  </p>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={pending}
+                  className={`group relative mt-7 inline-flex h-13 w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-[var(--gx-accent)] px-6 py-3.5 font-medium text-[var(--gx-accent-ink)] shadow-[0_10px_30px_-12px_rgb(8_229_47/0.75)] transition-shadow duration-500 hover:shadow-[0_14px_40px_-10px_rgb(8_229_47/0.9)] disabled:opacity-70 ${ring}`}
+                >
+                  <span aria-hidden className="absolute inset-0 translate-y-full rounded-full bg-[var(--gx-accent-hi)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-y-0" />
+                  <span className="relative inline-flex items-center gap-2">
+                    {pending ? "Sending…" : (
+                      <>
+                        Send inquiry <ArrowRight className="size-4" aria-hidden />
+                      </>
+                    )}
+                  </span>
+                </button>
+                <p className="mt-3 text-center text-xs text-[var(--gx-dim)]">We&apos;ll reply to the email you give us.</p>
+              </form>
+            )}
+          </div>
         </div>
       </Container>
     </section>
   );
 }
 
+/* ---------- footer ---------- */
+
 function Footer() {
-  const { email: EMAIL, phone } = useContact();
+  const { email: EMAIL, phone, whatsapp, whatsappMessage } = useContact();
   return (
-    <footer className="border-t bg-surface pb-24 md:pb-0">
-      <Container className="grid grid-cols-2 gap-x-6 gap-y-10 py-14 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
-        <div className="col-span-2 md:col-span-1">
-          <BrandWordmark className="h-11" />
-          <p className="mt-4 max-w-xs text-sm text-muted-foreground">Digital growth services, run honestly. Verified before handover, supported after.</p>
+    <footer className="relative isolate overflow-hidden border-t border-[var(--gx-line)] pb-24 md:pb-0">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="gx-ambient absolute -bottom-1/2 left-1/4 h-[90%] w-[70%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.16),transparent)]" />
+        <div className="gx-grain absolute inset-0" />
+      </div>
+      <Container className="grid grid-cols-2 gap-x-6 gap-y-12 pt-20 md:grid-cols-12 lg:pt-28">
+        <div className="col-span-2 md:col-span-5">
+          <Logo size="lg" />
+          <p className="mt-5 max-w-[36ch] leading-[1.65] text-[var(--gx-muted)]">Digital growth services, run honestly. Verified before handover, supported after.</p>
+          <Magnetic className="mt-8">
+            <Btn href="#contact">
+              Book a meeting <ArrowUpRight className="size-4" aria-hidden />
+            </Btn>
+          </Magnetic>
         </div>
-        <div>
-          <p className="text-sm font-semibold">Services</p>
-          <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-            {services.map((s) => <li key={s.id}><a href="#services" className="hover:text-foreground">{s.name}</a></li>)}
+        <nav aria-label="Services" className="md:col-span-2 md:col-start-7">
+          <p className="gx-eyebrow text-[var(--gx-dim)]">Services</p>
+          <ul className="mt-5 space-y-3 text-sm text-[var(--gx-muted)]">
+            {services.map((x) => (
+              <li key={x.id}>
+                <a href="#services" className="transition-colors hover:text-[var(--gx-text)]">
+                  {x.name}
+                </a>
+              </li>
+            ))}
           </ul>
-        </div>
-        <div>
-          <p className="text-sm font-semibold">Company</p>
-          <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-            {([["Why Grow Xeno", "#why"], ["How it works", "#process"], ["FAQ", "#faq"], ["Contact", "#contact"]] as [string, string][]).map(([l, h]) => <li key={h}><a href={h} className="hover:text-foreground">{l}</a></li>)}
+        </nav>
+        <nav aria-label="Company" className="md:col-span-2">
+          <p className="gx-eyebrow text-[var(--gx-dim)]">Company</p>
+          <ul className="mt-5 space-y-3 text-sm text-[var(--gx-muted)]">
+            {([["Why Grow Xeno", "#why"], ["How it works", "#process"], ["FAQ", "#faq"], ["Contact", "#contact"]] as [string, string][]).map(([l, h]) => (
+              <li key={h}>
+                <a href={h} className="transition-colors hover:text-[var(--gx-text)]">
+                  {l}
+                </a>
+              </li>
+            ))}
           </ul>
-        </div>
-        <div className="col-span-2 md:col-span-1">
-          <p className="text-sm font-semibold">Contact</p>
-          <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
+        </nav>
+        <div className="col-span-2 md:col-span-2">
+          <p className="gx-eyebrow text-[var(--gx-dim)]">Contact</p>
+          <ul className="mt-5 space-y-3 text-sm text-[var(--gx-muted)]">
             <li>
-              <a href={`mailto:${EMAIL}`} className="inline-flex items-center gap-2 hover:text-foreground"><Mail className="h-3.5 w-3.5" aria-hidden />{EMAIL}</a>
+              <a href={`mailto:${EMAIL}`} className="break-all transition-colors hover:text-[var(--gx-text)]">
+                {EMAIL}
+              </a>
             </li>
+            {whatsapp ? (
+              <li>
+                <a href={whatsappHref(whatsapp, whatsappMessage)} target="_blank" rel="noreferrer noopener" className="tabular-nums transition-colors hover:text-[var(--gx-text)]">
+                  WhatsApp {whatsapp}
+                </a>
+              </li>
+            ) : null}
             {phone ? (
               <li>
-                <a href={telHref(phone)} className="inline-flex items-center gap-2 hover:text-foreground"><Phone className="h-3.5 w-3.5" aria-hidden />{phone}</a>
+                <a href={telHref(phone)} className="tabular-nums transition-colors hover:text-[var(--gx-text)]">
+                  {phone}
+                </a>
               </li>
             ) : null}
             <li>Remote-first, worldwide</li>
           </ul>
-          <SocialLinks size="sm" className="mt-4" />
-          <Btn href="#contact" className="mt-5 h-10">Book a meeting</Btn>
+          <SocialLinks className="mt-5" />
         </div>
       </Container>
-      <div className="border-t">
-        <Container className="flex flex-col justify-between gap-2 py-6 text-xs text-muted-foreground sm:flex-row">
-          <span>© {new Date().getFullYear()} Grow Xeno. All rights reserved.</span>
-          <a href="#top" className="hover:text-foreground">Back to top ↑</a>
-        </Container>
-      </div>
+      <Container className="mt-16 flex flex-col justify-between gap-2 border-t border-[var(--gx-line)] py-6 text-xs text-[var(--gx-dim)] sm:flex-row">
+        <span>© {new Date().getFullYear()} Grow Xeno. All rights reserved.</span>
+        <a href="#top" className="transition-colors hover:text-[var(--gx-text)]">
+          Back to top ↑
+        </a>
+      </Container>
+      <svg data-wordmark aria-hidden viewBox="0 0 1000 118" className="relative -mb-[1.2vw] block w-full select-none">
+        <defs>
+          <linearGradient id="gx-wordmark" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="#F4F5F4" stopOpacity="0.9" />
+            <stop offset="1" stopColor="#F4F5F4" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+        <text
+          x="0"
+          y="114"
+          textLength="1000"
+          lengthAdjust="spacingAndGlyphs"
+          fill="url(#gx-wordmark)"
+          style={{ fontFamily: "var(--font-gx-display), sans-serif", fontWeight: 600, fontSize: 160, letterSpacing: "-0.05em" }}
+        >
+          GROW XENO
+        </text>
+      </svg>
     </footer>
   );
 }
@@ -773,14 +2139,22 @@ function Footer() {
 function MobileCta() {
   const { email: EMAIL, whatsapp, whatsappMessage } = useContact();
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur md:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--gx-line)] bg-[var(--gx-bg)]/85 p-3 backdrop-blur-xl md:hidden">
       <div className="grid grid-cols-[auto_1fr] gap-2">
         {whatsapp ? (
-          <Btn href={whatsappHref(whatsapp, whatsappMessage)} variant="outline"><SiWhatsapp className="h-4 w-4" />WhatsApp</Btn>
+          <Btn href={whatsappHref(whatsapp, whatsappMessage)} variant="ghost" className="h-11 px-4">
+            <SiWhatsapp className="size-4" />
+            WhatsApp
+          </Btn>
         ) : (
-          <Btn href={`mailto:${EMAIL}`} variant="outline"><Mail className="h-4 w-4" aria-hidden />Email</Btn>
+          <Btn href={`mailto:${EMAIL}`} variant="ghost" className="h-11 px-4">
+            <Mail className="size-4" aria-hidden />
+            Email
+          </Btn>
         )}
-        <Btn href="#contact">Book a meeting</Btn>
+        <Btn href="#contact" className="h-11">
+          Book a meeting
+        </Btn>
       </div>
     </div>
   );

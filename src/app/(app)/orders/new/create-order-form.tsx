@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, ClipboardList, Clock, Loader2, PackagePlus, Plus } from "lucide-react";
+import { CircleAlert, ClipboardList, Clock, PackagePlus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
@@ -38,6 +38,7 @@ import {
   OrderItemEditor,
   validateItem,
 } from "./order-item-editor";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 // Owner-directed simplification (confirmed directly, 2026-09-27: "currently
 // there are only two sources for order Fiverr and External"), replacing the
@@ -643,7 +644,7 @@ function SubmitButton({ busy, itemCount, className }: { busy: boolean; itemCount
     >
       {busy ? (
         <>
-          <Loader2 aria-hidden="true" className="animate-spin" />
+          <GrowXenoLoader size="xs" variant="light" label="" />
           {itemCount > 0 ? "Creating order and items…" : "Creating order…"}
         </>
       ) : (

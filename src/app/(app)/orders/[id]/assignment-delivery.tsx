@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Loader2, Mail, MessageCircle, Send, XCircle } from "lucide-react";
+import { CheckCircle2, Mail, MessageCircle, Send, XCircle } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { SiWhatsapp } from "react-icons/si";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/modal";
 import { getAssignmentMessageAction } from "@/lib/orders/actions";
 import type { AssignmentMessageOutcome } from "@/lib/orders/assignment-notify";
 import { cn } from "@/lib/utils";
+import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 
 /**
  * How a newly assigned worker was told about their task (owner request,
@@ -84,7 +85,7 @@ export function AssignmentDeliveryStep({
           </div>
           {canSendEmail ? (
             <Button variant="secondary" size="sm" className="shrink-0 rounded-[8px]" onClick={sendEmail} disabled={pending}>
-              {pending ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+              {pending ? <GrowXenoLoader size="xs" label="" /> : null}
               {email.status === "skipped" ? "Send email" : "Send again"}
             </Button>
           ) : null}
@@ -157,10 +158,7 @@ export function MessageWorkerDialog({ itemId, onClose }: { itemId: string; onClo
             Message worker
           </h2>
           {error ?? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-              Preparing the message…
-            </span>
+            <GrowXenoLoader size="md" label="Preparing the message" className="mx-auto" />
           )}
         </div>
       )}
