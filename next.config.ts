@@ -75,6 +75,9 @@ const nextConfig: NextConfig = {
   experimental: {
     // Category image originals are up to 8 MB (compressed before storage); the default 1 MB is too small.
     serverActions: { bodySizeLimit: "9mb" },
+    // Keep a page you just saw for 15s, so going back to it is instant (owner request, 2026-11-16:
+    // "make sure page navigation is fast"). Saving anything still refreshes (router.refresh / revalidatePath).
+    staleTimes: { dynamic: 15 },
   },
   // Never ship source maps to browsers: they reveal the original source of every client module.
   productionBrowserSourceMaps: false,

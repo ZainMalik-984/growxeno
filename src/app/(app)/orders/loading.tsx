@@ -1,40 +1,62 @@
-import { TopProgressBar } from "@/components/layout/top-progress-bar";
+import { Bone, lineWidth, SkeletonCard, SkeletonPage, SkeletonRing } from "@/components/ui/skeleton";
 
 /**
- * Placeholder while the Orders page loads (2026-11-11), shaped like what comes
- * next: order cards on phones, the table on larger screens.
+ * Shaped like the Orders page (redone 2026-11-16 for the progress-rings
+ * design): the one-line header with the List/Board switch, the tabs, the
+ * search box, then rows with a ring, two lines, status and pay, the time
+ * column and "⋯".
  */
 export default function OrdersLoading() {
   return (
-    <div role="status" aria-live="polite" aria-label="Loading orders" className="animate-pulse">
-      <TopProgressBar phase="loading" />
-      <span className="sr-only">Loading…</span>
-      <div className="mb-3 hidden h-3 w-40 rounded-full bg-zinc-200/80 md:block" />
-      <div className="mb-6 h-6 w-32 rounded-[8px] bg-zinc-200" />
+    <SkeletonPage label="Loading orders">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Bone className="h-7 w-28 rounded-[8px]" />
+        <Bone className="hidden h-9 w-40 rounded-[9px] md:block" soft />
+      </div>
 
-      <div className="mb-4 flex gap-2 border-b border-zinc-200/80 pb-3">
-        {[56, 88, 96].map((width) => (
-          <div key={width} className="h-5 rounded-full bg-zinc-200/80" style={{ width }} />
+      <div className="mb-4 flex gap-5 border-b border-zinc-200/80 pb-3">
+        {[64, 84, 96, 70].map((w) => (
+          <Bone key={w} className="h-4" style={{ width: w }} soft />
         ))}
       </div>
-      <div className="mb-4 flex gap-2">
-        <div className="h-11 flex-1 rounded-[10px] bg-white ring-1 ring-inset ring-zinc-200 md:h-10" />
-        <div className="h-11 w-24 rounded-[10px] bg-white ring-1 ring-inset ring-zinc-200 md:h-10 md:w-32" />
-      </div>
+      <Bone className="mb-4 h-9 w-full max-w-sm rounded-[8px]" soft />
 
-      <div className="divide-y divide-zinc-100 border-y border-zinc-200/80 bg-white max-md:-mx-4 md:rounded-[12px] md:border-x">
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="space-y-3 px-4 py-4 md:flex md:items-center md:gap-6 md:space-y-0 md:px-5">
-            <div className="flex items-center justify-between md:w-24">
-              <div className="h-4 w-12 rounded-full bg-zinc-200" />
-              <div className="h-5 w-20 rounded-full bg-zinc-100 md:hidden" />
+      <SkeletonCard className="overflow-hidden">
+        <div className="hidden grid-cols-[44px_minmax(0,1fr)_150px_120px_32px] gap-x-4 border-b border-zinc-200/80 bg-zinc-50/80 px-5 py-3 md:grid">
+          <Bone className="col-span-2 h-2.5 w-12" soft />
+          <Bone className="h-2.5 w-24" soft />
+          <Bone className="ml-auto h-2.5 w-16" soft />
+        </div>
+        <div className="divide-y divide-zinc-100">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-3.5 md:grid-cols-[44px_minmax(0,1fr)_150px_120px_32px] md:gap-x-4 md:px-5">
+              <SkeletonRing />
+              <div className="min-w-0 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Bone className="size-[18px] rounded-[5px]" soft />
+                  <Bone className="h-3.5" style={{ width: lineWidth(i, 45, 20) }} />
+                </div>
+                <Bone className="h-2.5" style={{ width: lineWidth(i, 60, 25) }} soft />
+                <div className="flex gap-2 md:hidden">
+                  <Bone className="h-5 w-20" soft />
+                  <Bone className="h-5 w-16" soft />
+                </div>
+              </div>
+              <div className="hidden space-y-2 md:block">
+                <Bone className="h-5 w-24" soft />
+                <Bone className="h-3 w-20" soft />
+              </div>
+              <div className="flex items-start gap-2 md:contents">
+                <div className="space-y-1.5 text-right">
+                  <Bone className="ml-auto h-4 w-20" />
+                  <Bone className="ml-auto h-2.5 w-12" soft />
+                </div>
+                <Bone className="mx-auto h-5 w-1.5" soft />
+              </div>
             </div>
-            <div className="h-3.5 rounded-full bg-zinc-100 md:flex-1" style={{ width: `${70 - ((i * 11) % 25)}%` }} />
-            <div className="h-1.5 w-full rounded-full bg-zinc-100 md:w-32" />
-            <div className="h-3 w-24 rounded-full bg-zinc-100" />
-          </div>
-        ))}
-      </div>
-    </div>
+          ))}
+        </div>
+      </SkeletonCard>
+    </SkeletonPage>
   );
 }

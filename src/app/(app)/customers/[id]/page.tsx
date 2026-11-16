@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Building2, CalendarDays, Mail, Phone, StickyNote, UserRound } from "lucide-react";
 import Link from "next/link";
+import { SiWhatsapp } from "react-icons/si";
+import { customerWhatsappUrl } from "@/lib/customers/whatsapp";
 import { notFound } from "next/navigation";
 
 import { Card, PHONE_FLUSH } from "@/components/ui/card";
@@ -48,7 +50,7 @@ export default async function CustomerDetailPage({ params }: PageProps<"/custome
             identity: { userId: actor.user.id, outsourcedWorkerId: actor.outsourcedWorkerId },
             visibility,
             canChangeItemStatus: actor.permissions.has("orders.change_status"),
-            unreadByItem: await unreadUpdatesByItem(actor.user.id, result.rows.map((order) => order.id)),
+            unreadByItem: await unreadUpdatesByItem(actor.user.id),
           }),
         })),
         getCustomerOrderStats(customer.id),
@@ -56,6 +58,7 @@ export default async function CustomerDetailPage({ params }: PageProps<"/custome
     : [null, null];
 
   const TypeIcon = customer.type === "COMPANY" ? Building2 : UserRound;
+  const whatsappLink = customerWhatsappUrl(customer.whatsappNumber);
 
   return (
     <>
@@ -94,7 +97,19 @@ export default async function CustomerDetailPage({ params }: PageProps<"/custome
                     {customer.phone}
                   </a>
                 ) : null}
-                {!customer.email && !customer.phone ? <span className="text-zinc-400">No contact details yet</span> : null}
+                {whatsappLink ? (
+                  <a
+                    href={whatsappLink}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-800 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100"
+                  >
+                    <SiWhatsapp aria-hidden="true" className="size-3.5 text-[#25D366]" />
+                    {customer.whatsappNumber}
+                    <span className="sr-only">(opens WhatsApp)</span>
+                  </a>
+                ) : null}
+                {!customer.email && !customer.phone && !whatsappLink ? <span className="text-zinc-400">No contact details yet</span> : null}
               </div>
             </div>
             {canEdit || canDelete ? (

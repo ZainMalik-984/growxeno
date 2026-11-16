@@ -62,7 +62,7 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
   // One round of requests, not two: the pickers/financials only need the id and
   // permissions, so they load alongside the order (each ~200ms trip to the
   // database region adds up). Nothing is rendered before the checks below.
-  const [rawOrder, fiverrAccounts, services, outsourcedWorkerRows, financials, expenses, expenseCategories, expenseUsers, workloads] = await Promise.all([
+  const [rawOrder, fiverrAccounts, services, outsourcedWorkerRows, financials, expenses, expenseCategories, expenseUsers, workloads, unreadByItem] = await Promise.all([
     getOrderDetail(id),
     canEdit ? listAssignableFiverrAccounts() : Promise.resolve([]),
     needsItemPickers ? listServicesForOrderPicker() : Promise.resolve([]),
@@ -76,6 +76,8 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
     canCreateExpense ? listAssignableWorkers() : Promise.resolve([]),
     // Each worker's current load, shown when choosing who to assign (2026-11-11).
     canAssign ? getWorkloads() : Promise.resolve(new Map()),
+    // Unread update badges, alongside the rest (2026-11-16).
+    unreadUpdatesByItem(actor.user.id),
   ]);
   const outsourcedWorkers = outsourcedWorkerRows.map((worker) => ({ ...worker, workload: workloads.get(worker.id) ?? EMPTY_WORKLOAD }));
   if (!rawOrder) notFound();
@@ -217,7 +219,7 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
           {/* Rows run edge to edge inside the card; only the header is padded (2026-11-11). */}
           <Card className={cn("overflow-hidden p-0 sm:p-0", PHONE_FLUSH)}>
             <OrderItemsPanel
-              unreadByItem={await unreadUpdatesByItem(actor.user.id, [order.id])}
+              unreadByItem={unreadByItem}
               // Remount when a notification opens another item's updates on this same page (2026-11-12).
               key={openUpdatesId ?? "none"}
               orderId={order.id}

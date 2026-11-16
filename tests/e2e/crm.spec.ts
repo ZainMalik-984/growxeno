@@ -34,8 +34,9 @@ test.describe("CRM (Phase 2)", () => {
     await signIn(page);
     const customerName = `E2E Test Customer ${Date.now()}`;
 
+    // New customer is a popup on the Customers page (2026-11-16); /customers/new opens it.
     await page.goto("/customers/new");
-    await page.getByLabel("Name", { exact: true }).fill(customerName);
+    await page.locator("dialog[open]").getByLabel("Name", { exact: true }).fill(customerName);
     await page.getByRole("button", { name: "Create customer" }).click();
     await page.waitForURL(/\/customers\/[0-9a-f-]{36}/, { timeout: 30_000 });
     await expect(page.getByRole("heading", { level: 1, name: customerName })).toBeVisible({
@@ -43,7 +44,9 @@ test.describe("CRM (Phase 2)", () => {
     });
 
     const renamedName = `${customerName} renamed`;
-    await page.getByLabel("Name", { exact: true }).fill(renamedName);
+    // Editing opens in a popup (2026-11-15).
+    await page.getByRole("button", { name: "Edit" }).click();
+    await page.locator("dialog[open]").getByLabel("Name", { exact: true }).fill(renamedName);
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Customer updated.")).toBeVisible({ timeout: 15_000 });
 

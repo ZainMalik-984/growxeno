@@ -1,45 +1,33 @@
-import { TopProgressBar } from "@/components/layout/top-progress-bar";
+import { Bone, lineWidth, SkeletonCard, SkeletonPage, SkeletonPageHeader } from "@/components/ui/skeleton";
 
 /**
- * Instant placeholder while a signed-in page loads its data (2026-11-03).
- * Every page waits on a few ~200ms round trips to the database region, so
- * without this a click showed nothing for about a second. Shapes mirror the
- * real pages: breadcrumb, title, then a main column and a side column.
+ * Fallback while a signed-in page without its own skeleton loads (redone
+ * 2026-11-16 to match the list pages most of them are): the page header, a
+ * search box, then a table card. Pages with a different shape have their own
+ * loading.tsx next to them.
  */
 export default function Loading() {
   return (
-    <div role="status" aria-live="polite" aria-label="Loading page" className="animate-pulse">
-      <TopProgressBar phase="loading" />
-      <span className="sr-only">Loading…</span>
-      <div className="mb-3 h-3 w-40 rounded-full bg-zinc-200/80" />
-      <div className="mb-2 h-6 w-64 rounded-[8px] bg-zinc-200" />
-      <div className="mb-6 h-3 w-80 max-w-full rounded-full bg-zinc-200/70" />
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-6">
-          <SkeletonCard rows={5} />
-          <SkeletonCard rows={3} />
+    <SkeletonPage label="Loading page">
+      <SkeletonPageHeader action />
+      <Bone className="mb-5 h-9 w-full max-w-sm rounded-[8px]" soft />
+      <SkeletonCard>
+        <div className="flex gap-6 border-b border-zinc-100 px-5 py-3">
+          {[90, 70, 120, 80].map((w) => (
+            <Bone key={w} className="h-2.5" style={{ width: w }} soft />
+          ))}
         </div>
-        <div className="hidden space-y-6 xl:block">
-          <SkeletonCard rows={4} />
+        <div className="divide-y divide-zinc-100">
+          {Array.from({ length: 7 }, (_, i) => (
+            <div key={i} className="flex items-center gap-6 px-5 py-3.5">
+              <Bone className="h-3.5 w-40" />
+              <Bone className="hidden h-3 sm:block" style={{ width: lineWidth(i, 22, 10) }} soft />
+              <Bone className="hidden h-3 md:block" style={{ width: lineWidth(i, 26, 12) }} soft />
+              <Bone className="ml-auto h-3 w-16" soft />
+            </div>
+          ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SkeletonCard({ rows }: { rows: number }) {
-  return (
-    <div className="rounded-[12px] border border-zinc-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-6">
-      <div className="mb-5 flex items-center gap-3">
-        <div className="size-9 rounded-[8px] bg-zinc-100" />
-        <div className="h-4 w-32 rounded-full bg-zinc-200" />
-      </div>
-      <div className="space-y-3">
-        {Array.from({ length: rows }, (_, i) => (
-          <div key={i} className="h-3 rounded-full bg-zinc-100" style={{ width: `${92 - ((i * 13) % 35)}%` }} />
-        ))}
-      </div>
-    </div>
+      </SkeletonCard>
+    </SkeletonPage>
   );
 }

@@ -44,6 +44,8 @@ model Customer {
 
   email String? @db.VarChar(320)
   phone String? @db.VarChar(32)
+  /// Optional WhatsApp number (owner request, 2026-11-16).
+  whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
   notes String? @db.Text
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

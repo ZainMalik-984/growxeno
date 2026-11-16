@@ -96,6 +96,7 @@ export type CustomerDetail = {
   type: PartyType;
   email: string | null;
   phone: string | null;
+  whatsappNumber: string | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -111,6 +112,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
       type: true,
       email: true,
       phone: true,
+      whatsappNumber: true,
       notes: true,
       createdAt: true,
       updatedAt: true,

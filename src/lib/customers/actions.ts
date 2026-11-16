@@ -20,6 +20,7 @@ const customerInputSchema = z.object({
   type: z.enum(["INDIVIDUAL", "COMPANY"]),
   email: z.email("Enter a valid email address.").optional().or(z.literal("")),
   phone: z.string().trim().max(32).optional(),
+  whatsappNumber: z.string().trim().max(32).regex(/^[+\d\s()-]*$/, "Enter a WhatsApp number with digits only (a leading + is fine).").optional(),
   notes: z.string().trim().max(4000).optional(),
 });
 

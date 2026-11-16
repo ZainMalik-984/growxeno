@@ -3,7 +3,7 @@ import Link from "next/link";
 import { z } from "zod";
 
 import { SearchFilter } from "@/components/filters/search-filter";
-import { buttonVariants } from "@/components/ui/button";
+import { NewCustomerButton } from "./new-customer-button";
 import { Breadcrumbs, EmptyState, PageHeader, Section } from "@/components/ui/page";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
@@ -18,6 +18,7 @@ const searchParamsSchema = z.object({
   q: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().min(1).max(10_000).catch(1),
   size: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).catch(CUSTOMERS_PAGE_SIZE),
+  new: z.literal("1").optional().catch(undefined),
 });
 
 export default async function CustomersPage({ searchParams }: PageProps<"/customers">) {
@@ -28,7 +29,9 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
     q: typeof raw.q === "string" ? raw.q : undefined,
     page: raw.page ?? 1,
     size: raw.size ?? CUSTOMERS_PAGE_SIZE,
+    new: raw.new,
   });
+  const canCreate = actor.permissions.has("customers.create");
 
   const result = await listCustomers({ page: params.page, pageSize: params.size, search: params.q });
 
@@ -48,11 +51,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
         title="Customers"
         description="The end/job customer for an order."
         actions={
-          actor.permissions.has("customers.create") ? (
-            <Link href="/customers/new" className={buttonVariants({ variant: "primary" })}>
-              New customer
-            </Link>
-          ) : undefined
+          canCreate ? <NewCustomerButton defaultOpen={params.new === "1"} /> : undefined
         }
       />
 
@@ -73,11 +72,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                 : "Add the first customer."
             }
             action={
-              !params.q && actor.permissions.has("customers.create") ? (
-                <Link href="/customers/new" className={buttonVariants({ variant: "primary" })}>
-                  New customer
-                </Link>
-              ) : undefined
+              !params.q && canCreate ? <NewCustomerButton label="Add the first customer" /> : undefined
             }
           />
         ) : (

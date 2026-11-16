@@ -29,6 +29,7 @@ export type CustomerInput = {
   type: "INDIVIDUAL" | "COMPANY";
   email?: string;
   phone?: string;
+  whatsappNumber?: string;
   notes?: string;
 };
 
@@ -40,6 +41,7 @@ export function normalizeCustomerInput(input: CustomerInput) {
     type: input.type,
     email: input.email?.trim() || null,
     phone: input.phone?.trim() || null,
+    whatsappNumber: input.whatsappNumber?.trim() || null,
     notes: input.notes?.trim() || null,
   };
 }

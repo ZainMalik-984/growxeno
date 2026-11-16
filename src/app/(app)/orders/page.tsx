@@ -132,7 +132,9 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   // 2026-11-03: "for outsourced worker the order item is the order").
   const showTasks = !visibility.allItems;
 
-  const [result, customers, workers, outsourcedWorkers, services, categories, boardItems, statusCounts, fiverrAccounts] = await Promise.all([
+  // One round of queries in parallel (2026-11-16, page speed): the worker's tasks and the unread
+  // badges no longer wait for the rest.
+  const [result, customers, workers, outsourcedWorkers, services, categories, boardItems, statusCounts, fiverrAccounts, workerTasks, unreadByItem] = await Promise.all([
     isBoardView || showTasks ? Promise.resolve(null) : listOrders(listFilters, orderScope),
     isBoardView || !visibility.pickers.customers ? Promise.resolve([]) : listAssignableCustomers(),
     isBoardView || !visibility.pickers.workers ? Promise.resolve([]) : listAssignableWorkers(),
@@ -142,9 +144,9 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
     isBoardView ? listBoardItems(boardItemWhere(identity, canViewAll)) : Promise.resolve([]),
     isBoardView || !visibility.orderDetails ? Promise.resolve(null) : countOrdersByStatus(listFilters, orderScope),
     isBoardView || !seesSource ? Promise.resolve([]) : listFiverrAccountOptions(),
+    showTasks && !isBoardView ? listWorkerTasks(identity, { view: params.task, search: params.q, focusId: params.open }) : Promise.resolve(null),
+    isBoardView ? Promise.resolve({} as Record<string, number>) : unreadUpdatesByItem(actor.user.id),
   ]);
-  const workerTasks =
-    showTasks && !isBoardView ? await listWorkerTasks(identity, { view: params.task, search: params.q, focusId: params.open }) : null;
 
   const buildHref = (target: number) => {
     const url = new URLSearchParams();
@@ -167,12 +169,6 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   const canChangeItemStatus = actor.permissions.has("orders.change_status");
 
   // Built on the server; values the actor may not see are left out (order-table-rows.ts).
-  // Unread update notifications per item, for the row badges (2026-11-15).
-  const unreadByItem = await unreadUpdatesByItem(actor.user.id, [
-    ...(result?.rows ?? []).map((order) => order.id),
-    ...(workerTasks?.tasks ?? []).map((task) => task.orderId),
-    ...(workerTasks?.focus ? [workerTasks.focus.orderId] : []),
-  ]);
   const tableRows: OrdersTableRow[] = toOrdersTableRows(result?.rows ?? [], { identity, visibility, canChangeItemStatus, now, unreadByItem });
 
   // Sorted and filtered by listWorkerTasks (2026-11-11): pending, then processing, then refill, oldest first.

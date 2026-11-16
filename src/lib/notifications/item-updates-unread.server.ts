@@ -3,11 +3,15 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { countUnreadByItem } from "./item-updates-unread";
 
-/** The signed-in person's unread update notifications for these orders, per item id. */
-export async function unreadUpdatesByItem(userId: string, orderIds: readonly string[]): Promise<Record<string, number>> {
-  if (orderIds.length === 0) return {};
+/**
+ * The signed-in person's unread update notifications, per item id. Not tied to
+ * the orders on the page, so it runs alongside the page's other queries
+ * instead of after them (2026-11-16, page speed); it only reads their own
+ * notifications (indexed on recipient + read).
+ */
+export async function unreadUpdatesByItem(userId: string): Promise<Record<string, number>> {
   const rows = await prisma.notification.findMany({
-    where: { recipientId: userId, isRead: false, entityType: "Order", entityId: { in: [...orderIds] }, actionUrl: { contains: "updates=" } },
+    where: { recipientId: userId, isRead: false, entityType: "Order", actionUrl: { contains: "updates=" } },
     select: { actionUrl: true },
   });
   return countUnreadByItem(rows.map((row) => row.actionUrl));
