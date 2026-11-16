@@ -99,7 +99,16 @@ export function isSupabaseAdminConfigured(): boolean {
   return adminSchema.safeParse({ SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY }).success;
 }
 
-/** Canonical application URL, used for links in emails and auth redirects. */
+/**
+ * The public website's URL (e.g. https://growxeno.com). Setting it switches on
+ * the two-domain split (src/lib/routing/hosts.ts); unset, everything is served
+ * from one domain as before. Null when unset.
+ */
+export function getSiteUrl(): string | null {
+  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || null;
+}
+
+/** Canonical application URL (e.g. https://app.growxeno.com), used for links in emails and auth redirects. */
 export function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 }

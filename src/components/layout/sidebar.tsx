@@ -10,6 +10,7 @@ import { FALLBACK_NAV_ICON, NAV_ICONS } from "@/components/layout/nav-icons";
 import { setPersistedFlag, usePersistedFlag } from "@/components/layout/use-persisted-flag";
 import { currentNavChild, isNavNodeActive, type NavNode, type NavSection } from "@/lib/navigation/nav-tree";
 import { cn } from "@/lib/utils";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 /**
  * Application sidebar.
@@ -87,7 +88,7 @@ export function Sidebar({ sections, badges = {} }: { sections: readonly NavSecti
       >
         {/* Same height as the top bar so the two read as one frame. */}
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-200/80 px-4">
-          <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-[8px] px-1 py-1 hover:bg-zinc-50">
+          <Link href={DASHBOARD_PATH} className="flex min-w-0 items-center gap-2.5 rounded-[8px] px-1 py-1 hover:bg-zinc-50">
             <BrandSymbol className="h-6" />
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-zinc-900">Grow Xeno</span>

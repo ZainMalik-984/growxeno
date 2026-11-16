@@ -55,6 +55,31 @@ optional — see §4.
 **Preview deployments must not point at the production database.** Use a separate Supabase project
 or branch.
 
+## 2b. Two domains, one project (2026-11-17)
+
+`growxeno.com` serves only the public homepage; `app.growxeno.com` serves the management app with
+the dashboard at `/`. Both are domains of the same Vercel project; `src/proxy.ts` routes by hostname
+(rules in `src/lib/routing/hosts.ts`). Not done by this project, owner's steps:
+
+1. Vercel → Project → Settings → Domains: add `app.growxeno.com`. Keep `growxeno.com` as it is.
+2. Namecheap → Advanced DNS: add the CNAME record for `app` exactly as Vercel shows it. Leave the
+   root-domain records unchanged.
+3. Vercel → Environment Variables (Production), then redeploy (both are inlined at build):
+   - `NEXT_PUBLIC_APP_URL=https://app.growxeno.com`
+   - `NEXT_PUBLIC_SITE_URL=https://growxeno.com` (this switches the split on)
+4. Supabase → Authentication → URL Configuration: Site URL `https://app.growxeno.com`; Redirect
+   URLs add `https://app.growxeno.com/**` (keep `http://localhost:3000/**`, add
+   `http://app.localhost:3000/**` for local testing). Email templates using `{{ .SiteURL }}`
+   follow automatically.
+
+Order matters: add the domain and DNS first, wait until Vercel shows it valid, then set the
+variables and redeploy. Before the variables are set, the app behaves as one domain.
+
+What changes for people: the session cookie is host-only, so anyone signed in on `growxeno.com`
+signs in once more on `app.growxeno.com`. Old links (`growxeno.com/orders?…`, emailed
+`/auth/callback` links, `/dashboard`) are redirected to the right place with their query kept.
+Vercel cron hits `/api/cron/...`, which both domains serve.
+
 ## 3. Domain and email (Phase 8)
 
 Add the DNS records Resend supplies (SPF, DKIM, and a return-path) for the sending domain. A

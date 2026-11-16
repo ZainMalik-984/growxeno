@@ -22,6 +22,7 @@ import { DailyStatsCharts } from "./daily-stats-charts";
 import { DailyStatsFilterBar } from "./daily-stats-filter-bar";
 import { DailyStatForm, EditDailyStatButton } from "./daily-stat-form";
 import { DeleteDailyStatButton } from "./daily-stat-delete-button";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 export const metadata: Metadata = { title: "Daily Statistics" };
 
@@ -214,7 +215,7 @@ export default async function DailyStatsPage({ searchParams }: PageProps<"/daily
       {!canViewAll ? (
         <Section title="Not available yet">
           <p className="max-w-2xl text-[13px] text-ink-muted">
-            <Link href="/dashboard" className="text-ink hover:underline">
+            <Link href={DASHBOARD_PATH} className="text-ink hover:underline">
               Your work
             </Link>{" "}
             on the dashboard shows what you have assigned right now — this page is a historical record

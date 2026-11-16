@@ -31,6 +31,7 @@ import type { ServiceMetricType } from "@/lib/services/metric-type";
 import { syncWorkerDeadlines } from "./worker-deadline-sync";
 import { getWorkerDeadlineSettings } from "@/lib/settings/queries";
 import { computeWorkerDeadline } from "@/lib/settings/worker-deadline";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 export type { ServiceResult };
 
@@ -865,7 +866,7 @@ export async function acceptItemDelivery(actor: Actor, itemId: string): Promise<
             message: `Your work on "${label}" for order #${item.order.orderNumber} was accepted.${pay}`,
             entityType: "Order",
             entityId: item.orderId,
-            actionUrl: "/dashboard",
+            actionUrl: DASHBOARD_PATH,
           },
         ],
         { orderId: item.orderId, orderItemId: itemId },

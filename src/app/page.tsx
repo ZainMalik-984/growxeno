@@ -41,7 +41,15 @@ export const revalidate = 3600;
  * through next/font. A Google Fonts <link> is blocked by this app's CSP
  * (style-src 'self'), which is why the earlier Geist link never loaded.
  */
+/**
+ * Canonical address (2026-11-17): once the public site has its own domain
+ * (NEXT_PUBLIC_SITE_URL), the homepage declares it, so the app subdomain is
+ * never mistaken for a copy. Inlined at build.
+ */
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || null;
+
 export const metadata: Metadata = {
+  ...(SITE_URL ? { metadataBase: new URL(SITE_URL), alternates: { canonical: "/" } } : {}),
   title: { absolute: "Grow Xeno — Monetization, growth & web services, verified before handover" },
   description:
     "YouTube monetization, TikTok growth, Google AdSense, SMM panels, website & app design and Shopify growth. Clear quotes, verified delivery, direct support. Worldwide.",

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { AuthScene } from "@/components/auth/auth-scene";
 import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
+import { SITE_HOME } from "@/lib/routing/hosts";
 
 /**
  * Shared frame for the signed-out pages: sign in, forgot password, set
@@ -31,12 +32,12 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
         </div>
 
         <div className="flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 rounded-[6px] lg:hidden" aria-label="Grow Xeno home">
+          <Link href={SITE_HOME} className="flex items-center gap-2.5 rounded-[6px] lg:hidden" aria-label="Grow Xeno home">
             <Image src="/brand/gx-symbol-light.svg" alt="" aria-hidden="true" width={1050} height={780} className="h-7 w-auto" priority />
             <span className="gx-display text-lg tracking-[-0.03em] text-[var(--gx-text)]">Grow Xeno</span>
           </Link>
           <Link
-            href="/"
+            href={SITE_HOME}
             className="group ml-auto inline-flex items-center gap-2 text-[13px] text-[var(--gx-muted)] transition-colors hover:text-[var(--gx-text)]"
           >
             <ArrowLeft aria-hidden="true" className="size-4 transition-transform duration-300 group-hover:-translate-x-0.5" />
@@ -175,7 +176,7 @@ function BrandPanel() {
       </div>
 
       <div className="pointer-events-none relative flex h-full min-h-dvh flex-col justify-between p-12 xl:p-16">
-        <Link href="/" className="pointer-events-auto flex w-fit items-center gap-3 rounded-[6px]" aria-label="Grow Xeno home">
+        <Link href={SITE_HOME} className="pointer-events-auto flex w-fit items-center gap-3 rounded-[6px]" aria-label="Grow Xeno home">
           <Image src="/brand/gx-symbol-light.svg" alt="" aria-hidden="true" width={1050} height={780} className="h-9 w-auto" priority />
           <span className="leading-tight">
             <span className="gx-display block text-lg tracking-[-0.03em] text-[var(--gx-text)]">Grow Xeno</span>

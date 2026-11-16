@@ -1,4 +1,5 @@
 import type { EffectivePermissions } from "@/lib/permissions/resolve";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 /**
  * The application's information architecture, declared once.
@@ -76,7 +77,7 @@ export const NAVIGATION: readonly NavSection[] = [
   {
     label: "Overview",
     items: [
-      { label: "Dashboard", href: "/dashboard", icon: "dashboard", implemented: true, exact: true },
+      { label: "Dashboard", href: DASHBOARD_PATH, icon: "dashboard", implemented: true, exact: true },
       { label: "Notifications", href: "/notifications", icon: "bell", implemented: true },
       { label: "Activity", href: "/activity", icon: "activity", permission: "audit.view", implemented: false },
     ],

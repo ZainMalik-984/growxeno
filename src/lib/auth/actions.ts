@@ -9,6 +9,7 @@ import { sendPasswordResetEmail } from "@/lib/auth/invite";
 import { prisma } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 /**
  * Authentication Server Actions.
@@ -70,7 +71,7 @@ export async function signIn(_previous: SignInState, formData: FormData): Promis
     return { error: "Those credentials were not recognised." };
   }
 
-  redirect(safeRedirectPath(parsed.data.next, "/dashboard"));
+  redirect(safeRedirectPath(parsed.data.next, DASHBOARD_PATH));
 }
 
 export async function signOut(): Promise<void> {
@@ -195,5 +196,5 @@ export async function updatePasswordAction(
     .updateMany({ where: { authUserId: user.id, invitePending: true }, data: { invitePending: false, isActive: true, deactivatedAt: null } })
     .catch(() => undefined);
 
-  redirect("/dashboard");
+  redirect(DASHBOARD_PATH);
 }

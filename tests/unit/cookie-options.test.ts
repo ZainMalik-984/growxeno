@@ -8,6 +8,10 @@ describe("hardenAuthCookieOptions", () => {
     expect(options).toMatchObject({ httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 3600 });
   });
 
+  it("stays host-only, so the app subdomain's session never reaches the public site", () => {
+    expect(hardenAuthCookieOptions({ path: "/", domain: ".growxeno.com" }, true)).not.toHaveProperty("domain");
+  });
+
   it("only requires HTTPS in production, so a localhost dev server can still sign in", () => {
     expect(hardenAuthCookieOptions({}, false).secure).toBe(false);
     expect(hardenAuthCookieOptions(undefined, true).secure).toBe(true);

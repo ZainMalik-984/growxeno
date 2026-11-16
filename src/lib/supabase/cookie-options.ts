@@ -11,6 +11,8 @@
  *  - sameSite  "lax": not sent on cross-site sub-requests or forms (CSRF), but
  *              still sent when someone follows a link to the app
  *  - secure    HTTPS only, in production (a localhost dev server is plain http)
+ *  - no domain  host-only (2026-11-17): set on app.growxeno.com, the session
+ *              is never sent to growxeno.com or any other subdomain
  *
  * Pure, so it is unit-tested. Applied in both places that write the cookie: the
  * server client and the request proxy.
@@ -26,5 +28,7 @@ export type CookieOptions = {
 };
 
 export function hardenAuthCookieOptions(options: CookieOptions | undefined, isProduction: boolean): CookieOptions {
-  return { ...options, httpOnly: true, sameSite: "lax", secure: isProduction };
+  const rest = { ...options };
+  delete rest.domain;
+  return { ...rest, httpOnly: true, sameSite: "lax", secure: isProduction };
 }

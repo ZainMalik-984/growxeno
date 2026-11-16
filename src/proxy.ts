@@ -1,3 +1,4 @@
+import { decideRoute, hostModeFor, type HostMode, type RouteDecision } from "@/lib/routing/hosts";
 import { hardenAuthCookieOptions } from "@/lib/supabase/cookie-options";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
@@ -6,8 +7,12 @@ import { NextResponse, type NextRequest } from "next/server";
  * Request proxy (the Next.js 16 replacement for `middleware.ts`).
  *
  * Its ONLY jobs are:
- *   1. refresh the Supabase auth cookie so sessions do not expire mid-visit;
- *   2. bounce clearly-unauthenticated visitors to /login before rendering.
+ *   1. route by hostname (2026-11-17): growxeno.com serves the public homepage
+ *      and sends everything else to app.growxeno.com, where the dashboard
+ *      renders at "/" (a rewrite, so the address bar stays "/"); the rules are
+ *      in src/lib/routing/hosts.ts and switch on with NEXT_PUBLIC_SITE_URL;
+ *   2. refresh the Supabase auth cookie so sessions do not expire mid-visit;
+ *   3. bounce clearly-unauthenticated visitors to /login before rendering.
  *
  * It is NOT an authorization boundary. Per the Next.js data-security guidance,
  * Server Functions are POSTs to the page route and a matcher change can quietly
@@ -16,23 +21,37 @@ import { NextResponse, type NextRequest } from "next/server";
  * file as a UX and session-hygiene concern only.
  */
 
-const PUBLIC_ROUTES = [
-  "/",
-  "/login",
-  "/forgot-password",
-  "/auth/callback",
-  "/auth/reset-password",
-  "/auth/sign-out",
-  "/error",
-  // Scheduled jobs: no session; the handler checks CRON_SECRET itself.
-  "/api/cron",
-];
+const appUrl = () => process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 
-function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+/** Turn a decision into a response, carrying over any refreshed auth cookies. */
+function respond(request: NextRequest, decision: RouteDecision, base: NextResponse, mode: HostMode): NextResponse {
+  let out: NextResponse;
+  if (decision.kind === "redirect") {
+    out = NextResponse.redirect(new URL(decision.location, request.url), decision.permanent ? 308 : 307);
+  } else if (decision.kind === "rewrite") {
+    const target = request.nextUrl.clone();
+    target.pathname = decision.pathname;
+    out = NextResponse.rewrite(target, { request });
+  } else {
+    out = base;
+  }
+  if (out !== base) {
+    for (const cookie of base.cookies.getAll()) out.cookies.set(cookie);
+  }
+  // The management app is never for search engines (its pages are also noindex in their metadata).
+  if (mode === "app") out.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return out;
 }
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const mode = hostModeFor(request.headers.get("host"), process.env.NEXT_PUBLIC_SITE_URL);
+  const { pathname, search } = request.nextUrl;
+
+  // The public site never needs the session: answer straight away.
+  if (mode === "site") {
+    return respond(request, decideRoute({ mode, pathname, search, signedIn: null, appUrl: appUrl() }), NextResponse.next({ request }), mode);
+  }
+
   let response = NextResponse.next({ request });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -43,7 +62,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // problem harder to diagnose, and no protected data is reachable regardless
   // because every page performs its own server-side check.
   if (!url || !key) {
-    return response;
+    return respond(request, decideRoute({ mode, pathname, search, signedIn: null, appUrl: appUrl() }), response, mode);
   }
 
   const supabase = createServerClient(url, key, {
@@ -77,29 +96,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const user = session?.user ?? null;
 
-  const { pathname } = request.nextUrl;
-
-  if (!user && !isPublicRoute(pathname)) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.search = "";
-    // Preserve intent so the user lands where they were going after signing in.
-    if (pathname !== "/") {
-      loginUrl.searchParams.set("next", pathname + request.nextUrl.search);
-    }
-    return NextResponse.redirect(loginUrl);
-  }
-
-  if (user && pathname === "/login") {
-    const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/dashboard";
-    dashboardUrl.search = "";
-    return NextResponse.redirect(dashboardUrl);
-  }
-
-  return response;
+  return respond(request, decideRoute({ mode, pathname, search, signedIn: Boolean(session?.user), appUrl: appUrl() }), response, mode);
 }
 
 export const config = {

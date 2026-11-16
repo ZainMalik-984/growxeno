@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { requireActor } from "@/lib/auth/authorize";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 export const metadata: Metadata = { title: "No access" };
 
@@ -41,7 +42,7 @@ export default async function ForbiddenPage({ searchParams }: PageProps<"/forbid
       </p>
 
       <div className="mt-6">
-        <Link href="/dashboard" className={buttonVariants({ variant: "secondary" })}>
+        <Link href={DASHBOARD_PATH} className={buttonVariants({ variant: "secondary" })}>
           Back to dashboard
         </Link>
       </div>

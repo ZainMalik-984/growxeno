@@ -3,6 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 
 import { safeRedirectPath } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 /**
  * Verifies a Supabase Auth email link (password recovery, invite, or any
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
-      const fallback = type === "recovery" || type === "invite" ? "/auth/reset-password" : "/dashboard";
+      const fallback = type === "recovery" || type === "invite" ? "/auth/reset-password" : DASHBOARD_PATH;
       const destination = new URL(safeRedirectPath(searchParams.get("next"), fallback), request.url);
       // First-time invite: the set-password page greets the person instead of
       // talking about a "new" password they never had.

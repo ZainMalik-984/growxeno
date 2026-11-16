@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getCurrentActor } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 /**
  * Clears a sign-in whose person no longer exists here (2026-11-16).
@@ -15,7 +16,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * but go to the dashboard, so a link from another site can't sign anyone out.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  if (await getCurrentActor()) return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (await getCurrentActor()) return NextResponse.redirect(new URL(DASHBOARD_PATH, request.url));
 
   try {
     const supabase = await createSupabaseServerClient();

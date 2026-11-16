@@ -21,7 +21,8 @@ needs one produces a `ConfigurationError` naming the variable. Nothing is ever s
 | `SUPABASE_SECRET_KEY` | for user provisioning | **server only** | Supabase → Settings → API Keys |
 | `DATABASE_URL` | yes | Prisma at runtime | Supabase → Connect |
 | `DIRECT_URL` | yes | Prisma Migrate, seed | Supabase → Connect |
-| `NEXT_PUBLIC_APP_URL` | no | auth redirects, message links | your own URL; defaults to `http://localhost:3000` |
+| `NEXT_PUBLIC_APP_URL` | no | auth redirects, message links | the management app's URL (production `https://app.growxeno.com`); defaults to `http://localhost:3000` |
+| `NEXT_PUBLIC_SITE_URL` | no | two-domain split | the public website's URL (production `https://growxeno.com`). Set: that host serves only the homepage and everything else redirects to the app, where the dashboard is at `/`. Unset: one domain, as before. Build-time (inlined) |
 | `SEED_ADMIN_EMAIL` | no | `pnpm db:seed` | you choose |
 | `SEED_ADMIN_PASSWORD` | no | `pnpm db:seed` | you choose — use a strong one and change it after first sign-in |
 | `SEED_ADMIN_NAME` | no | `pnpm db:seed` | defaults to "Super Admin" |

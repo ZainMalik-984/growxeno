@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
+import { DASHBOARD_PATH } from "@/lib/routing/hosts";
 
 export default function NotFound() {
   return (
@@ -10,7 +11,7 @@ export default function NotFound() {
         That page or record does not exist, or you do not have access to it.
       </p>
       <div className="mt-6">
-        <Link href="/dashboard" className={buttonVariants({ variant: "secondary" })}>
+        <Link href={DASHBOARD_PATH} className={buttonVariants({ variant: "secondary" })}>
           Back to dashboard
         </Link>
       </div>
