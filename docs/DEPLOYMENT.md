@@ -47,6 +47,10 @@ optional — see §4.
    connections and will exhaust a direct connection limit.
 4. Set `NEXT_PUBLIC_APP_URL` to the production URL.
 5. Add the custom domain and let Vercel manage TLS.
+6. Functions run in **Seoul (`icn1`)**, set in `vercel.json` (`regions`), next to the Supabase
+   database (`ap-northeast-2`). Every page makes several database round trips in a row; from
+   Vercel's default region (Washington) each one took ~170 ms, from Seoul a few ms (2026-11-16). If
+   the database ever moves, move this region with it.
 
 **Preview deployments must not point at the production database.** Use a separate Supabase project
 or branch.
