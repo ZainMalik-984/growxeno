@@ -1,5 +1,6 @@
 "use server";
 
+import { markItemUpdatesRead } from "@/lib/notifications/item-updates-unread.server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -16,13 +17,17 @@ const itemIdSchema = z.object({ itemId: z.uuid("Invalid identifier.") });
 
 export async function getItemUpdatesAction(
   input: unknown,
-): Promise<{ ok: true; thread: ItemUpdatesThread } | { ok: false; error: string }> {
+): Promise<{ ok: true; thread: ItemUpdatesThread; markedRead: number } | { ok: false; error: string }> {
   const parsed = itemIdSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid request." };
   const auth = await authorizeAction("orders.view");
   if (!auth.ok) return { ok: false, error: auth.message };
   const result = await getItemUpdatesThread(auth.actor, parsed.data.itemId);
-  return result.ok ? { ok: true, thread: result.data } : { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, error: result.error };
+  // Seeing the updates clears their notifications for this person (2026-11-15). Only after the
+  // thread loaded, so it only touches an item they may open.
+  const markedRead = await markItemUpdatesRead(auth.actor.user.id, parsed.data.itemId);
+  return { ok: true, thread: result.data, markedRead };
 }
 
 /** FormData: `itemId`, `body`, `count` (may be empty), up to four `images`, and `answersRequestId` when answering a screenshot request. */

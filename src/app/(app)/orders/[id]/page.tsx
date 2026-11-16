@@ -1,4 +1,5 @@
 import { AlarmClock, BellRing } from "lucide-react";
+import { unreadUpdatesByItem } from "@/lib/notifications/item-updates-unread.server";
 import { formatPay } from "@/lib/finance/format-pay";
 import { ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
 import type { Metadata } from "next";
@@ -26,6 +27,7 @@ import { refreshDueItemStats } from "@/lib/youtube/stats-service";
 import { ExpenseForm } from "../../finance/expenses/expense-form";
 import { canChangeWholeOrderStatus, orderVisibility, redactOrderDetail } from "@/lib/orders/visibility";
 import { AcceptItemsButton } from "../accept-items-button";
+import { OrderActivityFeed } from "./order-activity";
 import { OrderItemsPanel } from "./order-items-panel";
 import { OrderNotesButton } from "./order-notes-button";
 import { OrderDetailsCard } from "./order-details-card";
@@ -215,6 +217,7 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
           {/* Rows run edge to edge inside the card; only the header is padded (2026-11-11). */}
           <Card className={cn("overflow-hidden p-0 sm:p-0", PHONE_FLUSH)}>
             <OrderItemsPanel
+              unreadByItem={await unreadUpdatesByItem(actor.user.id, [order.id])}
               // Remount when a notification opens another item's updates on this same page (2026-11-12).
               key={openUpdatesId ?? "none"}
               orderId={order.id}
@@ -235,20 +238,8 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
           </Card>
 
           {canViewActivity ? (
-            <Section title="Activity" description="What has happened on this order, newest first." className={PHONE_FLUSH}>
-              {order.activity.length === 0 ? (
-                <p className="text-[13px] text-zinc-500">No activity yet.</p>
-              ) : (
-                <ol className="relative ml-1.5 space-y-4 border-l border-zinc-200 pl-5">
-                  {order.activity.map((entry) => (
-                    <li key={entry.id} className="relative">
-                      <span aria-hidden="true" className="absolute -left-[25px] top-1 size-2.5 rounded-full bg-white ring-2 ring-indigo-400" />
-                      <p className="text-[13px] text-zinc-800">{entry.summary}</p>
-                      <p className="mt-0.5 text-xs text-zinc-500">{dateFormat.format(entry.createdAt)} UTC</p>
-                    </li>
-                  ))}
-                </ol>
-              )}
+            <Section title="Activity" className={PHONE_FLUSH}>
+              <OrderActivityFeed entries={order.activity} />
             </Section>
           ) : null}
         </div>

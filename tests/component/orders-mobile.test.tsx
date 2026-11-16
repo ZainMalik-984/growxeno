@@ -22,6 +22,15 @@ vi.mock("@/lib/orders/actions", () => ({
   changeOrderItemStatusAction: (input: { itemId: string; status: string }) => changeStatus(input),
 }));
 
+vi.mock("@/lib/order-updates/actions", () => ({
+  getItemUpdatesAction: vi.fn(async () => ({ ok: false, error: "Not in this test." })),
+  postItemUpdateAction: vi.fn(),
+  requestScreenshotsAction: vi.fn(),
+  requestWithdrawAction: vi.fn(),
+  keepWithWorkerAction: vi.fn(),
+}));
+vi.mock("@/lib/youtube/actions", () => ({ refreshOrderItemStatsAction: vi.fn() }));
+
 const { OrdersTable } = await import("@/app/(app)/orders/orders-table");
 const { OrderFilterBar } = await import("@/app/(app)/orders/order-filter-bar");
 
@@ -102,6 +111,60 @@ describe("Orders list", () => {
     expect(items.getByText(/of 1,000 watch hours/)).toHaveTextContent("120 of 1,000 watch hours · now 775");
   });
 
+  it("shows the Fiverr profile name for a Fiverr order", () => {
+    render(<OrdersTable rows={[order({ source: { kind: "FIVERR", profileName: "growxeno_pro", reference: null } })]} showCustomer showAmount />);
+    expect(cards().getByText("growxeno_pro")).toBeInTheDocument();
+  });
+
+  it("opens an External order's source details from its button", async () => {
+    const user = userEvent.setup();
+    render(
+      <OrdersTable
+        rows={[
+          order({
+            source: {
+              kind: "EXTERNAL",
+              reference: "WA-77",
+              orderDate: new Date("2026-11-10T10:00:00Z"),
+              notes: "Came in on WhatsApp",
+              customer: { name: "Said", email: "said@example.com", phone: null },
+            },
+          }),
+        ]}
+        showCustomer
+        showAmount
+      />,
+    );
+    await user.click(cards().getByRole("button", { name: "External" }));
+    // The popup must not sit inside a paragraph (a hydration error, 2026-11-15).
+    expect(screen.getByRole("dialog", { hidden: true }).closest("p")).toBeNull();
+    const dialog = within(screen.getByRole("dialog", { hidden: true }));
+    expect(dialog.getByText("WA-77")).toBeInTheDocument();
+    expect(dialog.getByText("said@example.com")).toBeInTheDocument();
+    expect(dialog.getByText("Came in on WhatsApp")).toBeInTheDocument();
+  });
+
+  it("shows no source when the viewer may not see it", () => {
+    render(<OrdersTable rows={[order({ source: null })]} showCustomer showAmount />);
+    expect(cards().queryByRole("button", { name: "External" })).toBeNull();
+  });
+
+  it("lets the team post an update on an item from the list", async () => {
+    const user = userEvent.setup();
+    render(<OrdersTable canPostUpdates rows={[order()]} showCustomer showAmount />);
+    await user.click(cards().getByRole("button", { name: "Actions for order #3" }));
+    expect(within(screen.getByRole("menu", { name: "Actions for order #3" })).getByRole("menuitem", { name: "Post update" })).toBeInTheDocument();
+  });
+
+  it("shows new updates on the order and its item", async () => {
+    const user = userEvent.setup();
+    const base = order().items[0]!;
+    render(<OrdersTable canPostUpdates rows={[order({ unreadUpdates: 1, items: [{ ...base, unreadUpdates: 1 }] })]} showCustomer showAmount />);
+    expect(cards().getByRole("button", { name: "1 new update. Open" })).toBeInTheDocument();
+    await user.click(cards().getByRole("button", { name: "Show the items of order #3" }));
+    expect(within(screen.getByRole("list", { name: "Items of order #3" })).getByRole("button", { name: "1 new update. Open" })).toBeInTheDocument();
+  });
+
   it("flags an order whose worker can't continue", () => {
     render(<OrdersTable rows={[order({ withdrawRequests: 1 })]} showCustomer showAmount />);
     expect(cards().getByText("Can't continue")).toBeInTheDocument();
@@ -160,6 +223,24 @@ describe("Order filters on a phone", () => {
     expect(replace).toHaveBeenLastCalledWith("/orders?dueToday=1", { scroll: false });
     await user.click(within(sheet).getByRole("button", { name: "Show results", hidden: true }));
     expect(sheet).not.toHaveAttribute("open");
+  });
+
+  it("filters by Fiverr account when the list is given (admins and employees)", async () => {
+    const user = userEvent.setup();
+    search = "";
+    render(<OrderFilterBar initialSearch="" {...pickers} fiverrAccounts={[{ id: "11111111-1111-4111-8111-111111111111", label: "Alina" }]} />);
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    const sheet = within(screen.getByRole("dialog", { hidden: true }));
+    await user.selectOptions(sheet.getByRole("combobox", { name: "Fiverr account", hidden: true }), "Alina");
+    expect(replace).toHaveBeenLastCalledWith("/orders?fiverrAccount=11111111-1111-4111-8111-111111111111", { scroll: false });
+  });
+
+  it("has no Fiverr account filter without the list", async () => {
+    const user = userEvent.setup();
+    search = "";
+    render(<OrderFilterBar initialSearch="" {...pickers} />);
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    expect(within(screen.getByRole("dialog", { hidden: true })).queryByRole("combobox", { name: "Fiverr account", hidden: true })).toBeNull();
   });
 
   it("counts the active filters on the Filter button", () => {

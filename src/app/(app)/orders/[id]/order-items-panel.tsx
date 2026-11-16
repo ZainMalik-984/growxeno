@@ -41,6 +41,7 @@ import {
 import { keepWithWorkerAction } from "@/lib/order-updates/actions";
 import { RejectTaskDialog } from "../reject-task-button";
 import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
+import { UnreadBadge } from "@/components/orders/unread-badge";
 import { AssignmentDeliveryStep, MessageWorkerDialog } from "./assignment-delivery";
 import type { AssignmentMessageOutcome } from "@/lib/orders/assignment-notify";
 import { YoutubeLinkPreview } from "@/components/catalog/youtube-link-preview";
@@ -188,7 +189,10 @@ export function OrderItemsPanel({
   canUploadOwn,
   showCosts,
   openUpdatesId = null,
+  unreadByItem = {},
 }: {
+  /** Unread update notifications per item for the viewer (2026-11-15). */
+  unreadByItem?: Record<string, number>;
   orderId: string;
   items: readonly OrderItemRow[];
   services: readonly ServicePickerRow[];
@@ -417,7 +421,11 @@ export function OrderItemsPanel({
                 <li
                   key={item.id}
                   id={`item-${item.id}`}
-                  className="scroll-mt-20 rounded-[12px] border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none"
+                  className={cn(
+                    "scroll-mt-20 rounded-[12px] border border-zinc-200 shadow-[0_1px_2px_rgba(16,24,40,0.05)] max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none",
+                    // Waiting for this worker's Accept or Reject: a soft blink (2026-11-15).
+                    workerMustAnswer ? "pending-blink border-amber-200" : "bg-white",
+                  )}
                 >
                   {/* Compact item (owner request, 2026-11-15): who has it, logo + service + link, status and a
                       "⋯" menu on one header line; the figures with a ring; who and when on one footer line, with
@@ -434,6 +442,7 @@ export function OrderItemsPanel({
                           {item.service.name}
                         </p>
                         <StatusBadge tone={ITEM_STATUS_TONE[item.status]} label={ORDER_ITEM_STATUS_LABELS[item.status]} className="px-2 py-0.5" />
+                        <UnreadBadge count={unreadByItem[item.id] ?? 0} onClick={() => setUpdatesItemId(item.id)} />
                         {item.status === "DONE" && (item.outsourcedWorker || item.worker) ? (
                           <span
                             className={cn(

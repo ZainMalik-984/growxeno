@@ -32,6 +32,8 @@ export type OrderListFilters = {
   search?: string;
   status?: OrderStatus;
   source?: OrderSource;
+  /** Orders that came in on this Fiverr profile (2026-11-15). */
+  fiverrAccountId?: string;
   customerId?: string;
   workerId?: string;
   outsourcedWorkerId?: string;
@@ -95,6 +97,13 @@ export type OrderListRow = {
   status: OrderStatus;
   source: OrderSource;
   customerName: string | null;
+  /** Source details (2026-11-15), shown to admins and employees only (orderSourceInfo). */
+  customerEmail: string | null;
+  customerPhone: string | null;
+  fiverrProfileName: string | null;
+  externalReference: string | null;
+  orderDate: Date | null;
+  notes: string | null;
   deadline: Date | null;
   totalAmount: string;
   currency: string;
@@ -153,6 +162,7 @@ function buildOrderListWhere(
 
   if (filters.status && !options.ignoreStatus) and.push({ status: filters.status });
   if (filters.source) and.push({ source: filters.source });
+  if (filters.fiverrAccountId) and.push({ fiverrAccountId: filters.fiverrAccountId });
   if (filters.customerId) and.push({ customerId: filters.customerId });
 
   if (filters.assigned === "1") {
@@ -272,7 +282,11 @@ export async function listOrders(
         totalAmount: true,
         currency: true,
         createdAt: true,
-        customer: { select: { name: true } },
+        orderDate: true,
+        externalReference: true,
+        notes: true,
+        fiverrAccount: { select: { name: true } },
+        customer: { select: { name: true, email: true, phone: true } },
         _count: { select: { items: true } },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -350,6 +364,12 @@ export async function listOrders(
       status: order.status,
       source: order.source,
       customerName: order.customer?.name ?? null,
+      customerEmail: order.customer?.email ?? null,
+      customerPhone: order.customer?.phone ?? null,
+      fiverrProfileName: order.fiverrAccount?.name ?? null,
+      externalReference: order.externalReference,
+      orderDate: order.orderDate,
+      notes: order.notes,
       deadline: order.deadline,
       totalAmount: order.totalAmount.toString(),
       currency: order.currency,

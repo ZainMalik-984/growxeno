@@ -35,6 +35,14 @@ export async function listAssignableFiverrAccounts(): Promise<Array<{ id: string
   });
 }
 
+/** Every Fiverr profile, inactive ones too, for filtering old orders (2026-11-15). */
+export async function listFiverrAccountOptions(): Promise<Array<{ id: string; name: string; isActive: boolean }>> {
+  return prisma.fiverrAccount.findMany({
+    select: { id: true, name: true, isActive: true },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+  });
+}
+
 export type FiverrAccountDetail = {
   id: string;
   name: string;

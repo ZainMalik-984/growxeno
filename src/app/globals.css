@@ -259,3 +259,15 @@
     transform: scaleX(0.95);
   }
 }
+
+/* A task waiting for the worker to accept or reject it blinks softly (owner request, 2026-11-15). */
+@keyframes pending-blink {
+  0%, 100% { background-color: rgb(255 251 235 / 0.35); }
+  50% { background-color: rgb(254 243 199 / 0.95); }
+}
+.pending-blink {
+  animation: pending-blink 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending-blink { animation: none; background-color: rgb(254 243 199 / 0.7); }
+}

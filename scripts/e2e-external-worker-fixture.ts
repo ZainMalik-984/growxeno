@@ -84,7 +84,7 @@ async function main() {
         select: { id: true },
       });
       const customer = await prisma.customer.create({
-        data: { name: `E2E External Customer ${stamp}`, type: "INDIVIDUAL", email: `e2e-external-customer-${stamp}@example.com` },
+        data: { name: `E2E External Customer ${stamp}`, username: `E2E External Customer ${stamp}`, type: "INDIVIDUAL", email: `e2e-external-customer-${stamp}@example.com` },
         select: { id: true },
       });
 

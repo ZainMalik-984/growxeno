@@ -13,7 +13,7 @@ const DEBOUNCE_MS = 300;
 const ORDER_SOURCES = ["FIVERR", "EXTERNAL"] as const;
 
 /** Filters that live behind "More filters" — counted on its button so hidden filters are never forgotten. */
-const PANEL_KEYS = ["source", "customer", "worker", "outsourcedWorker", "service", "category", "assigned", "link"] as const;
+const PANEL_KEYS = ["source", "fiverrAccount", "customer", "worker", "outsourcedWorker", "service", "category", "assigned", "link"] as const;
 /** Everything "Clear all" resets. `view` and `size` are display choices, not filters, so they stay. */
 const ALL_FILTER_KEYS = [...PANEL_KEYS, "q", "status", "overdue", "due", "dueToday", "dueThisWeek", "hasLinks", "screenshots", "amountMin", "amountMax"];
 
@@ -34,6 +34,7 @@ type PickerOption = { id: string; label: string };
 export function OrderFilterBar({
   initialSearch,
   customers,
+  fiverrAccounts = [],
   workers,
   outsourcedWorkers,
   services,
@@ -47,6 +48,8 @@ export function OrderFilterBar({
   /** The team's "Screenshots requested" quick filter (2026-11-11). */
   showRequests?: boolean;
   customers: readonly PickerOption[];
+  /** Admins and employees only (2026-11-15); empty for anyone else. */
+  fiverrAccounts?: readonly PickerOption[];
   workers: readonly PickerOption[];
   outsourcedWorkers: readonly PickerOption[];
   services: readonly PickerOption[];
@@ -147,6 +150,14 @@ export function OrderFilterBar({
             {ORDER_SOURCES.map((source) => (
               <option key={source} value={source}>
                 {source[0] + source.slice(1).toLowerCase()}
+              </option>
+            ))}
+          </Picker>
+
+          <Picker show={fiverrAccounts.length > 0} label="Fiverr account" value={get("fiverrAccount")} onChange={(v) => setParam("fiverrAccount", v)}>
+            {fiverrAccounts.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
               </option>
             ))}
           </Picker>

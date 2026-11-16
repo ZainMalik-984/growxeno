@@ -1,15 +1,19 @@
 "use client";
 
-import { Ban, Camera, CheckCircle2, ChevronDown, ExternalLink, Eye, ListTree } from "lucide-react";
+import { Ban, Camera, CheckCircle2, ChevronDown, ExternalLink, Eye, Globe, ListTree, MessageSquareText, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { SiYoutube } from "react-icons/si";
+import { SiFiverr, SiYoutube } from "react-icons/si";
 import { toast } from "sonner";
 
 import { CategoryThumb } from "@/components/catalog/category-thumb";
+import { ItemUpdatesSheet } from "@/components/orders/item-updates";
+import { UnreadBadge } from "@/components/orders/unread-badge";
 import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
-import { DeadlineCountdown } from "@/components/ui/deadline";
+import { DeadlineCountdown, formatDeadlineDate } from "@/components/ui/deadline";
+import { Modal, SHEET_CLASS } from "@/components/ui/modal";
+import type { OrderSourceInfo } from "@/lib/orders/source-info";
 import { StatusBadge, StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { changeOrderItemStatusAction } from "@/lib/orders/actions";
 import { cn } from "@/lib/utils";
@@ -35,6 +39,8 @@ export type OrdersTableItem = {
   channel: ChannelLink | null;
   /** The signed-in worker's own pending item: offer Accept. */
   canAccept: boolean;
+  /** Unread update notifications for this item (2026-11-15). */
+  unreadUpdates?: number;
   serviceName: string;
   /** Shown as category logo + service name (2026-11-15). */
   serviceTitle?: string;
@@ -54,6 +60,8 @@ export type OrdersTableRow = {
   id: string;
   orderNumber: number;
   customerName: string | null;
+  /** The Fiverr profile, or an External order's details (2026-11-15). Null for anyone but admins and employees. */
+  source?: OrderSourceInfo | null;
   statusLabel: string;
   statusTone: StatusTone;
   /** For a worker, their own (earliest item) deadline. */
@@ -71,6 +79,8 @@ export type OrdersTableRow = {
   openRequests: number;
   /** Items whose worker can't continue, waiting to be reassigned (team view only). */
   withdrawRequests: number;
+  /** Unread update notifications across this row's items (2026-11-15). */
+  unreadUpdates?: number;
   items: OrdersTableItem[];
 };
 
@@ -81,11 +91,15 @@ export function OrdersTable({
   rows,
   showCustomer,
   showAmount,
+  canPostUpdates = false,
 }: {
   rows: OrdersTableRow[];
   showCustomer: boolean;
   showAmount: boolean;
+  /** The team posts updates on any item from the list (owner request, 2026-11-15). */
+  canPostUpdates?: boolean;
 }) {
+  const [updatesId, setUpdatesId] = useState<string | null>(null);
   const router = useRouter();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
@@ -137,9 +151,13 @@ export function OrdersTable({
             onToggle={() => toggle(order.id)}
             busy={busy}
             onAccept={accept}
+            canPostUpdates={canPostUpdates}
+            onUpdates={setUpdatesId}
+            onExpand={() => setExpanded((current) => new Set(current).add(order.id))}
           />
         ))}
       </ul>
+      {updatesId ? <ItemUpdatesSheet itemId={updatesId} onClose={() => setUpdatesId(null)} /> : null}
     </>
   );
 }
@@ -152,6 +170,9 @@ function OrderRow({
   onToggle,
   busy,
   onAccept,
+  canPostUpdates,
+  onUpdates,
+  onExpand,
 }: {
   order: OrdersTableRow;
   showCustomer: boolean;
@@ -160,7 +181,13 @@ function OrderRow({
   onToggle: () => void;
   busy: string | null;
   onAccept: (key: string, itemIds: string[]) => void;
+  canPostUpdates: boolean;
+  onUpdates: (itemId: string) => void;
+  onExpand: () => void;
 }) {
+  const unreadItems = order.items.filter((item) => (item.unreadUpdates ?? 0) > 0);
+  // One item with news opens its updates; several open the items so each shows its own badge.
+  const openUnread = () => (unreadItems.length === 1 ? onUpdates(unreadItems[0]!.id) : onExpand());
   const acceptable = order.items.filter((item) => item.canAccept);
   const first = order.items[0];
   const channel = order.channels[0];
@@ -179,6 +206,9 @@ function OrderRow({
           "separator" as const,
         ]
       : []),
+    ...(canPostUpdates && order.items.length === 1
+      ? [{ label: "Post update", icon: MessageSquareText, onSelect: () => onUpdates(order.items[0]!.id) }]
+      : []),
     { label: "Open order", icon: Eye, href: `/orders/${order.id}` },
     ...(order.items.length > 0 ? [{ label: open ? "Hide items" : `Show items (${order.items.length})`, icon: ListTree, onSelect: onToggle }] : []),
     ...(channel ? [{ label: isYoutube(channel.href) ? "Open on YouTube" : "Open link", icon: ExternalLink, href: channel.href, external: true }] : []),
@@ -192,10 +222,12 @@ function OrderRow({
         <Ring percent={order.progressPercent} />
 
         <div className="min-w-0">
-          <p className="flex min-w-0 items-baseline gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[14px] font-semibold tabular-nums text-zinc-900">#{order.orderNumber}</span>
             {showCustomer && order.customerName ? <span className="truncate text-[13px] text-zinc-500">{order.customerName}</span> : null}
-          </p>
+            {order.source ? <SourceChip source={order.source} orderNumber={order.orderNumber} /> : null}
+            <UnreadBadge count={order.unreadUpdates ?? 0} onClick={openUnread} />
+          </div>
           {first ? (
             <button
               type="button"
@@ -251,7 +283,15 @@ function OrderRow({
           {order.items.length === 0 ? (
             <li className="px-3 py-2.5 text-xs text-zinc-500">No items visible.</li>
           ) : (
-            order.items.map((item) => <ItemLine key={item.id} item={item} busy={busy === item.id} onAccept={() => onAccept(item.id, [item.id])} />)
+            order.items.map((item) => (
+              <ItemLine
+                key={item.id}
+                item={item}
+                busy={busy === item.id}
+                onAccept={() => onAccept(item.id, [item.id])}
+                onUpdates={canPostUpdates || (item.unreadUpdates ?? 0) > 0 ? () => onUpdates(item.id) : undefined}
+              />
+            ))
           )}
         </ul>
       ) : null}
@@ -260,10 +300,11 @@ function OrderRow({
 }
 
 /** One item under an opened order: ring, logo + service, who has it, delivered, status. */
-function ItemLine({ item, busy, onAccept }: { item: OrdersTableItem; busy: boolean; onAccept: () => void }) {
+function ItemLine({ item, busy, onAccept, onUpdates }: { item: OrdersTableItem; busy: boolean; onAccept: () => void; onUpdates?: () => void }) {
   const progress = itemProgress(item);
   const menu: ActionMenuItem[] = [
     ...(item.canAccept ? [{ label: busy ? "Accepting…" : "Accept task", icon: CheckCircle2, tone: "primary" as const, disabled: busy, onSelect: onAccept }] : []),
+    ...(onUpdates ? [{ label: "Post update", icon: MessageSquareText, onSelect: onUpdates }] : []),
     ...(item.channel ? [{ label: isYoutube(item.channel.href) ? "Open on YouTube" : "Open link", icon: ExternalLink, href: item.channel.href, external: true }] : []),
   ];
   const assigned = item.assigned ?? item.assigneeLabel !== "Unassigned";
@@ -274,6 +315,7 @@ function ItemLine({ item, busy, onAccept }: { item: OrdersTableItem; busy: boole
         <p className="flex min-w-0 items-center gap-1.5 font-medium text-zinc-900">
           <ServiceLogo item={item} size={16} />
           <span className="truncate">{item.serviceTitle ?? item.serviceName}</span>
+          {onUpdates ? <UnreadBadge count={item.unreadUpdates ?? 0} onClick={onUpdates} /> : null}
         </p>
         <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
           <span className="inline-flex items-center gap-1.5">
@@ -301,6 +343,86 @@ function ItemLine({ item, busy, onAccept }: { item: OrdersTableItem; busy: boole
         {menu.length > 0 ? <ActionMenu label={`Actions for ${item.serviceTitle ?? item.serviceName}`} items={menu} buttonClassName="size-7" /> : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * Where the order came from (owner request, 2026-11-15): the Fiverr profile's
+ * name, or an "External" button that opens the order's source details.
+ */
+export function SourceChip({ source, orderNumber }: { source: OrderSourceInfo; orderNumber: number }) {
+  const [open, setOpen] = useState(false);
+  if (source.kind === "FIVERR") {
+    return (
+      <span
+        className="relative inline-flex max-w-full items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200"
+        title={source.reference ? `Fiverr order ${source.reference}` : "Fiverr"}
+      >
+        <SiFiverr aria-hidden="true" className="size-3 shrink-0" />
+        <span className="truncate">{source.profileName ?? "Fiverr"}</span>
+      </span>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="relative inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800 ring-1 ring-inset ring-sky-200 hover:bg-sky-100"
+      >
+        <Globe aria-hidden="true" className="size-3" />
+        External
+      </button>
+      {open ? (
+        <Modal open onClose={() => setOpen(false)} labelledBy={`source-title-${orderNumber}`} className={cn(SHEET_CLASS, "sm:max-w-md")}>
+          <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4">
+            <div>
+              <p className="text-xs font-medium tabular-nums text-zinc-500">Order #{orderNumber}</p>
+              <h2 id={`source-title-${orderNumber}`} className="text-[15px] font-semibold text-zinc-900">
+                External order
+              </h2>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="rounded-[8px] p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+              <X aria-hidden="true" className="size-4" />
+            </button>
+          </div>
+          <dl className="divide-y divide-zinc-100 px-5 text-[13px]">
+            <SourceRow label="Reference">{source.reference ?? <span className="text-zinc-400">None</span>}</SourceRow>
+            <SourceRow label="Customer">
+              {source.customer ? (
+                <span className="block">
+                  <span className="block font-medium text-zinc-900">{source.customer.name}</span>
+                  {source.customer.email ? (
+                    <a href={`mailto:${source.customer.email}`} className="block text-indigo-600 hover:underline">
+                      {source.customer.email}
+                    </a>
+                  ) : null}
+                  {source.customer.phone ? <span className="block text-zinc-600">{source.customer.phone}</span> : null}
+                </span>
+              ) : (
+                <span className="text-zinc-400">Not set</span>
+              )}
+            </SourceRow>
+            <SourceRow label="Order date">{source.orderDate ? formatDeadlineDate(source.orderDate) : <span className="text-zinc-400">—</span>}</SourceRow>
+            {source.notes ? (
+              <SourceRow label="Notes">
+                <span className="whitespace-pre-wrap text-zinc-700">{source.notes}</span>
+              </SourceRow>
+            ) : null}
+          </dl>
+          <div className="px-5 pb-4" />
+        </Modal>
+      ) : null}
+    </>
+  );
+}
+
+function SourceRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 py-2.5">
+      <dt className="text-zinc-500">{label}</dt>
+      <dd className="min-w-0 text-zinc-800">{children}</dd>
+    </div>
   );
 }
 

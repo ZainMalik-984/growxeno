@@ -1,6 +1,7 @@
 import "server-only";
 
 import { recordAudit } from "@/lib/audit/record";
+import { customerUsername } from "./username";
 import type { Actor } from "@/lib/auth/session";
 import {
   runTransaction,
@@ -23,15 +24,19 @@ export type { ServiceResult };
 
 export type CustomerInput = {
   name: string;
+  /** Left empty, it is the name (owner request, 2026-11-15). */
+  username?: string;
   type: "INDIVIDUAL" | "COMPANY";
   email?: string;
   phone?: string;
   notes?: string;
 };
 
-function normalizeCustomerInput(input: CustomerInput) {
+export function normalizeCustomerInput(input: CustomerInput) {
+  const name = input.name.trim();
   return {
-    name: input.name.trim(),
+    name,
+    username: customerUsername(name, input.username),
     type: input.type,
     email: input.email?.trim() || null,
     phone: input.phone?.trim() || null,

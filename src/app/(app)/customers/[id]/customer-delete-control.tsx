@@ -33,7 +33,7 @@ export function CustomerDeleteControl({ customerId, name }: { customerId: string
 
   return (
     <>
-      <Button variant="dangerGhost" onClick={() => setOpen(true)}>
+      <Button variant="dangerGhost" size="sm" className="rounded-[8px]" onClick={() => setOpen(true)}>
         Delete
       </Button>
 

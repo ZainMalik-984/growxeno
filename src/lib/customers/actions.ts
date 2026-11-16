@@ -16,6 +16,7 @@ const uuid = z.uuid("Invalid identifier.");
 
 const customerInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(160),
+  username: z.string().trim().max(160).optional(),
   type: z.enum(["INDIVIDUAL", "COMPANY"]),
   email: z.email("Enter a valid email address.").optional().or(z.literal("")),
   phone: z.string().trim().max(32).optional(),

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { formatPay } from "@/lib/finance/format-pay";
 import { WorkerTasksTable, type WorkerTaskRow } from "./worker-tasks-table";
 import { safeExternalHref } from "@/lib/orders/url-normalize";
-import { ITEM_STATUS_TONE, ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
+import { ITEM_STATUS_TONE } from "@/lib/orders/status-tone";
 import Link from "next/link";
 import { Columns3, Inbox, type LucideIcon, Plus, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -10,10 +10,11 @@ import { z } from "zod";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, PHONE_FLUSH } from "@/components/ui/card";
-import { Breadcrumbs, PageHeader } from "@/components/ui/page";
 import { Pagination } from "@/components/ui/pagination";
 import { listAssignableCategories } from "@/lib/categories/queries";
 import { listAssignableCustomers } from "@/lib/customers/queries";
+import { listFiverrAccountOptions } from "@/lib/fiverr-accounts/queries";
+import { unreadUpdatesByItem } from "@/lib/notifications/item-updates-unread.server";
 import { requireScope } from "@/lib/auth/authorize";
 import { listAssignableOutsourcedWorkers } from "@/lib/outsourced-workers/queries";
 import { boardItemWhere, isAssignedToIdentity } from "@/lib/orders/assignment";
@@ -25,15 +26,14 @@ import {
   MAX_PAGE_SIZE,
   ORDERS_PAGE_SIZE,
   type OrderListFilters,
-  type OrderListItemRow,
   type OrderScope,
 } from "@/lib/orders/queries";
 import { aggregateProgress } from "@/lib/orders/progress";
 import { completionBlocker } from "@/lib/orders/completion";
 import { STAT_KEY_LABELS } from "@/lib/services/tracked-stats";
-import { earliest, orderVisibility, redactOrderListItems } from "@/lib/orders/visibility";
+import { orderVisibility } from "@/lib/orders/visibility";
 import { listAssignableServices } from "@/lib/services/queries";
-import { CLOSED_ORDER_STATUSES, deriveOrderStatus, ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, ORDER_STATUS_VALUES } from "@/lib/orders/state-machine";
+import { ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, ORDER_STATUS_VALUES } from "@/lib/orders/state-machine";
 import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { cn } from "@/lib/utils";
 import { canTransitionItem } from "@/lib/orders/state-machine";
@@ -44,6 +44,7 @@ import type { OrderStatus } from "@/generated/prisma/client";
 import { OrderFilterBar } from "./order-filter-bar";
 import { OrdersBoard, type BoardCard } from "./orders-board";
 import { OrdersTable, type OrdersTableRow } from "./orders-table";
+import { channelLinks, shortLink, toOrdersTableRows } from "./order-table-rows";
 import { LoadMoreOnScroll } from "./load-more";
 
 export const metadata: Metadata = { title: "Orders" };
@@ -57,6 +58,7 @@ const searchParamsSchema = z.object({
     .catch(undefined),
   source: z.enum(["FIVERR", "EXTERNAL"]).optional(),
   customer: z.uuid().optional(),
+  fiverrAccount: z.uuid().optional(),
   worker: z.uuid().optional(),
   outsourcedWorker: z.uuid().optional(),
   service: z.uuid().optional(),
@@ -97,6 +99,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   const canViewAll = scope === "ALL";
   const orderScope: OrderScope = canViewAll ? { mode: "ALL" } : { mode: "ASSIGNED", ...identity };
   const isBoardView = params.view === "board";
+  const seesSource = visibility.orderDetails && visibility.parties;
   const listFilters: OrderListFilters = {
     page: params.page,
     pageSize: params.size,
@@ -105,6 +108,8 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
     // filter nor count by them (2026-11-03) — that would reveal those items.
     status: visibility.orderDetails ? params.status : undefined,
     source: visibility.orderDetails ? params.source : undefined,
+    // Which Fiverr profile an order came in on is for admins and employees only (2026-11-15).
+    fiverrAccountId: seesSource ? params.fiverrAccount : undefined,
     customerId: params.customer,
     workerId: params.worker,
     outsourcedWorkerId: params.outsourcedWorker,
@@ -127,7 +132,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   // 2026-11-03: "for outsourced worker the order item is the order").
   const showTasks = !visibility.allItems;
 
-  const [result, customers, workers, outsourcedWorkers, services, categories, boardItems, statusCounts] = await Promise.all([
+  const [result, customers, workers, outsourcedWorkers, services, categories, boardItems, statusCounts, fiverrAccounts] = await Promise.all([
     isBoardView || showTasks ? Promise.resolve(null) : listOrders(listFilters, orderScope),
     isBoardView || !visibility.pickers.customers ? Promise.resolve([]) : listAssignableCustomers(),
     isBoardView || !visibility.pickers.workers ? Promise.resolve([]) : listAssignableWorkers(),
@@ -136,6 +141,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
     isBoardView || !visibility.pickers.catalog ? Promise.resolve([]) : listAssignableCategories({ includeInactive: true }),
     isBoardView ? listBoardItems(boardItemWhere(identity, canViewAll)) : Promise.resolve([]),
     isBoardView || !visibility.orderDetails ? Promise.resolve(null) : countOrdersByStatus(listFilters, orderScope),
+    isBoardView || !seesSource ? Promise.resolve([]) : listFiverrAccountOptions(),
   ]);
   const workerTasks =
     showTasks && !isBoardView ? await listWorkerTasks(identity, { view: params.task, search: params.q, focusId: params.open }) : null;
@@ -159,75 +165,18 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   // Accept from the list (owner request, 2026-11-03): only the assigned
   // worker's own pending items — the same rule as the order page's Accept.
   const canChangeItemStatus = actor.permissions.has("orders.change_status");
-  const canAcceptItem = (item: OrderListItemRow) =>
-    canChangeItemStatus &&
-    item.status === "PENDING" &&
-    isAssignedToIdentity({ workerId: item.workerId, outsourcedWorkerId: item.outsourcedWorker?.id ?? null }, identity);
 
-  const tableRows: OrdersTableRow[] = (result?.rows ?? []).map((order) => {
-    const visibleItems = redactOrderListItems(order.items, identity, visibility);
-    const progress = aggregateProgress(
-      visibleItems.map((item) => ({
-        targetCount: item.targetCount,
-        currentCount: item.currentCount,
-        startingCount: item.startingCount,
-      })),
-    );
-
-    // A worker's deadline is the earliest of their own items' deadlines,
-    // never the order's (owner request, 2026-11-03; see visibility.ts).
-    const deadline = visibility.orderDetails ? order.deadline : earliest(visibleItems.map((item) => item.deadline));
-    // Same rule as redactOrderDetail: a worker's status comes from their own items.
-    const rowStatus = visibility.orderDetails
-      ? order.status
-      : deriveOrderStatus(order.status, visibleItems.map((item) => ({ status: item.status, assigned: Boolean(item.worker || item.outsourcedWorker) })));
-
-    return {
-      id: order.id,
-      orderNumber: order.orderNumber,
-      // Must match `showCustomer` below exactly — this is a CLIENT component
-      // prop, so an unconditional value here would leak the customer's name
-      // into the page's serialized payload even where the `<TD>` itself is
-      // never rendered (found via tests/e2e/worker-boundaries.spec.ts,
-      // 2026-10-08 — the same class of bug `redactOrderListItems` exists to
-      // prevent, missed here since this field isn't part of that helper).
-      customerName: visibility.parties ? order.customerName : null,
-      statusLabel: ORDER_STATUS_LABELS[rowStatus],
-      statusTone: ORDER_STATUS_TONE[rowStatus],
-      deadline,
-      finished: CLOSED_ORDER_STATUSES.includes(order.status),
-      isOverdue: isOrderOverdue(deadline, order.status),
-      // A restricted worker counts only their own items, never the order's total.
-      itemCount: visibility.allItems ? order.itemCount : visibleItems.length,
-      amountLabel: visibility.prices ? `${order.totalAmount} ${order.currency}` : null,
-      progressPercent: progress?.percent ?? null,
-      // One entry per distinct channel among the visible items, so the table
-      // can link straight to it (owner request, 2026-11-03).
-      channels: channelLinks(visibleItems.map((item) => ({ link: item.channelLink, title: item.channelTitle }))),
-      openRequests: visibility.allItems ? visibleItems.filter((item) => item.hasOpenRequest).length : 0,
-      withdrawRequests: visibility.allItems ? visibleItems.filter((item) => item.hasWithdrawRequest).length : 0,
-      items: visibleItems.map((item) => ({
-        id: item.id,
-        channel: channelLinks([{ link: item.channelLink, title: item.channelTitle }])[0] ?? null,
-        canAccept: canAcceptItem(item),
-        serviceName: item.serviceName,
-        serviceTitle: item.serviceTitle,
-        categoryName: item.categoryName,
-        categoryImageUrl: item.categoryImageUrl,
-        assigneeLabel: item.worker?.fullName ?? item.outsourcedWorker?.name ?? "Unassigned",
-        assigned: Boolean(item.worker || item.outsourcedWorker),
-        statusLabel: ORDER_ITEM_STATUS_LABELS[item.status],
-        statusTone: ITEM_STATUS_TONE[item.status],
-        metricLabel: item.metricType ? SERVICE_METRIC_TYPE_LABELS[item.metricType].toLowerCase() : null,
-        startingCount: item.startingCount,
-        currentCount: item.currentCount,
-        targetCount: item.targetCount,
-      })),
-    };
-  });
+  // Built on the server; values the actor may not see are left out (order-table-rows.ts).
+  // Unread update notifications per item, for the row badges (2026-11-15).
+  const unreadByItem = await unreadUpdatesByItem(actor.user.id, [
+    ...(result?.rows ?? []).map((order) => order.id),
+    ...(workerTasks?.tasks ?? []).map((task) => task.orderId),
+    ...(workerTasks?.focus ? [workerTasks.focus.orderId] : []),
+  ]);
+  const tableRows: OrdersTableRow[] = toOrdersTableRows(result?.rows ?? [], { identity, visibility, canChangeItemStatus, now, unreadByItem });
 
   // Sorted and filtered by listWorkerTasks (2026-11-11): pending, then processing, then refill, oldest first.
-  const taskRows: WorkerTaskRow[] = (workerTasks?.tasks ?? []).map((task) => toTaskRow(task, canChangeItemStatus));
+  const taskRows: WorkerTaskRow[] = (workerTasks?.tasks ?? []).map((task) => toTaskRow(task, canChangeItemStatus, unreadByItem));
 
   const canChangeStatus = actor.permissions.has("orders.change_status");
   const boardCards: BoardCard[] = boardItems.map((item) => {
@@ -258,40 +207,13 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
 
   return (
     <>
-      {/* Phones get a compact header: no breadcrumb or description (2026-11-11). */}
-      <div className="hidden md:block">
-        <Breadcrumbs items={[{ label: "Operations" }, { label: "Orders" }]} />
-      </div>
-      <PageHeader
-        title="Orders"
-        description={
-          <span className="hidden md:inline">
-            {scope === "ASSIGNED" ? "Your tasks, one per row, with what you'll earn for each." : "Every order in the business."}
-          </span>
-        }
-        actions={
-          canCreate ? (
-            <span className="hidden md:contents">
-              <Link
-                href="/orders/new"
-                className={buttonVariants({ variant: "accent", className: "h-9 rounded-[8px] px-3.5 text-[13px] font-semibold" })}
-              >
-                <Plus aria-hidden="true" />
-                New order
-              </Link>
-            </span>
-          ) : undefined
-        }
-      />
-
-      {/* Room under the list on phones so the + button never covers the last card. */}
-      <div className={cn(canCreate && "max-md:pb-20")}>
-        {/* List/Board toggle — confirmed directly, 2026-10-08: "in the orders
-            page there should be option to view board or list." Plain links, not
-            a client toggle, so the choice is a URL (linkable, shareable, survives
-            a refresh) like every other filter here. */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 md:mb-4">
-          <nav aria-label="Orders view" className="hidden h-9 gap-1 md:inline-flex rounded-[9px] bg-zinc-200/60 p-1 ring-1 ring-inset ring-zinc-200/70">
+      {/* Compact header (owner request, 2026-11-15): the title on the left, the List/Board switch and
+          New order on the right, no breadcrumb, description or count (the tabs already show those).
+          List/Board are plain links (confirmed 2026-10-08), so the view is in the URL. */}
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-zinc-900">Orders</h1>
+        <div className="flex items-center gap-2">
+          <nav aria-label="Orders view" className="hidden h-9 gap-1 rounded-[9px] bg-zinc-200/60 p-1 ring-1 ring-inset ring-zinc-200/70 md:inline-flex">
             {([
               ["list", "List", Rows3],
               ["board", "Board", Columns3],
@@ -302,6 +224,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                   key={view}
                   href={viewHref(params, view)}
                   aria-current={active ? "true" : undefined}
+                  title={view === "board" ? "Drag an item to change its status" : undefined}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-[6px] px-3 text-[13px] font-medium transition",
                     active
@@ -315,19 +238,20 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
               );
             })}
           </nav>
-          {!isBoardView && workerTasks ? (
-            <p className="text-xs text-zinc-500">
-              <span className="font-medium tabular-nums text-zinc-800">{taskRows.length}</span> {taskRows.length === 1 ? "task" : "tasks"}
-            </p>
-          ) : !isBoardView && result ? (
-            <p className="text-xs text-zinc-500">
-              <span className="font-medium tabular-nums text-zinc-800">{result.total}</span> {result.total === 1 ? "order" : "orders"}
-            </p>
-          ) : isBoardView ? (
-            <p className="text-xs text-zinc-500">Drag an item to change its status.</p>
+          {canCreate ? (
+            <Link
+              href="/orders/new"
+              className={buttonVariants({ variant: "accent", className: "hidden h-9 rounded-[8px] px-3.5 text-[13px] font-semibold md:inline-flex" })}
+            >
+              <Plus aria-hidden="true" />
+              New order
+            </Link>
           ) : null}
         </div>
+      </header>
 
+      {/* Room under the list on phones so the + button never covers the last card. */}
+      <div className={cn(canCreate && "max-md:pb-20")}>
         {isBoardView ? (
           boardCards.length === 0 ? (
             <Card className={SURFACE}>
@@ -368,7 +292,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                   // without a refresh (2026-11-12): popups start from these props.
                   key={`${params.open ?? ""}|${params.updates ?? ""}`}
                   rows={taskRows}
-                  focus={workerTasks.focus ? toTaskRow(workerTasks.focus, canChangeItemStatus) : null}
+                  focus={workerTasks.focus ? toTaskRow(workerTasks.focus, canChangeItemStatus, unreadByItem) : null}
                   openUpdatesId={params.updates ?? null}
                 />
               )}
@@ -381,6 +305,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
             <OrderFilterBar
               initialSearch={params.q ?? ""}
               customers={customers.map((c) => ({ id: c.id, label: c.name }))}
+              fiverrAccounts={fiverrAccounts.map((a) => ({ id: a.id, label: a.isActive ? a.name : `${a.name} (inactive)` }))}
               workers={workers.map((w) => ({ id: w.id, label: w.fullName }))}
               outsourcedWorkers={outsourcedWorkers.map((w) => ({ id: w.id, label: w.name }))}
               services={services.map((s) => ({ id: s.id, label: s.name }))}
@@ -409,7 +334,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                 />
               ) : (
                 <>
-                  <OrdersTable rows={tableRows} showCustomer={visibility.parties} showAmount={visibility.prices} />
+                  <OrdersTable canPostUpdates={visibility.allItems} rows={tableRows} showCustomer={visibility.parties} showAmount={visibility.prices} />
                   {result!.page === 1 ? (
                     <LoadMoreOnScroll
                       shown={tableRows.length}
@@ -446,11 +371,6 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
       ) : null}
     </>
   );
-
-  /** Overdue = has a deadline in the past and is not finished. */
-  function isOrderOverdue(deadline: Date | null, status: OrderStatus): boolean {
-    return deadline !== null && deadline < now && !CLOSED_ORDER_STATUSES.includes(status);
-  }
 }
 
 /** Raised white surface shared with the New Order page and dashboard. */
@@ -566,30 +486,6 @@ function viewHref(params: Record<string, unknown>, view: "list" | "board"): stri
 }
 
 
-/**
- * Distinct, safe-to-open channel links with a short label
- * ("youtube.com/@channel"). A link that is not plain http(s) is dropped
- * rather than rendered (same rule as everywhere else, safeExternalHref).
- */
-function channelLinks(
-  links: ReadonlyArray<{ link: string | null; title: string | null }>,
-): Array<{ href: string; label: string; title: string | null }> {
-  const seen = new Set<string>();
-  const result: Array<{ href: string; label: string; title: string | null }> = [];
-  for (const { link, title } of links) {
-    const href = link ? safeExternalHref(link) : null;
-    if (!href || seen.has(href)) continue;
-    seen.add(href);
-    // The channel/video name read from YouTube shows with the link (2026-11-11).
-    result.push({ href, label: shortLink(href), title });
-  }
-  return result;
-}
-
-function shortLink(href: string): string {
-  return href.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "");
-}
-
 /** Delivered = current − starting (never below 0, may pass required); required = target − starting. */
 function deliveredOf(task: { startingCount: number | null; currentCount: number | null; targetCount: number | null }): {
   delivered: number | null;
@@ -604,13 +500,14 @@ function deliveredOf(task: { startingCount: number | null; currentCount: number 
 }
 
 /** One task row for an External Worker (2026-11-11). Accept on pending; Complete on processing and refill. */
-function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean): WorkerTaskRow {
+function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean, unreadByItem: Record<string, number> = {}): WorkerTaskRow {
   const progress = aggregateProgress([{ targetCount: task.targetCount, currentCount: task.currentCount, startingCount: task.startingCount }]);
   const channelStats = task.metricType === "SUBSCRIBERS" || task.metricType === "WATCH_HOURS" || task.metricType === "FOLLOWERS";
   return {
     id: task.id,
     orderId: task.orderId,
     orderNumber: task.orderNumber,
+    unreadUpdates: unreadByItem[task.id] ?? 0,
     serviceName: task.serviceName,
     serviceTitle: task.serviceTitle,
     categoryName: task.categoryName,

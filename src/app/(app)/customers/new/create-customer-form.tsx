@@ -12,6 +12,7 @@ export function CreateCustomerForm() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [type, setType] = useState<"INDIVIDUAL" | "COMPANY">("INDIVIDUAL");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -24,6 +25,7 @@ export function CreateCustomerForm() {
     startTransition(async () => {
       const result = await createCustomerAction({
         name,
+        username: username || undefined,
         type,
         email: email || undefined,
         phone: phone || undefined,
@@ -42,6 +44,10 @@ export function CreateCustomerForm() {
     <form onSubmit={submit} className="max-w-lg space-y-5" noValidate>
       <Field label="Name" htmlFor="customer-name">
         <Input id="customer-name" required value={name} onChange={(event) => setName(event.target.value)} />
+      </Field>
+
+      <Field label="Username" htmlFor="customer-username" hint="Left empty, it's the name.">
+        <Input id="customer-username" value={username} placeholder={name || undefined} onChange={(event) => setUsername(event.target.value)} />
       </Field>
 
       <Field label="Type" htmlFor="customer-type">

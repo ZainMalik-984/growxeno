@@ -82,6 +82,12 @@ export function clearUpdatesParam(replace: (href: string, options: { scroll: boo
 
 /** The thread and the composer. Loads when opened. */
 export function ItemUpdatesSheet({ itemId, onClose }: { itemId: string; onClose: () => void }) {
+  const router = useRouter();
+  // Read in the effect without making it re-run when the router object changes.
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  });
   const [thread, setThread] = useState<ItemUpdatesThread | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -92,8 +98,11 @@ export function ItemUpdatesSheet({ itemId, onClose }: { itemId: string; onClose:
     getItemUpdatesAction({ itemId })
       .then((result) => {
         if (cancelled) return;
-        if (result.ok) setThread(result.thread);
-        else setError(result.error);
+        if (result.ok) {
+          setThread(result.thread);
+          // Its unread badges and the bell count clear (2026-11-15).
+          if (result.markedRead > 0) routerRef.current.refresh();
+        } else setError(result.error);
       })
       .catch(() => {
         if (!cancelled) setError("Couldn't load the updates. Try again.");

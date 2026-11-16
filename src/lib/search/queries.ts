@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { Actor } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { assignedItemWhere } from "@/lib/orders/assignment";
+import { orderVisibility } from "@/lib/orders/visibility";
 import { resolveScope } from "@/lib/permissions/scope";
 import { normalizeSearchTerm, PER_CATEGORY_LIMIT } from "./term";
 
@@ -42,6 +43,8 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
   const can = (key: string) => actor.permissions.has(key);
   const take = PER_CATEGORY_LIMIT;
 
+  // The reference is an order detail a worker may not see (2026-11-15): neither searched nor shown for them.
+  const seesOrderDetails = orderVisibility(can).orderDetails;
   const orderNumber = /^#?\d{1,9}$/.test(q) ? Number(q.replace("#", "")) : null;
   const orderScope = resolveScope(actor.permissions, "orders.view");
   const scopeFilter: Prisma.OrderWhereInput =
@@ -56,7 +59,7 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
             ...scopeFilter,
             OR: [
               ...(orderNumber !== null ? [{ orderNumber }] : []),
-              { externalReference: contains(q) },
+              ...(seesOrderDetails ? [{ externalReference: contains(q) }] : []),
             ],
           },
           select: { id: true, orderNumber: true, externalReference: true, status: true },
@@ -118,7 +121,7 @@ export async function globalSearch(actor: Actor, rawTerm: string): Promise<Searc
       id: o.id,
       category: "Orders",
       title: `#${o.orderNumber}`,
-      subtitle: o.externalReference ? `Ref ${o.externalReference}` : null,
+      subtitle: seesOrderDetails && o.externalReference ? `Ref ${o.externalReference}` : null,
       href: `/orders/${o.id}`,
     });
   }

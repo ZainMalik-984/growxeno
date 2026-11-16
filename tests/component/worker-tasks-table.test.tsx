@@ -132,7 +132,6 @@ describe("WorkerTasksTable", () => {
   it("puts every action in the menu: Accept and Reject on a task not accepted yet", async () => {
     const user = userEvent.setup();
     render(<WorkerTasksTable rows={[row({})]} />);
-    expect(list().queryByRole("button", { name: /^Accept$/ })).toBeNull();
     const menu = await openMenu(user);
     expect(menu.getByRole("menuitem", { name: /Accept task/ })).toBeInTheDocument();
     expect(menu.getByRole("menuitem", { name: /Reject/ })).toBeInTheDocument();
@@ -140,6 +139,29 @@ describe("WorkerTasksTable", () => {
     expect(menu.queryByRole("menuitem", { name: /continue/ })).toBeNull();
     await user.click(menu.getByRole("menuitem", { name: /Accept task/ }));
     expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "item-1", status: "PROCESSING" });
+  });
+
+  it("shows Accept and Reject on the row of a task waiting for an answer, which blinks", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({})]} />);
+    expect(list().getAllByRole("listitem")[0]).toHaveClass("pending-blink");
+    await user.click(list().getAllByRole("button", { name: "Accept" })[0]!);
+    expect(changeStatus).toHaveBeenLastCalledWith({ itemId: "item-1", status: "PROCESSING" });
+    await user.click(list().getAllByRole("button", { name: "Reject" })[0]!);
+    expect(screen.getByRole("heading", { name: "Reject this task?", hidden: true })).toBeInTheDocument();
+  });
+
+  it("doesn't blink or offer Accept once accepted", () => {
+    render(<WorkerTasksTable rows={[row({ canAccept: false })]} />);
+    expect(list().getAllByRole("listitem")[0]).not.toHaveClass("pending-blink");
+    expect(list().queryByRole("button", { name: "Accept" })).toBeNull();
+  });
+
+  it("shows new updates on the row and opens them from the badge", async () => {
+    const user = userEvent.setup();
+    render(<WorkerTasksTable rows={[row({ canAccept: false, unreadUpdates: 2 })]} />);
+    await user.click(list().getByRole("button", { name: "2 new updates. Open" }));
+    expect(await screen.findByLabelText("Subscribers now")).toBeInTheDocument();
   });
 
   it("asks for a reason and rejects the task", async () => {

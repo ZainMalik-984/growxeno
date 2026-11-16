@@ -12,6 +12,8 @@ import { CUSTOMERS_PAGE_SIZE, listCustomers, MAX_PAGE_SIZE } from "@/lib/custome
 
 export const metadata: Metadata = { title: "Customers" };
 
+const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZone: "Asia/Karachi" });
+
 const searchParamsSchema = z.object({
   q: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().min(1).max(10_000).catch(1),
@@ -89,6 +91,8 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                     <TH>Type</TH>
                     <TH>Email</TH>
                     <TH>Phone</TH>
+                    <TH className="text-right">Orders</TH>
+                    <TH>Last order</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -98,6 +102,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                         <Link href={`/customers/${customer.id}`} className="font-medium text-ink hover:underline">
                           {customer.name}
                         </Link>
+                        {customer.username !== customer.name ? <span className="block text-xs text-ink-muted">@{customer.username}</span> : null}
                       </TD>
                       <TD className="text-ink-muted">
                         {customer.type === "COMPANY" ? "Company" : "Individual"}
@@ -107,6 +112,18 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                       </TD>
                       <TD className="text-ink-muted">
                         {customer.phone ?? <span className="text-ink-faint">—</span>}
+                      </TD>
+                      <TD className="text-right tabular-nums">
+                        {customer.orderCount > 0 ? (
+                          <Link href={`/customers/${customer.id}#orders`} className="font-medium text-indigo-600 hover:underline">
+                            {customer.orderCount}
+                          </Link>
+                        ) : (
+                          <span className="text-ink-faint">0</span>
+                        )}
+                      </TD>
+                      <TD className="whitespace-nowrap text-ink-muted">
+                        {customer.lastOrderAt ? dateFormat.format(customer.lastOrderAt) : <span className="text-ink-faint">—</span>}
                       </TD>
                     </TR>
                   ))}

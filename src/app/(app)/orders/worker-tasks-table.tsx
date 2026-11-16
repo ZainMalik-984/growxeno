@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
 import { CategoryThumb } from "@/components/catalog/category-thumb";
+import { UnreadBadge } from "@/components/orders/unread-badge";
 import { DeadlineCountdown, formatDeadlineDate, useNowMinute } from "@/components/ui/deadline";
 import { Modal, SHEET_CLASS } from "@/components/ui/modal";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-dot";
@@ -59,6 +60,8 @@ export type WorkerTaskRow = {
   id: string;
   orderId: string;
   orderNumber: number;
+  /** Unread update notifications for this task (2026-11-15). */
+  unreadUpdates?: number;
   serviceName: string;
   /** Shown as category logo + service name, e.g. [YouTube logo] Subscribers (2026-11-15). */
   serviceTitle?: string;
@@ -315,7 +318,13 @@ function taskMenu(task: WorkerTaskRow, actions: TaskActions, { inDetails = false
 function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskActions; busy: boolean }) {
   const label = `${task.serviceName}, order #${task.orderNumber}`;
   return (
-    <li className="relative grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-x-3 px-4 py-3.5 transition-colors hover:bg-zinc-50/70 md:grid-cols-[44px_minmax(0,1fr)_150px_120px_32px] md:items-center md:gap-x-4 md:px-5">
+    <li
+      className={cn(
+        "relative grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-x-3 px-4 py-3.5 transition-colors md:grid-cols-[44px_minmax(0,1fr)_150px_120px_32px] md:items-center md:gap-x-4 md:px-5",
+        // Waiting for Accept or Reject: a soft blink so it isn't missed (owner request, 2026-11-15).
+        task.canAccept ? "pending-blink" : "hover:bg-zinc-50/70",
+      )}
+    >
       <button type="button" onClick={() => actions.details(task)} className="absolute inset-0" aria-label={`Details for ${label}`} />
 
       <ProgressRing percent={task.progressPercent} />
@@ -325,6 +334,7 @@ function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskAc
           <ServiceLogo task={task} />
           <span className="min-w-0 md:truncate">{task.serviceTitle ?? task.serviceName}</span>
           <span className="shrink-0 text-xs font-normal tabular-nums text-zinc-500">#{task.orderNumber}</span>
+          <UnreadBadge count={task.unreadUpdates ?? 0} onClick={() => actions.updates(task)} />
         </p>
         <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-zinc-500 md:flex-nowrap">
           {task.channel ? <ChannelLink task={task} /> : null}
@@ -351,11 +361,16 @@ function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskAc
           <StatusBadge tone={task.statusTone} label={task.statusLabel} className="px-2 py-0.5" />
           <Pay label={task.earningsLabel} />
         </div>
+        {task.canAccept ? <AcceptOffer task={task} actions={actions} busy={busy} className="mt-2.5 md:hidden" /> : null}
         <Flags task={task} />
       </div>
 
       <div className="hidden md:block">
-        <StatusBadge tone={task.statusTone} label={task.statusLabel} className="px-2 py-0.5" />
+        {task.canAccept ? (
+          <AcceptOffer task={task} actions={actions} busy={busy} />
+        ) : (
+          <StatusBadge tone={task.statusTone} label={task.statusLabel} className="px-2 py-0.5" />
+        )}
         <div className="mt-1">
           <Pay label={task.earningsLabel} />
         </div>
@@ -374,6 +389,33 @@ function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskAc
 function ServiceLogo({ task, size = 18 }: { task: WorkerTaskRow; size?: number }) {
   if (!task.categoryName) return null;
   return <CategoryThumb name={task.categoryName} imageUrl={task.categoryImageUrl ?? null} size={size} className="rounded-[5px]" />;
+}
+
+/**
+ * Accept / Reject right on the row while a task waits for an answer (owner
+ * request, 2026-11-15: "so he knows he still needs to accept or reject").
+ */
+function AcceptOffer({ task, actions, busy, className }: { task: WorkerTaskRow; actions: TaskActions; busy: boolean; className?: string }) {
+  return (
+    <div className={cn("relative flex items-center gap-1.5", className)}>
+      <button
+        type="button"
+        onClick={() => actions.accept(task)}
+        disabled={busy}
+        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-indigo-600 px-3 text-[13px] font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 max-md:h-9 max-md:flex-1 max-md:justify-center"
+      >
+        {busy ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <CheckCircle2 aria-hidden="true" className="size-3.5" />}
+        {busy ? "Accepting…" : "Accept"}
+      </button>
+      <button
+        type="button"
+        onClick={() => actions.reject(task)}
+        className="inline-flex h-8 items-center rounded-[8px] px-2.5 text-[13px] font-medium text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50 max-md:h-9 max-md:flex-1 max-md:justify-center"
+      >
+        Reject
+      </button>
+    </div>
+  );
 }
 
 /** Progress as a ring with the percentage inside; a plain ring when there's nothing to count. */

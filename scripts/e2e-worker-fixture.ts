@@ -60,7 +60,7 @@ async function main() {
         select: { id: true },
       });
       const outsourced = await prisma.outsourcedWorker.create({ data: { name: `E2E Test Outsourced ${stamp}`, phone: "+92 300 7770000" }, select: { id: true } });
-      const customer = await prisma.customer.create({ data: { name: `E2E Test Customer ${stamp}`, type: "INDIVIDUAL", email: `e2e-customer-${stamp}@example.com` }, select: { id: true } });
+      const customer = await prisma.customer.create({ data: { name: `E2E Test Customer ${stamp}`, username: `E2E Test Customer ${stamp}`, type: "INDIVIDUAL", email: `e2e-customer-${stamp}@example.com` }, select: { id: true } });
       const foreign = await prisma.order.findFirst({ select: { id: true }, orderBy: { orderNumber: "asc" } });
 
       // An order the worker IS assigned to: one item theirs, one item someone else's, with distinctive
