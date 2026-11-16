@@ -22,7 +22,7 @@ import { SiFacebook, SiGoogleadsense, SiInstagram, SiShopify, SiTiktok, SiWhatsa
 
 import { NAV, audiences, comparison, faqs, handoverChecks, services, steps, whyPoints, type ServiceId } from "@/components/marketing/content";
 import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
-import { CursorRing, Magnetic, MaskWords, REDUCED, Tilt, useMedia } from "@/components/marketing/motion";
+import { GlassCursor, Magnetic, MaskWords, REDUCED, Tilt, getSmoothScroll, scrollToY, useMedia, useSmoothScroll } from "@/components/marketing/motion";
 import { submitInquiryAction } from "@/lib/inquiries/actions";
 import { HONEYPOT_FIELD } from "@/lib/inquiries/schema";
 import { DEFAULT_SITE_CONTACT, telHref, whatsappHref, type SiteContact } from "@/lib/settings/site-contact";
@@ -189,6 +189,7 @@ function SocialLinks({ className = "" }: { className?: string }) {
 
 export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: SiteContact }) {
   const root = useRef<HTMLDivElement>(null);
+  useSmoothScroll();
 
   useGSAP(
     () => {
@@ -275,7 +276,7 @@ export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: Si
       </noscript>
       <div ref={root} className="gxo min-h-screen overflow-x-clip">
         <Curtain />
-        <CursorRing />
+        <GlassCursor />
         <Nav />
         <main>
           <Hero />
@@ -341,8 +342,11 @@ function Nav() {
   // Mobile menu: lock the page and stagger the links in.
   useEffect(() => {
     document.documentElement.style.overflow = open ? "hidden" : "";
+    if (open) getSmoothScroll()?.stop();
+    else getSmoothScroll()?.start();
     return () => {
       document.documentElement.style.overflow = "";
+      getSmoothScroll()?.start();
     };
   }, [open]);
   useGSAP(
@@ -816,7 +820,7 @@ function Services() {
             { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.05, delay: state ? 0.45 : 0, ease: "expo.out" },
           );
         }
-        if (target !== null) window.scrollTo({ top: target, behavior: reduced ? "auto" : "smooth" });
+        if (target !== null) scrollToY(target);
       }
     },
     { dependencies: [open], scope: grid },

@@ -374,7 +374,13 @@
   animation: gx-ambient 18s ease-in-out infinite alternate;
 }
 
-/* Custom cursor ring (fine pointers only; the page adds it). */
+/*
+ * Glass-ball cursor (fine pointers only; the page adds it). Layers, back to
+ * front: a refracting clear body with a silver rim, an emerald glow inside and
+ * a soft contact shadow; then a fixed specular highlight that never stretches.
+ * The script moves .gx-cursor and stretches .gx-ball-body; .gx-ball scales for
+ * the hover and press states.
+ */
 .gx-cursor {
   position: fixed;
   left: 0;
@@ -389,26 +395,82 @@
 .gx-cursor[data-visible="1"] {
   opacity: 1;
 }
-.gx-cursor > span {
+.gx-ball {
   position: absolute;
-  left: -16px;
-  top: -16px;
-  width: 32px;
-  height: 32px;
+  left: -17px;
+  top: -17px;
+  width: 34px;
+  height: 34px;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.gx-ball-body {
+  position: absolute;
+  inset: 0;
   border-radius: 9999px;
-  border: 1px solid rgb(244 245 244 / 0.45);
-  transition:
-    transform 0.45s var(--gx-ease),
-    background-color 0.3s,
-    border-color 0.3s;
+  background:
+    radial-gradient(circle at 66% 76%, rgb(8 229 47 / 0.42), transparent 46%),
+    radial-gradient(circle at 30% 26%, rgb(255 255 255 / 0.32), transparent 42%),
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.02) 52%, rgb(244 245 244 / 0.16) 70%, rgb(199 200 204 / 0.55) 100%);
+  box-shadow:
+    inset 0 -7px 12px rgb(0 0 0 / 0.45),
+    inset 0 4px 7px rgb(255 255 255 / 0.32),
+    inset 0 0 0 1px rgb(255 255 255 / 0.22),
+    0 12px 22px -8px rgb(0 0 0 / 0.75),
+    0 0 22px -6px rgb(8 229 47 / 0.45);
+  -webkit-backdrop-filter: blur(1.5px) saturate(1.7) brightness(1.18);
+  backdrop-filter: blur(1.5px) saturate(1.7) brightness(1.18);
+  will-change: transform;
 }
-.gx-cursor[data-state="link"] > span {
-  transform: scale(1.75);
-  border-color: var(--gx-accent);
-  background-color: rgb(8 229 47 / 0.08);
+.gx-ball-shine {
+  position: absolute;
+  left: 21%;
+  top: 13%;
+  width: 34%;
+  height: 22%;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0));
+  transform: rotate(-32deg);
+  filter: blur(0.4px);
 }
-.gx-cursor[data-state="down"] > span {
-  transform: scale(0.8);
+.gx-ball-shine::after {
+  content: "";
+  position: absolute;
+  left: 175%;
+  top: 330%;
+  width: 26%;
+  height: 40%;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.55);
+  filter: blur(0.6px);
+}
+.gx-cursor[data-state="link"] .gx-ball {
+  transform: scale(1.65);
+}
+.gx-cursor[data-state="link"] .gx-ball-body {
+  box-shadow:
+    inset 0 -7px 12px rgb(0 0 0 / 0.4),
+    inset 0 4px 7px rgb(255 255 255 / 0.35),
+    inset 0 0 0 1px rgb(8 229 47 / 0.45),
+    0 12px 22px -8px rgb(0 0 0 / 0.75),
+    0 0 26px -4px rgb(8 229 47 / 0.6);
+}
+.gx-cursor[data-state="down"] .gx-ball {
+  transform: scale(0.82);
+}
+
+/* Lenis smooth scrolling (src/components/marketing/motion.tsx). */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
 }
 
 /* Service panel progress (set by the pinned scroll). */

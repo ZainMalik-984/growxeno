@@ -1,11 +1,14 @@
 "use client";
 
 import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import Lenis from "lenis";
 import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 
 /**
  * Interaction pieces for the Grow Xeno home page (2026-11-16): media-query
- * hooks, magnetic buttons, 3D tilt and the cursor ring. Each one switches
+ * hooks, smooth scrolling, magnetic buttons, 3D tilt and the glass-ball
+ * cursor. Each one switches
  * itself off for touch screens and for prefers-reduced-motion, so the page
  * stays plain and usable there.
  */
@@ -24,6 +27,48 @@ export function useMedia(query: string): boolean {
     () => window.matchMedia(query).matches,
     () => false,
   );
+}
+
+/** The page's smooth scroller while one is running (code that scrolls the page should go through it). */
+let lenis: Lenis | null = null;
+export function getSmoothScroll(): Lenis | null {
+  return lenis;
+}
+
+/** Scrolls to a position, smoothly through the scroller when there is one. */
+export function scrollToY(y: number) {
+  if (lenis) lenis.scrollTo(y, { duration: 1.2 });
+  else window.scrollTo({ top: y, behavior: window.matchMedia(REDUCED).matches ? "auto" : "smooth" });
+}
+
+/**
+ * Momentum smooth scrolling for wheel and trackpad (Lenis), driven by GSAP's
+ * ticker so ScrollTrigger pins and scrubs read the smoothed position. Touch
+ * keeps the device's own scrolling; reduced motion keeps plain scrolling.
+ * In-page anchor links scroll smoothly too, stopping clear of the sticky nav.
+ */
+export function useSmoothScroll() {
+  useEffect(() => {
+    if (window.matchMedia(REDUCED).matches) return;
+    const instance = new Lenis({
+      duration: 1.15,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      wheelMultiplier: 1,
+      anchors: { offset: -80 },
+      autoRaf: false,
+    });
+    lenis = instance;
+    instance.on("scroll", ScrollTrigger.update);
+    const tick = (time: number) => instance.raf(time * 1000);
+    gsap.ticker.add(tick);
+    gsap.ticker.lagSmoothing(0);
+    return () => {
+      gsap.ticker.remove(tick);
+      gsap.ticker.lagSmoothing(500, 33);
+      instance.destroy();
+      if (lenis === instance) lenis = null;
+    };
+  }, []);
 }
 
 /** Pulls its child toward the pointer while hovered, then settles back. */
@@ -107,37 +152,78 @@ export function Tilt({
   );
 }
 
-/** A ring that trails the pointer and opens up over anything clickable. The system cursor stays. */
-export function CursorRing() {
+/**
+ * The cursor companion: a small 3D glass ball that trails the pointer
+ * (2026-11-16, owner request). Layered CSS: a clear body with a silver rim and
+ * an emerald glow from inside, a slight refraction of whatever is behind it,
+ * and a fixed specular highlight. It stretches along the direction of travel
+ * as it moves, swells over anything clickable and squishes on press. The
+ * system cursor stays. Fine pointers only, never for reduced motion.
+ */
+export function GlassCursor() {
   const ref = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLSpanElement>(null);
   const enabled = useMedia(FINE_MOTION);
   useEffect(() => {
     const el = ref.current;
-    if (!enabled || !el) return;
-    const xTo = gsap.quickTo(el, "x", { duration: 0.45, ease: "power3.out" });
-    const yTo = gsap.quickTo(el, "y", { duration: 0.45, ease: "power3.out" });
+    const ball = body.current;
+    if (!enabled || !el || !ball) return;
+    const xTo = gsap.quickTo(el, "x", { duration: 0.5, ease: "power3.out" });
+    const yTo = gsap.quickTo(el, "y", { duration: 0.5, ease: "power3.out" });
+    let lastX = 0;
+    let lastY = 0;
+    let lastT = performance.now();
     const move = (e: PointerEvent) => {
       xTo(e.clientX);
       yTo(e.clientY);
       el.dataset.visible = "1";
-      const target = e.target instanceof Element ? e.target.closest("a, button, [data-cursor], input, textarea, label") : null;
-      el.dataset.state = target ? "link" : "";
+      const target = e.target instanceof Element ? e.target.closest("a, button, [data-cursor], input, textarea, label, select") : null;
+      if (el.dataset.state !== "down") el.dataset.state = target ? "link" : "";
+      // Squash and stretch along the direction of travel.
+      const now = performance.now();
+      const dt = Math.max(8, now - lastT);
+      const vx = (e.clientX - lastX) / dt;
+      const vy = (e.clientY - lastY) / dt;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      lastT = now;
+      const speed = Math.min(1, Math.hypot(vx, vy) / 2.2);
+      gsap.to(ball, {
+        rotation: (Math.atan2(vy, vx) * 180) / Math.PI,
+        scaleX: 1 + speed * 0.32,
+        scaleY: 1 - speed * 0.2,
+        duration: 0.25,
+        ease: "power2.out",
+        overwrite: true,
+        onComplete: () => {
+          gsap.to(ball, { scaleX: 1, scaleY: 1, duration: 0.6, ease: "elastic.out(1, 0.55)" });
+        },
+      });
     };
     const down = () => (el.dataset.state = "down");
+    const up = (e: PointerEvent) => {
+      const target = e.target instanceof Element ? e.target.closest("a, button, [data-cursor], input, textarea, label, select") : null;
+      el.dataset.state = target ? "link" : "";
+    };
     const leaveWindow = () => (el.dataset.visible = "0");
     window.addEventListener("pointermove", move, { passive: true });
     window.addEventListener("pointerdown", down);
+    window.addEventListener("pointerup", up);
     document.documentElement.addEventListener("pointerleave", leaveWindow);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointerup", up);
       document.documentElement.removeEventListener("pointerleave", leaveWindow);
     };
   }, [enabled]);
   if (!enabled) return null;
   return (
     <div ref={ref} aria-hidden className="gx-cursor">
-      <span />
+      <span className="gx-ball">
+        <span ref={body} className="gx-ball-body" />
+        <span className="gx-ball-shine" />
+      </span>
     </div>
   );
 }
