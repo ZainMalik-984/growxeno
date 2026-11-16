@@ -92,7 +92,7 @@ export function AuthScene() {
         {PANELS.map(({ icon: Icon, title, text, place, depth }, i) => (
           <div key={title} data-depth={depth} className={`absolute ${place}`}>
             <div
-              className="gx-auth-float w-[248px] rounded-[16px] border border-[var(--gx-line-2)] bg-[var(--gx-s2)]/85 p-4 shadow-[var(--gx-shadow-3)] backdrop-blur-md"
+              className="gx-auth-float w-[248px] rounded-[16px] border border-[var(--gx-line-2)] bg-[var(--gx-s2)]/95 p-4 shadow-[var(--gx-shadow-3)]"
               style={{ animationDelay: `${0.25 + i * 0.15}s` }}
             >
               <div className="flex items-center gap-3">

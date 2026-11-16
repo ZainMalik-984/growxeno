@@ -111,10 +111,7 @@ function Btn({
 
 function Eyebrow({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <p className={`gx-eyebrow flex items-center gap-3 text-[var(--gx-muted)] ${className}`}>
-      <span aria-hidden className="h-px w-7 bg-[var(--gx-accent)]" />
-      {children}
-    </p>
+    <p className={`gx-eyebrow text-[var(--gx-muted)] ${className}`}>{children}</p>
   );
 }
 
@@ -362,7 +359,7 @@ function Nav() {
       <header
         ref={header}
         className={`fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-500 ${
-          scrolled || open ? "border-b border-[var(--gx-line)] bg-[var(--gx-bg)]/75 backdrop-blur-xl" : "border-b border-transparent"
+          scrolled || open ? "border-b border-[var(--gx-line)] bg-[var(--gx-bg)]/92" : "border-b border-transparent"
         }`}
       >
         <Container className="flex h-[76px] items-center justify-between gap-6">
@@ -563,21 +560,19 @@ function HeroStage() {
       <div
         ref={stage}
         data-hero="stage"
-        className="absolute -inset-x-5 inset-y-0 sm:inset-x-0 lg:-right-12 lg:-left-6"
-        style={{
-          // Feather every edge so the scene melts into the page instead of sitting in a box.
-          maskImage: "linear-gradient(to right, transparent, #000 16%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 80%, transparent)",
-          WebkitMaskImage:
-            "linear-gradient(to right, transparent, #000 16%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 80%, transparent)",
-          maskComposite: "intersect",
-          WebkitMaskComposite: "source-in",
-        }}
+        className="absolute -inset-x-5 inset-y-0 [will-change:transform] sm:inset-x-0 lg:-right-12 lg:-left-6"
       >
         <div
           aria-hidden
           className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-0" : "opacity-100"} bg-[radial-gradient(60%_50%_at_60%_60%,rgb(8_229_47/0.18),transparent_70%)]`}
         />
         {mountScene ? <HeroScene simplified={simplified} reducedMotion={reduced} active={inView} onReady={() => setReady(true)} /> : null}
+        {/* Edges painted in the page colour so the scene melts into the page. Painted, not a CSS mask:
+            a mask over a live canvas is recomposited on every scroll frame and made scrolling stutter. */}
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[18%] bg-gradient-to-r from-[var(--gx-bg)] to-transparent" />
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-[10%] bg-gradient-to-l from-[var(--gx-bg)] to-transparent" />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[12%] bg-gradient-to-b from-[var(--gx-bg)] to-transparent" />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-gradient-to-t from-[var(--gx-bg)] to-transparent" />
       </div>
 
       <div ref={layers} aria-hidden className="pointer-events-none absolute inset-0 [perspective:1100px]">
@@ -616,7 +611,8 @@ function Bar({ value }: { value: number }) {
 }
 
 const panelSurface =
-  "rounded-[var(--gx-r-md)] border border-[var(--gx-line-2)] bg-[var(--gx-s2)]/90 shadow-[var(--gx-shadow-3)] backdrop-blur-md";
+  // Solid, no backdrop blur: a blur over the live 3D canvas has to be recomputed every frame.
+  "rounded-[var(--gx-r-md)] border border-[var(--gx-line-2)] bg-[var(--gx-s2)]/95 shadow-[var(--gx-shadow-3)]";
 
 function PerformancePanel() {
   return (

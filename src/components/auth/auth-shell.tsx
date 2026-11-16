@@ -59,10 +59,7 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
 export function AuthHeading({ title, description }: { title: ReactNode; description?: ReactNode }) {
   return (
     <div className="mb-10">
-      <p className="gx-eyebrow flex items-center gap-3 text-[var(--gx-muted)]">
-        <span aria-hidden="true" className="h-px w-7 bg-[var(--gx-accent)]" />
-        Business Manager
-      </p>
+      <p className="gx-eyebrow text-[var(--gx-muted)]">Business Manager</p>
       <h1 className="gx-display mt-5 text-[clamp(2.4rem,4vw,3.25rem)] tracking-[-0.045em] text-[var(--gx-text)]">{title}</h1>
       {description ? <p className="mt-3 max-w-[38ch] text-[0.9375rem] leading-relaxed text-[var(--gx-muted)]">{description}</p> : null}
     </div>

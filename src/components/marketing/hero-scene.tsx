@@ -1,8 +1,8 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows, Environment, Float, Lightformer, MeshReflectorMaterial, RoundedBox, Sparkles } from "@react-three/drei";
-import { useEffect, useMemo, useRef } from "react";
+import { ContactShadows, Environment, Float, Lightformer, MeshReflectorMaterial, PerformanceMonitor, RoundedBox, Sparkles } from "@react-three/drei";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 /**
@@ -10,7 +10,7 @@ import * as THREE from "three";
  * metallic silver): a growth chart built as a sculpture. Brushed-silver columns
  * rise along an arc; an electric-green growth line draws itself over their
  * tops with a light travelling along it; a chrome ring and a green sphere float
- * in the depth around it. Lit by a neutral key light with real shadows and
+ * in the depth around it. Lit by a neutral key light (grounded by baked contact shadows) and
  * emerald rim and fill lights, with light panels baked into a local environment
  * map for reflections (no HDR download: the CSP allows only this origin). The
  * floor is dark and reflective on large screens. Fog gives atmospheric depth;
@@ -18,7 +18,10 @@ import * as THREE from "three";
  *
  * Loaded with next/dynamic (ssr: false) from src/app/marketing-home.tsx, so
  * three.js never ships in the server bundle or blocks first paint.
- * `simplified` (phones, small tablets) drops shadow maps and some geometry. `reducedMotion` renders on demand and holds everything still.
+ * Kept light for smooth scrolling (2026-11-16): no per-frame shadow maps (contact
+ * shadows are baked once), a 256px reflection, and pixel density that drops to 1
+ * when frames slip (PerformanceMonitor). `simplified` (phones, small tablets)
+ * also drops the reflection and some geometry. `reducedMotion` renders on demand and holds everything still.
  * `active` pauses rendering while the hero is off screen.
  */
 
@@ -126,8 +129,6 @@ function Sculpture({
           radius={0.07}
           smoothness={simplified ? 2 : 4}
           position={[c.x, c.h / 2, c.z]}
-          castShadow={!simplified}
-          receiveShadow={!simplified}
         >
           <meshPhysicalMaterial color={SILVER} metalness={0.92} roughness={0.3} clearcoat={0.6} clearcoatRoughness={0.2} envMapIntensity={1.1} />
         </RoundedBox>
@@ -153,12 +154,12 @@ function Sculpture({
   );
 }
 
-function Floaters({ simplified, reducedMotion }: { simplified: boolean; reducedMotion: boolean }) {
+function Floaters({ reducedMotion }: { reducedMotion: boolean }) {
   const speed = reducedMotion ? 0 : 1;
   return (
     <>
       <Float speed={1.4 * speed} rotationIntensity={0.5 * speed} floatIntensity={0.8 * speed} position={[1.55, 3.35, -0.9]}>
-        <mesh castShadow={!simplified} rotation={[1.1, 0.3, 0.2]}>
+        <mesh rotation={[1.1, 0.3, 0.2]}>
           <torusGeometry args={[0.42, 0.11, 32, 96]} />
           <meshPhysicalMaterial color={SILVER} metalness={1} roughness={0.1} clearcoat={1} />
         </mesh>
@@ -185,35 +186,31 @@ export default function HeroScene({
   onReady?: () => void;
 }) {
   const pointer = usePointer();
+  // Pixel density starts at 1.5 (1.25 on phones) and drops to 1 for good if frames slip.
+  const [dpr, setDpr] = useState(simplified ? 1.25 : 1.5);
   return (
     <Canvas
       className="!absolute inset-0"
-      dpr={simplified ? [1, 1.5] : [1, 2]}
-      shadows={simplified ? false : "percentage"}
+      dpr={dpr}
       frameloop={active && !reducedMotion ? "always" : "demand"}
       camera={{ position: [0, 2.35, 9.8], fov: simplified ? 42 : 37, near: 0.1, far: 40 }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       onCreated={() => onReady?.()}
       aria-hidden
     >
+      {/* Steps down once and stays there: flipping back up would resize the canvas mid-scroll. */}
+      <PerformanceMonitor onDecline={() => setDpr(1)} flipflops={1} />
       <fog attach="fog" args={["#050706", 9.5, 19]} />
       <ambientLight intensity={0.18} />
       <directionalLight
         position={[-4.5, 7.5, 5]}
         intensity={2.1}
         color="#F4F5F4"
-        castShadow={!simplified}
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-left={-6}
-        shadow-camera-right={6}
-        shadow-camera-top={6}
-        shadow-camera-bottom={-6}
-        shadow-bias={-0.0004}
       />
       <pointLight position={[4, 2.4, -2.5]} intensity={20} distance={12} color={EMERALD} />
       <pointLight position={[-5, 1.2, 2]} intensity={6} distance={10} color={EMERALD} />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={!simplified}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[40, 40]} />
         {simplified ? (
           <meshStandardMaterial color="#070a08" roughness={0.9} metalness={0.05} />
@@ -221,8 +218,8 @@ export default function HeroScene({
           // Dark, softly blurred reflections of the columns and the green line.
           <MeshReflectorMaterial
             color="#070a08"
-            blur={[400, 120]}
-            resolution={512}
+            blur={[300, 80]}
+            resolution={256}
             mixBlur={1}
             mixStrength={2.2}
             roughness={0.85}
@@ -236,7 +233,7 @@ export default function HeroScene({
       </mesh>
 
       <Sculpture simplified={simplified} reducedMotion={reducedMotion} pointer={pointer} />
-      <Floaters simplified={simplified} reducedMotion={reducedMotion} />
+      <Floaters reducedMotion={reducedMotion} />
       <Sparkles
         count={simplified ? 16 : 44}
         scale={[10, 4.5, 5]}
@@ -257,7 +254,7 @@ export default function HeroScene({
       />
       <Rig reducedMotion={reducedMotion} pointer={pointer} />
 
-      <Environment resolution={simplified ? 64 : 256} frames={1}>
+      <Environment resolution={simplified ? 64 : 128} frames={1}>
         <Lightformer form="rect" intensity={2.4} color="#F4F5F4" position={[0, 6, -2]} rotation-x={Math.PI / 2} scale={[12, 3, 1]} />
         <Lightformer form="rect" intensity={4} color={EMERALD} position={[6, 1.6, 0]} rotation-y={-Math.PI / 2} scale={[7, 0.5, 1]} />
         <Lightformer form="ring" intensity={1.6} color="#ffffff" position={[-5, 3, 4]} scale={2.4} />
