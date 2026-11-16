@@ -36,7 +36,9 @@ export class AuthorizationError extends Error {
 /** Require a signed-in, active user. Redirects to /login otherwise. */
 export async function requireActor(): Promise<Actor> {
   const actor = await getCurrentActor();
-  if (!actor) redirect("/login");
+  // No profile: signed out, or signed in as a person who has since been deleted.
+  // /auth/sign-out clears a leftover cookie, else /login and the proxy loop (2026-11-16).
+  if (!actor) redirect("/auth/sign-out");
   // A deactivated profile resolves to zero permissions, but sending them to a
   // dead-looking application is worse than telling them plainly.
   if (!actor.user.isActive) redirect("/account-inactive");

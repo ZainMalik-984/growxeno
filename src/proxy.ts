@@ -22,6 +22,7 @@ const PUBLIC_ROUTES = [
   "/forgot-password",
   "/auth/callback",
   "/auth/reset-password",
+  "/auth/sign-out",
   "/error",
   // Scheduled jobs: no session; the handler checks CRON_SECRET itself.
   "/api/cron",
