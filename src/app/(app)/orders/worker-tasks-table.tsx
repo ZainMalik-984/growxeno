@@ -15,6 +15,7 @@ import {
   MessageSquareText,
   RefreshCw,
   StickyNote,
+  Users,
   X,
   XCircle,
 } from "lucide-react";
@@ -45,6 +46,9 @@ import {
   progressSentence,
 } from "@/components/orders/item-updates";
 import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
+import type { ServiceMetricType } from "@/lib/services/metric-type";
+import type { TeamShareView } from "@/lib/team/queries";
+import { TeamDialog, type TeamMemberOption, type TeamTask } from "./team-dialog";
 
 /**
  * The orders list as an External Worker sees it (owner request, 2026-11-03:
@@ -76,6 +80,8 @@ export type WorkerTaskRow = {
   /** Opens the channel by its UC… id; null when unknown or the link already is that (2026-11-15). */
   channelIdUrl?: string | null;
   isWatchHours: boolean;
+  /** For the worker's own team split (2026-11-17). */
+  metricType?: ServiceMetricType | null;
   statusLabel: string;
   statusTone: StatusTone;
   isRefill: boolean;
@@ -118,8 +124,11 @@ export function WorkerTasksTable({
   rows,
   focus = null,
   openUpdatesId = null,
+  team = null,
 }: {
   rows: WorkerTaskRow[];
+  /** An outsourced worker's own team (2026-11-17): their members and how each task is split. Null for anyone else. */
+  team?: { members: TeamMemberOption[]; sharesByItem: Record<string, TeamShareView[]> } | null;
   /** A task opened from its accept link (2026-11-11): its popup opens on load, in the short form. */
   focus?: WorkerTaskRow | null;
   /** A task whose updates open on load (from a notification). */
@@ -135,6 +144,7 @@ export function WorkerTasksTable({
   const [giveUp, setGiveUp] = useState<WorkerTaskRow | null>(null);
   const [rejectFor, setRejectFor] = useState<WorkerTaskRow | null>(null);
   const [completeFor, setCompleteFor] = useState<WorkerTaskRow | null>(null);
+  const [teamFor, setTeamFor] = useState<WorkerTaskRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -163,6 +173,10 @@ export function WorkerTasksTable({
     complete: (task) => {
       leaveDetails();
       setCompleteFor(task);
+    },
+    team: (task) => {
+      leaveDetails();
+      setTeamFor(task);
     },
     accept: (task) => {
       setBusyId(task.id);
@@ -207,7 +221,7 @@ export function WorkerTasksTable({
       </div>
       <ul aria-label="Your tasks" className="divide-y divide-zinc-100">
         {rows.map((task) => (
-          <TaskRow key={task.id} task={task} actions={actions} busy={busyId === task.id} />
+          <TaskRow key={task.id} task={task} actions={actions} busy={busyId === task.id} teamCount={team ? peopleOn(team.sharesByItem[task.id]) : null} />
         ))}
       </ul>
 
@@ -216,7 +230,7 @@ export function WorkerTasksTable({
           compact ? (
             <TaskSummary task={open} onClose={close} onShowAll={() => setCompact(false)} />
           ) : (
-            <TaskDetails task={open} onClose={close} actions={actions} busy={busyId === open.id} />
+            <TaskDetails task={open} onClose={close} actions={actions} busy={busyId === open.id} teamCount={team ? peopleOn(team.sharesByItem[open.id]) : null} />
           )
         ) : null}
       </Modal>
@@ -242,21 +256,53 @@ export function WorkerTasksTable({
       ) : null}
       {rejectFor ? <RejectTaskDialog itemId={rejectFor.id} serviceName={rejectFor.serviceName} onClose={() => setRejectFor(null)} /> : null}
       {completeFor ? <CompleteTaskDialog task={completeFor} onClose={() => setCompleteFor(null)} /> : null}
+      {team ? (
+        <TeamDialog
+          task={teamFor ? toTeamTask(teamFor) : null}
+          shares={teamFor ? (team.sharesByItem[teamFor.id] ?? []) : []}
+          members={team.members}
+          onClose={() => setTeamFor(null)}
+        />
+      ) : null}
     </>
   );
 }
 
 type TaskActions = Record<
-  "details" | "updates" | "ask" | "cantContinue" | "reject" | "complete" | "accept" | "checkYoutube",
+  "details" | "updates" | "ask" | "cantContinue" | "reject" | "complete" | "accept" | "checkYoutube" | "team",
   (task: WorkerTaskRow) => void
 >;
+
+/** How many different people are on a task (one person can hold several parts). */
+function peopleOn(shares: TeamShareView[] | undefined): number {
+  return new Set((shares ?? []).map((s) => s.memberId)).size;
+}
+
+function toTeamTask(task: WorkerTaskRow): TeamTask {
+  return {
+    id: task.id,
+    orderNumber: task.orderNumber,
+    serviceName: task.serviceName,
+    serviceTitle: task.serviceTitle,
+    categoryName: task.categoryName,
+    categoryImageUrl: task.categoryImageUrl ?? null,
+    metricType: task.metricType ?? null,
+    startingCount: task.startingCount,
+    targetCount: task.targetCount,
+    channelLink: task.channel?.href ?? null,
+  };
+}
 
 /**
  * What the "⋯" menu offers for a task. Not accepted yet: Accept and Reject
  * only (2026-11-12). Otherwise the next step first, then the rest, with
  * Can't continue last and in red. `inDetails` leaves out "Details".
  */
-function taskMenu(task: WorkerTaskRow, actions: TaskActions, { inDetails = false, busy = false } = {}): ActionMenuItem[] {
+function taskMenu(
+  task: WorkerTaskRow,
+  actions: TaskActions,
+  { inDetails = false, busy = false, teamCount = null }: { inDetails?: boolean; busy?: boolean; teamCount?: number | null } = {},
+): ActionMenuItem[] {
   const details: ActionMenuItem[] = inDetails ? [] : ["separator", { label: "Details", icon: Eye, onSelect: () => actions.details(task) }];
   const links: ActionMenuItem[] = [
     ...(task.studioUrl ? [{ label: "Studio analytics", icon: BarChart3, href: task.studioUrl, external: true }] : []),
@@ -290,6 +336,10 @@ function taskMenu(task: WorkerTaskRow, actions: TaskActions, { inDetails = false
       icon: MessageSquareText,
       onSelect: () => actions.updates(task),
     },
+    // The worker's own team (2026-11-17): split this task between their people.
+    ...(teamCount !== null && task.canPostUpdate
+      ? [{ label: `Team${teamCount > 0 ? ` (${teamCount})` : ""}`, icon: Users, onSelect: () => actions.team(task) }]
+      : []),
     ...(open
       ? [
           task.hasOpenRequest
@@ -315,19 +365,22 @@ function taskMenu(task: WorkerTaskRow, actions: TaskActions, { inDetails = false
  * status and pay move under the link and the elapsed time sits top right
  * beside the menu (owner request, 2026-11-13). Tapping the row opens details.
  */
-function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskActions; busy: boolean }) {
+function TaskRow({ task, actions, busy, teamCount = null }: { task: WorkerTaskRow; actions: TaskActions; busy: boolean; teamCount?: number | null }) {
   const label = `${task.serviceName}, order #${task.orderNumber}`;
   return (
     <li
       className={cn(
-        "relative grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-x-3 px-4 py-3.5 transition-colors md:grid-cols-[44px_minmax(0,1fr)_150px_120px_32px] md:items-center md:gap-x-4 md:px-5",
+        "relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 px-4 py-3.5 transition-colors md:grid-cols-[44px_minmax(0,1fr)_150px_120px_32px] md:items-center md:gap-x-4 md:px-5",
         // Waiting for Accept or Reject: a soft blink so it isn't missed (owner request, 2026-11-15).
         task.canAccept ? "pending-blink" : "hover:bg-zinc-50/70",
       )}
     >
       <button type="button" onClick={() => actions.details(task)} className="absolute inset-0" aria-label={`Details for ${label}`} />
 
-      <ProgressRing percent={task.progressPercent} />
+      {/* The ring from md; phones get a bar under the link instead (2026-11-17). */}
+      <div className="hidden md:block">
+        <ProgressRing percent={task.progressPercent} />
+      </div>
 
       <div className="min-w-0">
         <p className="flex min-w-0 items-center gap-1.5 text-[14px] font-semibold leading-snug text-zinc-900">
@@ -335,6 +388,8 @@ function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskAc
           <span className="min-w-0 md:truncate">{task.serviceTitle ?? task.serviceName}</span>
           <span className="shrink-0 text-xs font-normal tabular-nums text-zinc-500">#{task.orderNumber}</span>
           <UnreadBadge count={task.unreadUpdates ?? 0} onClick={() => actions.updates(task)} />
+          {/* Phones: elapsed is the most important number, so it leads, highlighted, beside the title. */}
+          <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} compact className="ml-auto md:hidden" />
         </p>
         <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-zinc-500 md:flex-nowrap">
           {task.channel ? <ChannelLink task={task} /> : null}
@@ -356,13 +411,21 @@ function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskAc
           {task.channel && task.metricLabel && task.delivered !== null ? <span aria-hidden="true" className="hidden md:inline">·</span> : null}
           <DeliveredText task={task} className="shrink-0" />
         </div>
-        {/* Status and pay under the link on phones. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 md:hidden">
+        {task.progressPercent !== null ? (
+          <div aria-hidden="true" className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-100 md:hidden">
+            <div className={cn("h-full rounded-full", task.finished ? "bg-emerald-500" : "bg-indigo-500")} style={{ width: `${Math.min(100, task.progressPercent)}%` }} />
+          </div>
+        ) : null}
+        {/* Phones (2026-11-17, small-screen pass): status, pay, elapsed and team on one line under the link,
+            so the text gets the full width instead of sharing it with a big elapsed column. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 md:hidden">
           <StatusBadge tone={task.statusTone} label={task.statusLabel} className="px-2 py-0.5" />
           <Pay label={task.earningsLabel} />
+          {teamCount ? <TeamChip count={teamCount} onClick={() => actions.team(task)} /> : null}
         </div>
         {task.canAccept ? <AcceptOffer task={task} actions={actions} busy={busy} className="mt-2.5 md:hidden" /> : null}
         <Flags task={task} />
+        {teamCount ? <TeamChip count={teamCount} onClick={() => actions.team(task)} className="mt-1.5 hidden md:inline-flex" /> : null}
       </div>
 
       <div className="hidden md:block">
@@ -376,12 +439,25 @@ function TaskRow({ task, actions, busy }: { task: WorkerTaskRow; actions: TaskAc
         </div>
       </div>
 
-      {/* Phones: elapsed and the menu side by side, top right; from md each is its own column. */}
-      <div className="flex items-start gap-1 md:contents">
-        <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} />
-        <ActionMenu label={`Actions for ${label}`} items={taskMenu(task, actions, { busy })} className="relative -mr-1.5 md:mr-0" />
-      </div>
+      {/* Elapsed has its own column from md; on phones it sits in the line under the link. */}
+      <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} className="hidden md:block" />
+      <ActionMenu label={`Actions for ${label}`} items={taskMenu(task, actions, { busy, teamCount })} className="relative -mr-1.5 -mt-1 md:mr-0 md:mt-0" />
     </li>
+  );
+}
+
+/** People from the worker's own team on this task (2026-11-17); opens the Team popup. */
+function TeamChip({ count, onClick, className }: { count: number; onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn("relative inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-200", className)}
+      aria-label={`Team on this task: ${count} ${count === 1 ? "person" : "people"}`}
+    >
+      <Users aria-hidden className="size-3" />
+      {count}
+    </button>
   );
 }
 
@@ -512,6 +588,14 @@ function Pay({ label }: { label: string | null }) {
 }
 
 /** Colour by how long it's been open: green under a day, amber to three days, red after (2026-11-15). */
+/** The highlighted elapsed pill's tint, matching ageTone. */
+function ageBadge(ms: number | null, finished: boolean): string {
+  if (finished || ms === null) return "bg-zinc-100 ring-zinc-200";
+  if (ms < DAY) return "bg-emerald-50 ring-emerald-200";
+  if (ms < 3 * DAY) return "bg-amber-50 ring-amber-200";
+  return "bg-red-50 ring-red-200";
+}
+
 function ageTone(ms: number | null, finished: boolean): string {
   if (finished || ms === null) return "text-zinc-700";
   if (ms < DAY) return "text-emerald-600";
@@ -528,11 +612,14 @@ function Elapsed({
   finishedAt,
   large = false,
   inline = false,
+  compact = false,
   className,
 }: {
   assignedAt: Date | null;
   finishedAt: Date | null;
   large?: boolean;
+  /** A small clock and the time, for the phone row's status line. */
+  compact?: boolean;
   /** One line: "3d 7h elapsed". */
   inline?: boolean;
   className?: string;
@@ -541,6 +628,24 @@ function Elapsed({
   if (!assignedAt) return <span className={cn("text-right text-zinc-400", className)}>—</span>;
   const start = new Date(assignedAt).getTime();
   const ms = finishedAt ? new Date(finishedAt).getTime() - start : now !== null ? now - start : null;
+  if (compact) {
+    if (ms === null) return null;
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[13px] font-bold tabular-nums ring-1 ring-inset",
+          ageTone(ms, finishedAt !== null),
+          ageBadge(ms, finishedAt !== null),
+          className,
+        )}
+        title={`${finishedAt ? "Taken" : "Elapsed"} · given ${formatDeadlineDate(assignedAt)}`}
+      >
+        <Clock aria-hidden="true" className="size-3.5" />
+        {formatDuration(ms)}
+        <span className="sr-only">{finishedAt ? " taken" : " elapsed"}</span>
+      </span>
+    );
+  }
   if (inline) {
     return (
       <p className={cn("flex items-baseline gap-1.5", className)} title={`Given ${formatDeadlineDate(assignedAt)}`}>
@@ -614,19 +719,30 @@ function CompleteTaskDialog({ task, onClose }: { task: WorkerTaskRow; onClose: (
 function PopupHeader({ task, kicker, onClose }: { task: WorkerTaskRow; kicker: string; onClose: () => void }) {
   return (
     <div className="flex items-start gap-4 border-b border-zinc-100 px-5 py-4 sm:px-6">
-      <ProgressRing percent={task.progressPercent} size={56} />
+      {/* The ring from sm; phones get a bar under the status line (2026-11-17). */}
+      <div className="hidden sm:block">
+        <ProgressRing percent={task.progressPercent} size={56} />
+      </div>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium tabular-nums text-zinc-500">{kicker}</p>
         <h2 id="task-details-title" className="flex min-w-0 items-center gap-1.5 text-[16px] font-semibold leading-snug text-zinc-900">
           <ServiceLogo task={task} size={20} />
           <span className="min-w-0 sm:truncate">{task.serviceTitle ?? task.serviceName}</span>
         </h2>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
           <StatusBadge tone={task.statusTone} label={task.statusLabel} className="px-2 py-0.5" />
           <Pay label={task.earningsLabel} />
+          {/* Phones: elapsed highlighted in the status line. */}
+          <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} compact className="sm:hidden" />
         </div>
-        {/* Phones: elapsed under the title so the name has room. */}
-        <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} inline className="mt-1.5 sm:hidden" />
+        {task.progressPercent !== null ? (
+          <div className="mt-3 flex items-center gap-2 sm:hidden">
+            <div aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+              <div className={cn("h-full rounded-full", task.finished ? "bg-emerald-500" : "bg-indigo-500")} style={{ width: `${Math.min(100, task.progressPercent)}%` }} />
+            </div>
+            <span className="text-xs font-semibold tabular-nums text-zinc-700">{task.progressPercent}%</span>
+          </div>
+        ) : null}
       </div>
       <Elapsed assignedAt={task.assignedAt} finishedAt={task.finished ? task.finishedAt : null} large className="hidden shrink-0 sm:block" />
       <button type="button" onClick={onClose} aria-label="Close" className="-mr-2 -mt-1 rounded-[8px] p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
@@ -642,7 +758,7 @@ function LinkLine({ task }: { task: WorkerTaskRow }) {
   const parts: React.ReactNode[] = [];
   if (task.channel) {
     parts.push(
-      <a key="link" href={task.channel.href} target="_blank" rel="noreferrer noopener" className="group inline-flex min-w-0 items-center gap-1.5">
+      <a key="link" href={task.channel.href} target="_blank" rel="noreferrer noopener" className="group inline-flex min-w-0 basis-full items-center gap-1.5 sm:basis-auto">
         {task.isYoutube ? <SiYoutube aria-hidden="true" className="size-4 shrink-0 text-[#FF0000]" /> : <Link2 aria-hidden="true" className="size-4 text-zinc-400" />}
         {task.channelTitle ? <span className="font-medium text-zinc-900 group-hover:underline">{task.channelTitle}</span> : null}
         <span className={cn("truncate text-indigo-600", !task.channelTitle && "group-hover:underline")}>{task.channel.label}</span>
@@ -682,7 +798,8 @@ function LinkLine({ task }: { task: WorkerTaskRow }) {
   }
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px]">
-      {parts.flatMap((part, i) => (i === 0 ? [part] : [<span key={`sep-${i}`} aria-hidden="true" className="text-zinc-300">|</span>, part]))}
+      {/* Phones: the link has its own line and the buttons sit under it, without separators. */}
+      {parts.flatMap((part, i) => (i === 0 ? [part] : [<span key={`sep-${i}`} aria-hidden="true" className="hidden text-zinc-300 sm:inline">|</span>, part]))}
     </div>
   );
 }
@@ -767,8 +884,20 @@ function SummaryFigure({ label, value, unit, strong }: { label: string; value: n
  * ring and elapsed time up top, the link, the figures, deadline, YouTube
  * numbers, note and links. The next step is a button; the rest is in "⋯".
  */
-function TaskDetails({ task, onClose, actions, busy }: { task: WorkerTaskRow; onClose: () => void; actions: TaskActions; busy: boolean }) {
-  const menu = task.canAccept ? [] : taskMenu(task, actions, { inDetails: true, busy }).filter((item) => item === "separator" || !(item.tone === "primary" || item.label.startsWith("Refill done") || item.label === "Complete"));
+function TaskDetails({
+  task,
+  onClose,
+  actions,
+  busy,
+  teamCount = null,
+}: {
+  task: WorkerTaskRow;
+  onClose: () => void;
+  actions: TaskActions;
+  busy: boolean;
+  teamCount?: number | null;
+}) {
+  const menu = task.canAccept ? [] : taskMenu(task, actions, { inDetails: true, busy, teamCount }).filter((item) => item === "separator" || !(item.tone === "primary" || item.label.startsWith("Refill done") || item.label === "Complete"));
   // No leading or doubled separators once the primary step is taken out.
   const tidy = menu.filter((item, i, all) => item !== "separator" || (i > 0 && i < all.length - 1 && all[i - 1] !== "separator"));
   // YouTube numbers other than the one already shown as Current.
@@ -784,7 +913,7 @@ function TaskDetails({ task, onClose, actions, busy }: { task: WorkerTaskRow; on
 
         {task.progressPercent !== null ? <Figures items={progressFigures(task)} /> : null}
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+        <div className="grid grid-cols-1 gap-y-2 text-[13px] min-[380px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-4">
           <span className="inline-flex items-center gap-1.5 text-zinc-600">
             <Hourglass aria-hidden="true" className="size-3.5 text-zinc-400" />
             Given <span className="font-medium text-zinc-900">{task.assignedAt ? formatDeadlineDate(task.assignedAt) : "—"}</span>
@@ -834,8 +963,9 @@ function TaskDetails({ task, onClose, actions, busy }: { task: WorkerTaskRow; on
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 px-5 py-3.5 sm:px-6">
-        <Link href={`/orders/${task.orderId}`} className="text-[13px] font-medium text-zinc-600 hover:text-zinc-900 hover:underline">
+        <Link href={`/orders/${task.orderId}`} className="inline-flex items-center gap-1 text-[13px] font-medium text-zinc-600 hover:text-zinc-900 hover:underline">
           Open order page
+          <ExternalLink aria-hidden="true" className="size-3.5" />
         </Link>
         <div className="flex items-center gap-2">
           {task.canAccept ? (

@@ -1,0 +1,60 @@
+/// An outsourced worker's own team (owner request, 2026-11-17).
+///
+/// An External Worker often hands work on to their own people. These records let
+/// them keep track of that: who is on which order item, how much of it, how far
+/// they've got and how long it took. Team members don't sign in; only the
+/// worker does. Private to the worker: no admin or team screen reads these
+/// tables, and a worker's shares on an item are deleted when the item is taken
+/// away from them.
+
+/// A person in an outsourced worker's own team.
+model TeamMember {
+  id                 String           @id @default(uuid()) @db.Uuid
+  outsourcedWorkerId String           @map("outsourced_worker_id") @db.Uuid
+  outsourcedWorker   OutsourcedWorker @relation(fields: [outsourcedWorkerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  name           String  @db.VarChar(160)
+  whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
+  /// Someone no longer on the team is deactivated, not deleted, so past work keeps their name.
+  isActive       Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shares TeamShare[]
+
+  @@index([outsourcedWorkerId, isActive])
+  @@map("team_members")
+}
+
+/// Two states only: processing from the moment it's handed over, done when the worker says so.
+enum TeamShareStatus {
+  PROCESSING
+  DONE
+}
+
+/// Part of one order item handed to one team member.
+model TeamShare {
+  id           String     @id @default(uuid()) @db.Uuid
+  orderItemId  String     @map("order_item_id") @db.Uuid
+  orderItem    OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  teamMemberId String     @map("team_member_id") @db.Uuid
+  teamMember   TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// Their part of the item's required amount. Null for services without a count (e.g. a website).
+  amount Int?
+  /// How much of it they've done, as the worker notes it down. Never changes the status by itself.
+  done   Int  @default(0)
+
+  status TeamShareStatus @default(PROCESSING)
+  note   String?         @db.VarChar(500)
+
+  assignedAt DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // No one-part-per-member rule (2026-11-17): a member can take several parts of one task.
+  @@index([orderItemId])
+  @@index([teamMemberId])
+  @@map("team_shares")
+}

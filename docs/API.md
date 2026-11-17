@@ -44,7 +44,7 @@ to `/login` by the proxy and refused again by the handler itself.
 
 ## Server Actions
 
-93 actions across 15 files. "Requires" is the permission key checked before any data is touched.
+101 actions across 16 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -237,6 +237,24 @@ screenshots, stored in the private `item-updates` Storage bucket and served by `
 | `requestScreenshotsAction` | `orders.view`, then only the item's assigned worker (with `orders.change_status`, item not cancelled). Optional message; one open request per item. Notifies the team (2026-11-11) |
 | `requestWithdrawAction` | `orders.view`, then only the item's assigned worker (with `orders.change_status`) on a pending, processing or refill item. Optional reason; one open request per item; nothing on the item changes until the team acts. Notifies the team (2026-11-11) |
 | `keepWithWorkerAction` | `orders.assign` — closes a "can't continue" request without changes (the worker carries on) and tells them |
+
+### An outsourced worker's own team — `src/lib/team/actions.ts`
+
+Members of the worker's own team and their split of the worker's order items (2026-11-17). No
+permission key: every action requires a signed-in **outsourced worker** (`actor.outsourcedWorkerId`)
+and touches only their own members, and only shares on items currently assigned to them; anything else
+reads as not found. Private to the worker: no audit rows, and no admin screen reads these tables.
+
+| Action | Requires |
+| --- | --- |
+| `addTeamMemberAction` | outsourced worker. Name, optional WhatsApp number |
+| `updateTeamMemberAction` | outsourced worker, own member |
+| `setTeamMemberActiveAction` | outsourced worker, own member. Deactivated, never deleted |
+| `getMemberWorkAction` | outsourced worker, own member. Read: that member's shares on items still assigned to the worker |
+| `assignShareAction` | outsourced worker, own active member, item assigned to them. The amount may not exceed what is left of the item's required amount (optional, no ceiling, on an item without a count); starts as Processing. A member may hold several parts of one item |
+| `updateShareAction` | outsourced worker, own share. Amount (same limit) and progress (kept within the amount) |
+| `setShareStatusAction` | outsourced worker, own share. Done (stamps the finish time) or back to Processing |
+| `removeShareAction` | outsourced worker, own share |
 
 ---
 

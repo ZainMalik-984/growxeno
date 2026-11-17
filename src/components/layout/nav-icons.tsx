@@ -6,6 +6,7 @@ import {
   ChartColumn,
   ClipboardList,
   Gauge,
+  Handshake,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -55,6 +56,7 @@ export const NAV_ICONS: Record<NavIconName, ComponentType<SVGProps<SVGSVGElement
   roles: ShieldCheck,
   permissions: KeyRound,
   settings: Settings,
+  team: Handshake,
 };
 
 export const FALLBACK_NAV_ICON = Layers;

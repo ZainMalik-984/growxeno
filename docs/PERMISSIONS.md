@@ -3,7 +3,7 @@
 How authorization works, end to end.
 
 Status: the resolution engine, the catalog, scopes, server enforcement and the effective-access view
-are **implemented**, and RLS is **applied on all 30 tables** and verified against the live project.
+are **implemented**, and RLS is **applied on all 32 tables** and verified against the live project.
 Everything about data exposure — what was found and how to re-check — is in `docs/SECURITY.md`.
 
 ---
@@ -107,6 +107,13 @@ a hidden form field is never an input to authorization.
 Next.js warns that a Server Action is a POST to its page route, and that a proxy matcher change can
 silently remove coverage. That is exactly why `src/proxy.ts` is treated as session hygiene and
 every action re-checks for itself.
+
+**Data owned by an outsourced worker (2026-11-17).** "My team" (`/team`, `src/lib/team/`) has no
+permission key. It belongs to whoever is linked to an outsourced-worker record
+(`actor.outsourcedWorkerId`): the route 404s for anyone else, the sidebar link shows only to them, and
+every action and query is scoped to that worker's own team members and to items currently assigned to
+them. Administrators have no screen for it and no audit rows are written, by design. Their split is
+private, and it is deleted when an item is taken away from them.
 
 ---
 

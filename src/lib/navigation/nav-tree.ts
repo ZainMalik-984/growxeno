@@ -48,7 +48,8 @@ export type NavIconName =
   | "users"
   | "roles"
   | "permissions"
-  | "settings";
+  | "settings"
+  | "team";
 
 export type NavNode = {
   readonly label: string;
@@ -58,6 +59,8 @@ export type NavNode = {
   readonly icon?: NavIconName;
   /** Whether the route exists in this build. See the note above. */
   readonly implemented: boolean;
+  /** Only for a signed-in outsourced worker (their own team, 2026-11-17). */
+  readonly outsourcedWorkerOnly?: boolean;
   /** Match the pathname exactly rather than by prefix (used for index routes). */
   readonly exact?: boolean;
   readonly children?: readonly NavNode[];
@@ -89,6 +92,8 @@ export const NAVIGATION: readonly NavSection[] = [
       // on the Orders page itself, not as nine separate sidebar entries. The URL
       // params they used (?status=…, ?due=overdue) still work for old links.
       { label: "Orders", href: "/orders", icon: "orders", permission: "orders.view", implemented: true },
+      // An outsourced worker's own team (2026-11-17): only for workers with a portal login.
+      { label: "My team", href: "/team", icon: "team", implemented: true, outsourcedWorkerOnly: true },
     ],
   },
   {
@@ -222,6 +227,8 @@ export const NAVIGATION: readonly NavSection[] = [
 export type NavigationFilterOptions = {
   /** Include nodes whose routes do not exist yet. Used by tests, not by the UI. */
   readonly includeUnimplemented?: boolean;
+  /** The actor is an outsourced worker (shows their "My team"). */
+  readonly isOutsourcedWorker?: boolean;
 };
 
 function filterNode(
@@ -230,6 +237,7 @@ function filterNode(
   options: NavigationFilterOptions,
 ): NavNode | null {
   if (node.permission && !permissions.has(node.permission)) return null;
+  if (node.outsourcedWorkerOnly && !options.isOutsourcedWorker) return null;
 
   const children = node.children
     ?.map((child) => filterNode(child, permissions, options))

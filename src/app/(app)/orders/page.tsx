@@ -38,6 +38,7 @@ import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { cn } from "@/lib/utils";
 import { canTransitionItem } from "@/lib/orders/state-machine";
 import { listWorkerTasks, type WorkerTask } from "@/lib/orders/worker-tasks";
+import { activeMembers, sharesForItems } from "@/lib/team/queries";
 import { WORKER_TASK_VIEW_LABELS, WORKER_TASK_VIEWS, type WorkerTaskView } from "@/lib/orders/worker-task-view";
 import { Search } from "lucide-react";
 import type { OrderStatus } from "@/generated/prisma/client";
@@ -174,6 +175,16 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   // Sorted and filtered by listWorkerTasks (2026-11-11): pending, then processing, then refill, oldest first.
   const taskRows: WorkerTaskRow[] = (workerTasks?.tasks ?? []).map((task) => toTaskRow(task, canChangeItemStatus, unreadByItem));
 
+  // An outsourced worker's own team (2026-11-17): their members and each task's split, for the Team popup.
+  const team =
+    workerTasks && actor.outsourcedWorkerId
+      ? await (async () => {
+          const ids = [...workerTasks.tasks.map((t) => t.id), ...(workerTasks.focus ? [workerTasks.focus.id] : [])];
+          const [members, sharesByItem] = await Promise.all([activeMembers(actor), sharesForItems(actor, ids)]);
+          return { members, sharesByItem };
+        })()
+      : null;
+
   const canChangeStatus = actor.permissions.has("orders.change_status");
   const boardCards: BoardCard[] = boardItems.map((item) => {
     const asAssignedWorkerOnly =
@@ -290,6 +301,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                   rows={taskRows}
                   focus={workerTasks.focus ? toTaskRow(workerTasks.focus, canChangeItemStatus, unreadByItem) : null}
                   openUpdatesId={params.updates ?? null}
+                  team={team}
                 />
               )}
             </Card>
@@ -419,7 +431,7 @@ function StatusTabs({
                 href={statusHref(params, tab.key)}
                 aria-current={isActive ? "true" : undefined}
                 className={cn(
-                  "relative -mb-px inline-flex h-11 items-center gap-2 whitespace-nowrap border-b-2 px-3 md:h-10 text-[13px] font-medium transition-colors",
+                  "relative -mb-px inline-flex h-11 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 text-[13px] font-medium transition-colors sm:gap-2 sm:px-3 md:h-10",
                   isActive
                     ? "border-indigo-600 text-zinc-900"
                     : cn("border-transparent hover:border-zinc-300 hover:text-zinc-900", tab.count === 0 ? "text-zinc-400" : "text-zinc-500"),
@@ -514,6 +526,7 @@ function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean, unreadByItem:
     studioUrl: task.studioUrl,
     channelIdUrl: task.channelIdUrl,
     isWatchHours: task.metricType === "WATCH_HOURS",
+    metricType: task.metricType,
     // A done task waits for the team to accept the delivery (2026-11-12).
     statusLabel: task.status === "DONE" ? (task.deliveryAccepted ? "Accepted" : "Awaiting acceptance") : ORDER_ITEM_STATUS_LABELS[task.status],
     statusTone: task.status === "DONE" && !task.deliveryAccepted ? "warning" : ITEM_STATUS_TONE[task.status],
@@ -573,7 +586,7 @@ function WorkerTaskTabs({
   counts: Record<WorkerTaskView, number>;
 }) {
   return (
-    <nav aria-label="Task status" className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:thin]">
+    <nav aria-label="Task status" className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <ul className="flex w-max min-w-full gap-1 border-b border-zinc-200/80">
         {WORKER_TASK_VIEWS.map((view) => {
           const isActive = active === view;

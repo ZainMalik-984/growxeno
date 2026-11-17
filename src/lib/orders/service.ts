@@ -32,6 +32,7 @@ import { syncWorkerDeadlines } from "./worker-deadline-sync";
 import { getWorkerDeadlineSettings } from "@/lib/settings/queries";
 import { computeWorkerDeadline } from "@/lib/settings/worker-deadline";
 import { DASHBOARD_PATH } from "@/lib/routing/hosts";
+import { clearTeamShares } from "@/lib/team/service";
 
 export type { ServiceResult };
 
@@ -674,6 +675,8 @@ export async function assignOrderItemWorker(
         ...(resetStatus ? { status: "PENDING" as const } : {}),
       },
     });
+    // The previous worker's private split among their own team goes with the item (2026-11-17).
+    if (reassigned) await clearTeamShares(tx, itemId);
 
     const summary = assigneeName
       ? `Assigned "${item.service.name}" on order #${item.order.orderNumber} to ${assigneeName}${cost ? ` at ${cost} ${costCurrency}` : ""}`
@@ -1365,6 +1368,7 @@ export async function rejectTask(actor: Actor, itemId: string, reason: string): 
       where: { id: itemId },
       data: { workerId: null, outsourcedWorkerId: null, assignedById: null, assignedAt: null, workerCost: null },
     });
+    await clearTeamShares(tx, itemId);
 
     const name = serviceLabel(item.service.name, item.service.category.name);
     const who = item.outsourcedWorker?.name ?? actor.user.fullName;

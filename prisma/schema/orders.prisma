@@ -139,6 +139,8 @@ model OutsourcedWorker {
   orderItems OrderItem[]
   payments   WorkerPayment[]
   rates      ServiceRate[]
+  /// Their own team (2026-11-17, team.prisma).
+  teamMembers TeamMember[]
 
   @@index([isActive])
   @@index([name])
@@ -363,6 +365,8 @@ model OrderItem {
   links         OrderItemLink[]
   statSnapshots OrderItemStatSnapshot[]
   updates       OrderItemUpdate[]
+  /// The assigned worker's private split among their own team (team.prisma).
+  teamShares    TeamShare[]
 
   @@index([orderId])
   @@index([statsCheckedAt])

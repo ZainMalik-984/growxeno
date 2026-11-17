@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const actor = await requireActor();
-  const sections = getNavigationFor(actor.permissions);
+  const sections = getNavigationFor(actor.permissions, { isOutsourcedWorker: actor.outsourcedWorkerId !== null });
   const [unreadCount, recentNotifications, openRequests] = await Promise.all([
     getUnreadNotificationCount(actor.user.id),
     listNotifications(actor.user.id, { limit: 8 }),

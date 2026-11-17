@@ -20,6 +20,7 @@ vi.mock("@/lib/orders/actions", () => ({
   rejectTaskAction: (input: { itemId: string; reason: string }) => rejectTask(input),
 }));
 vi.mock("@/lib/youtube/actions", () => ({ refreshOrderItemStatsAction: vi.fn(async () => ({ ok: true, message: "" })) }));
+vi.mock("@/lib/team/actions", () => ({}));
 const getUpdates = vi.fn(async (input: { itemId: string }) => ({
   ok: true as const,
   thread: {
@@ -120,13 +121,16 @@ describe("WorkerTasksTable", () => {
     expect(list().getByRole("link", { name: /MrBeast/ })).toHaveAttribute("href", "https://www.youtube.com/@MrBeast");
     expect(list().getByText(/of 5,000 subscribers/)).toHaveTextContent("500 of 5,000 subscribers");
     expect(list().getAllByText("250.00 PKR").length).toBeGreaterThan(0);
-    expect(list().getByText(/^(2h 59m|3h 0m)$/)).toHaveClass("text-emerald-600");
-    expect(list().getByText("elapsed")).toBeInTheDocument();
+    // Shown twice: its own column from md, and in the line under the link on phones (2026-11-17).
+    const elapsed = list().getAllByText(/^(2h 59m|3h 0m)/);
+    expect(elapsed.length).toBe(2);
+    for (const el of elapsed) expect(el.closest(".text-emerald-600")).not.toBeNull();
+    expect(list().getAllByText(/elapsed/).length).toBeGreaterThan(0);
   });
 
   it("colours the elapsed time by age", () => {
     render(<WorkerTasksTable rows={[row({ assignedAt: new Date(Date.now() - 4.5 * 86_400_000) })]} />);
-    expect(list().getByText(/^4d/)).toHaveClass("text-red-600");
+    for (const el of list().getAllByText(/^4d/)) expect(el.closest(".text-red-600")).not.toBeNull();
   });
 
   it("puts every action in the menu: Accept and Reject on a task not accepted yet", async () => {
