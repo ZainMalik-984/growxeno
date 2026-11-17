@@ -251,6 +251,10 @@
  * 14px panels, 24px large surfaces, full only on the two call-to-action buttons.
  */
 .gxo {
+  /* Where an in-page link lands (scroll-margin): the section's own top padding
+     mostly scrolled away, so its heading sits ~145px down, just under the nav.
+     Desktop: the section edge ends ~50px above the screen. */
+  --gx-anchor: calc(6.75rem - var(--gx-section));
   /* Official palette: black and graphite, electric green, metallic silver. */
   --gx-bg: #050706;
   --gx-s1: #0d110f;

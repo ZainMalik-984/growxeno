@@ -45,7 +45,7 @@ export function scrollToY(y: number) {
  * Momentum smooth scrolling for wheel and trackpad (Lenis), driven by GSAP's
  * ticker so ScrollTrigger pins and scrubs read the smoothed position. Touch
  * keeps the device's own scrolling; reduced motion keeps plain scrolling.
- * In-page anchor links scroll smoothly too, stopping clear of the sticky nav.
+ * In-page anchor links scroll smoothly too, landing where each section's scroll-margin (--gx-anchor in globals.css) says.
  */
 export function useSmoothScroll() {
   useEffect(() => {
@@ -54,7 +54,7 @@ export function useSmoothScroll() {
       duration: 1.15,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       wheelMultiplier: 1,
-      anchors: { offset: -80 },
+      anchors: true,
       autoRaf: false,
     });
     lenis = instance;

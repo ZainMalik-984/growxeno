@@ -4,7 +4,7 @@
  * whatever the page looks like. The page itself is src/app/marketing-home.tsx.
  */
 
-export type ServiceId = "youtube" | "tiktok" | "adsense" | "smm" | "web" | "shopify";
+export type ServiceId = "youtube" | "tiktok" | "adsense" | "smm" | "web" | "shopify" | "backlinks";
 
 export type Service = {
   id: ServiceId;
@@ -90,6 +90,23 @@ export const services: Service[] = [
     includes: ["Store SEO", "Google Ads campaigns", "Technical issue resolution", "Ongoing growth support"],
     target: [["Channels", "SEO · Google Ads"], ["Store", "Existing Shopify"]],
     outcome: "More qualified traffic and fewer technical leaks in your store.",
+  },
+  {
+    id: "backlinks",
+    name: "Backlinks & Guest Posts",
+    short: "Placements on real, relevant sites",
+    audience: "Site owners, SEO agencies and brands that need authority in search",
+    summary:
+      "Guest posts and contextual backlinks on real, indexed sites in your niche. Each site's traffic and authority is checked before you pay, and you get the live link once it's published.",
+    includes: [
+      "Niche-relevant guest posts",
+      "Contextual links in existing articles",
+      "Sites vetted for traffic, authority and spam",
+      "Article writing on request",
+      "Live-link report for every placement",
+    ],
+    target: [["Links", "Do-follow"], ["Proof", "Live URLs"]],
+    outcome: "Links from relevant sites that lift your rankings, with proof of every placement.",
   },
 ];
 

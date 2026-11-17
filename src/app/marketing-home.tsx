@@ -223,7 +223,7 @@ export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: Si
             duration: 1.15,
             ease: "expo.out",
             stagger: 0.035,
-            scrollTrigger: { trigger: heading, start: "top 86%", once: true },
+            scrollTrigger: { trigger: heading, start: "top 86%", toggleActions: "play none none none" },
           });
         });
 
@@ -238,7 +238,7 @@ export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: Si
             duration: 1.35,
             ease: "expo.out",
             delay: Number(el.dataset.rise || 0),
-            scrollTrigger: { trigger: el, start: "top 90%", once: true },
+            scrollTrigger: { trigger: el, start: "top 90%", toggleActions: "play none none none" },
           });
         });
 
@@ -247,7 +247,7 @@ export function MarketingHome({ contact = DEFAULT_SITE_CONTACT }: { contact?: Si
           gsap.fromTo(
             el,
             { clipPath: "inset(14% 10% 14% 10% round 28px)" },
-            { clipPath: "inset(0% 0% 0% 0% round 14px)", duration: 1.6, ease: "expo.out", scrollTrigger: { trigger: el, start: "top 88%", once: true } },
+            { clipPath: "inset(0% 0% 0% 0% round 14px)", duration: 1.6, ease: "expo.out", scrollTrigger: { trigger: el, start: "top 88%", toggleActions: "play none none none" } },
           );
         });
         gsap.utils.toArray<HTMLElement>("[data-zoom]").forEach((el) => {
@@ -480,7 +480,7 @@ function Hero() {
             </span>
           </h1>
           <p data-hero="fade" className="mt-7 max-w-[46ch] text-[1.0625rem] leading-[1.65] text-[var(--gx-muted)] sm:text-lg">
-            Grow Xeno handles YouTube and TikTok monetization, Google AdSense, social media management, and website &amp; Shopify builds. Every delivery is verified before handover, and supported after it.
+            Grow Xeno handles YouTube and TikTok monetization, Google AdSense, social media management, backlinks and guest posts, and website &amp; Shopify builds. Every delivery is verified before handover, and supported after it.
           </p>
           <div data-hero="fade" className="mt-9 flex flex-wrap items-center gap-3">
             <Magnetic>
@@ -708,31 +708,40 @@ function VerifiedChip() {
 /* ---------- services ---------- */
 
 /*
- * Services as a bento (2026-11-16, owner reference): six illustrated cards.
- * Large screens: YouTube and TikTok wide on top; AdSense and Website & App
- * Design tall at the sides with Social Media Management and Shopify stacked
- * between them. "Learn more" expands a card to the full width with all its
- * details while the others settle into a row beneath it (GSAP Flip animates
- * every card from where it was to where it lands). Smaller screens: the
- * cards stack and a card opens in place.
+ * Services as a bento (2026-11-16, owner reference; reworked 2026-11-17): seven
+ * illustrated tiles of mixed sizes. Large screens, 12 columns:
+ *
+ *   [ YouTube (wide)        ][ TikTok ][ AdSense ]
+ *   [ Social   ][ Website   ][ (tall)  ][ (tall)  ]
+ *   [ Shopify  ][ Backlinks & Guest Posts (wide)   ]
+ *
+ * Phones and tablets keep it a bento in two columns: YouTube across the top,
+ * TikTok tall beside AdSense and Social Media, small square tiles, Backlinks
+ * across the bottom. Small tiles show the title and an arrow on phones, the
+ * short line from sm up, and big tiles the full summary. "Learn more" expands
+ * a tile to the full width with every detail while the others settle into
+ * rows of three beneath it (GSAP Flip animates each from where it was to where
+ * it lands); on phones a tile opens in place.
  */
 
-type Layout = "overlay" | "textTop" | "visualTop";
+/** hero: wide, art behind the text. tall: two rows. small: one cell. wide: text beside art. */
+type Kind = "hero" | "tall" | "small" | "wide";
 
-const BENTO: Record<ServiceId, { span: string; layout: Layout; art: () => ReactNode }> = {
-  youtube: { span: "lg:col-span-6", layout: "overlay", art: () => <YouTubeArt /> },
-  tiktok: { span: "lg:col-span-6", layout: "overlay", art: () => <TikTokArt /> },
-  adsense: { span: "lg:col-span-4 lg:row-span-2", layout: "textTop", art: () => <AdSenseArt /> },
-  smm: { span: "lg:col-span-4", layout: "textTop", art: () => <SmmArt /> },
-  web: { span: "lg:col-span-4 lg:row-span-2", layout: "textTop", art: () => <WebArt /> },
-  shopify: { span: "lg:col-span-4", layout: "visualTop", art: () => <ShopifyArt /> },
+const BENTO: Record<ServiceId, { span: string; kind: Kind; art: () => ReactNode }> = {
+  youtube: { span: "col-span-2 lg:col-span-6", kind: "hero", art: () => <YouTubeArt /> },
+  tiktok: { span: "row-span-2 lg:col-span-3", kind: "tall", art: () => <TikTokArt /> },
+  adsense: { span: "lg:col-span-3 lg:row-span-2", kind: "tall", art: () => <AdSenseArt /> },
+  smm: { span: "lg:col-span-3", kind: "small", art: () => <SmmArt /> },
+  web: { span: "lg:col-span-3", kind: "small", art: () => <WebArt /> },
+  shopify: { span: "lg:col-span-3", kind: "small", art: () => <ShopifyArt /> },
+  backlinks: { span: "col-span-2 lg:col-span-9", kind: "wide", art: () => <BacklinksArt /> },
 };
 
-/** Which side each card slides in from on large screens: -1 left, 1 right, 0 from below. */
-const ENTER_FROM: Record<ServiceId, number> = { youtube: -1, tiktok: 1, adsense: -1, smm: 0, web: 1, shopify: 0 };
+/** Which side each tile slides in from on large screens: -1 left, 1 right, 0 from below. */
+const ENTER_FROM: Record<ServiceId, number> = { youtube: -1, tiktok: 0, adsense: 1, smm: -1, web: 0, shopify: -1, backlinks: 1 };
 
-/** Spans while one card is open: the others line up as 4 + 4 + 4, then 6 + 6. */
-const COMPACT = ["lg:col-span-4", "lg:col-span-4", "lg:col-span-4", "lg:col-span-6", "lg:col-span-6"];
+/** Spans while one tile is open: the other six in rows of three (full-width rows on phones). */
+const COMPACT = "col-span-2 sm:col-span-1 lg:col-span-4";
 
 function Services() {
   const reduced = useMedia(REDUCED);
@@ -756,7 +765,7 @@ function Services() {
           const text = card.querySelectorAll<HTMLElement>("[data-slide]");
           gsap
             .timeline({
-              scrollTrigger: { trigger: card, start: "top 90%", once: true },
+              scrollTrigger: { trigger: card, start: "top 90%", toggleActions: "play none none none" },
               onComplete: () => gsap.set([card, ...art, ...text], { clearProps: "transform,transformOrigin,opacity,visibility" }),
             })
             .from(card, {
@@ -827,16 +836,15 @@ function Services() {
     { dependencies: [open], scope: grid },
   );
 
-  let compactIndex = 0;
 
   return (
-    <section id="services" className="gx-section relative scroll-mt-20 border-t border-[var(--gx-line)] bg-[var(--gx-s1)]">
+    <section id="services" className="gx-section relative scroll-mt-[var(--gx-anchor)] border-t border-[var(--gx-line)] bg-[var(--gx-s1)]">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[40rem] bg-[radial-gradient(60%_50%_at_50%_0%,rgb(0_185_91/0.08),transparent_70%)]" />
       <Container className="relative">
         <div className="grid grid-cols-12 items-end gap-y-6">
           <div className="col-span-12 lg:col-span-8">
             <Eyebrow>Services</Eyebrow>
-            <SplitHeading text="Six services, held to one standard:" serif="it actually works." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+            <SplitHeading text="Seven services, held to one standard:" serif="it actually works." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
           </div>
           <p className="col-span-12 max-w-[40ch] leading-[1.65] text-[var(--gx-muted)] lg:col-span-4 lg:justify-self-end">
             Pick a service to see who it&apos;s for, what&apos;s included, and what you end up with.
@@ -845,14 +853,14 @@ function Services() {
 
         <div
           ref={grid}
-          className={`mt-14 grid grid-flow-row-dense gap-4 sm:grid-cols-2 lg:mt-20 lg:grid-cols-12 ${open === null ? "lg:auto-rows-[minmax(260px,auto)]" : "lg:auto-rows-auto"}`}
+          className={`mt-12 grid grid-flow-row-dense grid-cols-2 gap-3 sm:gap-4 lg:mt-16 lg:grid-cols-12 ${open === null ? "auto-rows-[minmax(200px,auto)] sm:auto-rows-[minmax(240px,auto)] lg:auto-rows-[minmax(270px,auto)]" : ""}`}
         >
           {services.map((s, i) => {
             const isOpen = open === i;
             const b = BENTO[s.id];
-            const span = open === null ? b.span : isOpen ? "lg:col-span-12 lg:order-first" : COMPACT[compactIndex++]!;
+            const span = open === null ? b.span : isOpen ? "col-span-2 lg:col-span-12 lg:order-first" : COMPACT;
             return (
-              <ServiceCard key={s.id} service={s} index={i} span={span} layout={b.layout} art={b.art()} isOpen={isOpen} compact={open !== null && !isOpen} onToggle={() => toggle(i)} />
+              <ServiceCard key={s.id} service={s} index={i} span={span} kind={b.kind} art={b.art()} isOpen={isOpen} compact={open !== null && !isOpen} onToggle={() => toggle(i)} />
             );
           })}
         </div>
@@ -865,7 +873,7 @@ function ServiceCard({
   service: s,
   index,
   span,
-  layout,
+  kind,
   art,
   isOpen,
   compact,
@@ -874,7 +882,7 @@ function ServiceCard({
   service: (typeof services)[number];
   index: number;
   span: string;
-  layout: Layout;
+  kind: Kind;
   art: ReactNode;
   isOpen: boolean;
   compact: boolean;
@@ -905,7 +913,7 @@ function ServiceCard({
   const head = (
     <>
       <p data-slide className="text-xs tabular-nums text-[var(--gx-dim)]">0{index + 1}</p>
-      <h3 data-slide className={`gx-display gx-metal mt-2 ${compact ? "text-[1.6rem]" : "text-[clamp(1.9rem,2.6vw,2.6rem)]"}`}>{s.name}</h3>
+      <h3 data-slide className={`gx-display gx-metal mt-2 ${compact ? "text-[1.4rem] sm:text-[1.6rem]" : kind === "hero" || kind === "wide" ? "text-[clamp(1.6rem,2.4vw,2.3rem)]" : "text-[1.2rem] leading-[1.1] sm:text-[1.5rem]"}`}>{s.name}</h3>
     </>
   );
 
@@ -915,7 +923,7 @@ function ServiceCard({
       data-from={ENTER_FROM[s.id]}
       onPointerMove={spot}
       className={`group relative isolate flex flex-col overflow-hidden rounded-[22px] border bg-[var(--gx-s2)] shadow-[var(--gx-shadow-2)] transition-[border-color,box-shadow] duration-500 ${span} ${
-        isOpen ? "border-[var(--gx-line-2)] sm:col-span-2" : "border-[var(--gx-line)] hover:border-[var(--gx-line-2)]"
+        isOpen ? "border-[var(--gx-line-2)]" : "border-[var(--gx-line)] hover:border-[var(--gx-line-2)]"
       }`}
     >
       {/* Light catching the top edge, and a soft emerald spotlight that follows the pointer. */}
@@ -999,33 +1007,67 @@ function ServiceCard({
             <div className="mt-4">{learnMore}</div>
           </div>
         </div>
-      ) : layout === "overlay" ? (
-        <div className="relative flex min-h-[360px] flex-1 flex-col justify-end sm:min-h-[400px]">
-          <div className="absolute inset-0">{art}</div>
-          <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-[var(--gx-s2)] via-[var(--gx-s2)]/80 to-transparent" />
-          <div className="relative p-7 sm:p-8">
+      ) : kind === "wide" ? (
+        <div className="flex flex-1 flex-col lg:grid lg:grid-cols-12">
+          <div className="relative p-5 sm:p-7 lg:col-span-5 lg:self-center lg:p-8">
             {head}
-            <p data-slide className="mt-3 max-w-[52ch] leading-[1.6] text-[var(--gx-muted)]">{s.summary}</p>
-            <div data-slide className="mt-6">{learnMore}</div>
+            <p data-slide className="mt-2.5 max-w-[46ch] text-[0.9375rem] leading-[1.6] text-[var(--gx-muted)]">
+              <span className="sm:hidden">{s.short}</span>
+              <span className="hidden sm:inline">{s.summary}</span>
+            </p>
+            <div data-slide className="mt-5">{learnMore}</div>
           </div>
-        </div>
-      ) : layout === "textTop" ? (
-        <div className="flex flex-1 flex-col">
-          <div className="relative p-7 sm:p-8">
-            {head}
-            <p data-slide className="mt-3 leading-[1.6] text-[var(--gx-muted)]">{s.summary}</p>
-            <div data-slide className="mt-6">{learnMore}</div>
-          </div>
-          <div className="relative min-h-[220px] flex-1">{art}</div>
+          <div className="relative min-h-[330px] flex-1 lg:col-span-7 lg:min-h-0">{art}</div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col">
-          <div className="relative h-[190px]">{art}</div>
-          <div className="relative p-7 pt-2 sm:p-8 sm:pt-2">
-            {head}
-            <p data-slide className="mt-3 leading-[1.6] text-[var(--gx-muted)]">{s.summary}</p>
-            <div data-slide className="mt-6">{learnMore}</div>
+        <div className={`relative flex flex-1 flex-col justify-end ${kind === "hero" ? "min-h-[270px] sm:min-h-0" : ""}`}>
+          <div className={`absolute inset-x-0 top-0 overflow-hidden ${kind === "hero" ? "h-[58%] sm:bottom-0 sm:h-auto" : kind === "tall" ? "h-[68%]" : "h-[64%]"}`}>
+            <div
+              className={
+                kind === "hero"
+                  ? "absolute inset-0 max-sm:-top-[18%] max-sm:h-[118%]"
+                  : kind === "small"
+                    ? "absolute left-0 top-0 h-[166.67%] w-[166.67%] origin-top-left scale-[0.6] sm:h-[125%] sm:w-[125%] sm:scale-[0.8]"
+                    : "absolute inset-0 max-sm:h-[133.33%] max-sm:w-[133.33%] max-sm:origin-top-left max-sm:scale-[0.75]"
+              }
+            >
+              {art}
+            </div>
           </div>
+          <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-[var(--gx-s2)] from-30% via-[var(--gx-s2)]/75 to-transparent" />
+          <div className="relative p-4 sm:p-6">
+            {head}
+            {kind === "hero" ? (
+              <p data-slide className="mt-2.5 max-w-[52ch] text-[0.9375rem] leading-[1.6] text-[var(--gx-muted)]">
+                <span className="sm:hidden">{s.short}</span>
+                <span className="hidden sm:inline">{s.summary}</span>
+              </p>
+            ) : (
+              <p data-slide className="mt-2 hidden text-[0.875rem] leading-[1.55] text-[var(--gx-muted)] sm:block">
+                {kind === "tall" ? (
+                  <>
+                    <span className="lg:hidden">{s.short}</span>
+                    <span className="hidden lg:inline">{s.summary}</span>
+                  </>
+                ) : (
+                  s.short
+                )}
+              </p>
+            )}
+            {kind === "hero" ? <div data-slide className="mt-5">{learnMore}</div> : null}
+          </div>
+          {kind === "hero" ? null : (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={isOpen}
+              aria-controls={detailId}
+              aria-label={`Learn more about ${s.name}`}
+              className={`absolute right-3 top-3 z-10 grid size-10 place-items-center rounded-full border border-[var(--gx-line-2)] bg-[var(--gx-s3)]/90 text-[var(--gx-text)] shadow-[var(--gx-shadow-1)] transition-[background-color,border-color,color,transform] duration-300 group-hover:border-[var(--gx-accent)]/60 hover:border-[var(--gx-accent)] hover:bg-[var(--gx-accent)] hover:text-[var(--gx-accent-ink)] sm:right-4 sm:top-4 sm:size-11 ${ring}`}
+            >
+              <ArrowUpRight className="size-4 transition-transform duration-300 group-hover:-translate-y-px group-hover:translate-x-px" aria-hidden />
+            </button>
+          )}
         </div>
       )}
     </article>
@@ -1089,7 +1131,7 @@ function TikTokArt() {
           </div>
         </div>
       </div>
-      <div className={`absolute left-[14%] top-[22%] w-[26%] min-w-[120px] rounded-[12px] p-3 transition-transform duration-700 group-hover:translate-x-1 ${glass}`}>
+      <div className={`absolute left-[14%] top-[8%] w-[26%] min-w-[120px] rounded-[12px] p-3 transition-transform duration-700 group-hover:translate-x-1 ${glass}`}>
         <span className="flex items-center gap-2 text-[0.625rem] text-white/55">
           <SiTiktok className="size-3 text-[var(--gx-silver)]" />
           Followers
@@ -1185,6 +1227,96 @@ function SmmArt() {
       <span className={`absolute bottom-[3%] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.625rem] font-medium tabular-nums text-[var(--gx-accent)] ${ease} group-hover:translate-y-1 ${glass}`}>
         +312 followers
       </span>
+    </div>
+  );
+}
+
+/*
+ * Backlinks & guest posts: an article on a publisher's site with the client's
+ * keyword as a highlighted link, a green thread running from it to the client's
+ * site, whose authority and referring domains climb. Two more publisher pages
+ * sit behind, for "many placements". On hover the thread brightens and the
+ * pages fan out a little.
+ */
+function BacklinksArt() {
+  const ease = "transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]";
+  const line = (w: string, o = "bg-white/15") => <span className={`block h-1.5 rounded-full ${o}`} style={{ width: w }} />;
+  return (
+    <div aria-hidden data-art className="@container absolute inset-0 overflow-hidden">
+      <div className="absolute left-[30%] top-[10%] h-[90%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.13),transparent)]" />
+
+      {/* Publisher pages behind. */}
+      <div className={`absolute left-[9%] top-[14%] h-[58%] w-[34%] min-w-[150px] -rotate-6 @max-[520px]:left-[5%] @max-[520px]:h-[34%] @max-[520px]:w-[62%] rounded-[14px] opacity-50 ${ease} group-hover:-translate-x-2 group-hover:-rotate-[9deg] ${glass}`} />
+      <div className={`absolute left-[12%] top-[10%] h-[62%] w-[34%] min-w-[150px] -rotate-3 @max-[520px]:left-[8%] @max-[520px]:h-[36%] @max-[520px]:w-[62%] rounded-[14px] opacity-70 ${ease} group-hover:-translate-x-1 group-hover:-rotate-[5deg] ${glass}`} />
+
+      {/* The article carrying the link. */}
+      <div className={`absolute left-[15%] top-[8%] w-[36%] min-w-[170px] rounded-[14px] p-4 @max-[520px]:left-[10%] @max-[520px]:w-[62%] ${ease} group-hover:-translate-y-1 ${glass}`}>
+        <div className="flex items-center gap-2">
+          <span className="size-2 rounded-full bg-white/25" />
+          <span className="text-[0.5625rem] tracking-wide text-white/45">niche-blog.com / guide</span>
+        </div>
+        <span className="mt-3 block h-2.5 w-[80%] rounded-full bg-white/55" />
+        <div className="mt-3 space-y-2">
+          {line("100%")}
+          {line("92%")}
+          <span className="flex items-center gap-1.5">
+            {line("26%")}
+            <span className="whitespace-nowrap rounded-[4px] bg-[rgb(8_229_47/0.14)] px-1.5 py-0.5 text-[0.5625rem] font-medium text-[var(--gx-accent)] underline decoration-[var(--gx-accent)]/60 underline-offset-2">
+              your keyword
+            </span>
+            {line("30%")}
+          </span>
+          {line("86%")}
+          {line("60%")}
+        </div>
+      </div>
+
+      {/* The link travelling to the client's site. */}
+      <svg viewBox="0 0 400 200" preserveAspectRatio="none" className="absolute inset-0 hidden h-full w-full @min-[520px]:block">
+        <path
+          d="M 150 92 C 215 92, 215 150, 268 150"
+          fill="none"
+          stroke="#08E52F"
+          strokeWidth="1.5"
+          strokeDasharray="4 5"
+          vectorEffect="non-scaling-stroke"
+          className="opacity-60 transition-opacity duration-500 group-hover:opacity-100"
+        />
+      </svg>
+      {/* Narrow spaces (the opened card's panel, phones): the pages stack, so the thread runs down. */}
+      <svg viewBox="0 0 400 200" preserveAspectRatio="none" className="absolute inset-0 h-full w-full @min-[520px]:hidden">
+        <path
+          d="M 70 84 C 70 118, 80 128, 118 128"
+          fill="none"
+          stroke="#08E52F"
+          strokeWidth="1.5"
+          strokeDasharray="4 5"
+          vectorEffect="non-scaling-stroke"
+          className="opacity-60 transition-opacity duration-500 group-hover:opacity-100"
+        />
+      </svg>
+
+      {/* The client's site gaining authority. */}
+      <div className={`absolute right-[9%] top-[46%] w-[30%] min-w-[150px] rounded-[14px] p-4 @max-[520px]:right-[8%] @max-[520px]:top-[54%] @max-[520px]:w-[62%] ${ease} group-hover:translate-x-1 ${glass}`}>
+        <div className="flex items-center justify-between">
+          <span className="text-[0.625rem] font-medium text-[var(--gx-text)]">yoursite.com</span>
+          <span className="rounded-full border border-[var(--gx-accent)]/40 px-1.5 py-px text-[0.5rem] uppercase tracking-wider text-[var(--gx-accent)]">do-follow</span>
+        </div>
+        <div className="mt-3 flex items-end justify-between gap-3">
+          <div>
+            <span className="block text-[0.5625rem] text-white/45">Authority</span>
+            <span className="whitespace-nowrap text-lg font-medium tabular-nums text-[var(--gx-text)]">
+              52 <span className="text-[var(--gx-accent)]">→ 61</span>
+            </span>
+          </div>
+          <svg viewBox="0 0 60 24" className="h-6 w-16">
+            <path d="M0 22 L12 19 L24 20 L36 13 L48 9 L60 3" fill="none" stroke="#08E52F" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <span className="mt-2 block text-[0.5625rem] tabular-nums text-white/45">
+          Referring domains <span className="text-[var(--gx-accent)]">+38</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -1481,7 +1613,7 @@ function Why() {
   );
 
   return (
-    <section id="why" className="gx-section relative scroll-mt-20 overflow-hidden border-y border-[var(--gx-line)] bg-[var(--gx-s1)]">
+    <section id="why" className="gx-section relative scroll-mt-[var(--gx-anchor)] overflow-hidden border-y border-[var(--gx-line)] bg-[var(--gx-s1)]">
       <div aria-hidden className="pointer-events-none absolute -right-1/4 top-1/3 h-[70%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.08),transparent)]" />
       <Container className="relative">
         <div className="grid grid-cols-12 gap-y-10">
@@ -1614,7 +1746,7 @@ function Process() {
   );
 
   return (
-    <section ref={section} id="process" className="relative scroll-mt-20">
+    <section ref={section} id="process" className="relative scroll-mt-[var(--gx-anchor)]">
       <div ref={pinEl} className="relative overflow-hidden lg:flex lg:min-h-screen lg:flex-col lg:justify-center">
         <Container className="pt-[var(--gx-section)] lg:pt-24">
           <div className="grid grid-cols-12 items-end gap-y-6">
@@ -1800,7 +1932,7 @@ function Faq() {
   const { email: EMAIL } = useContact();
   const [open, setOpen] = useState(0);
   return (
-    <section id="faq" className="gx-section scroll-mt-20 border-t border-[var(--gx-line)]">
+    <section id="faq" className="gx-section scroll-mt-[var(--gx-anchor)] border-t border-[var(--gx-line)]">
       <Container className="grid grid-cols-12 gap-y-12 lg:gap-x-10">
         <div className="col-span-12 lg:col-span-4">
           <div className="lg:sticky lg:top-28">
@@ -1914,7 +2046,7 @@ function Contact() {
     "mt-2 w-full rounded-[var(--gx-r-sm)] border border-[var(--gx-line-2)] bg-[var(--gx-s1)] px-4 py-3 text-[0.9375rem] text-[var(--gx-text)] outline-none transition-[border-color,box-shadow] duration-300 placeholder:text-[var(--gx-dim)] hover:border-[var(--gx-text)]/25 focus:border-[var(--gx-accent)] focus:shadow-[0_0_0_4px_rgb(8_229_47/0.15)]";
 
   return (
-    <section id="contact" className="gx-section relative scroll-mt-20 overflow-hidden border-t border-[var(--gx-line)] bg-[var(--gx-s1)]">
+    <section id="contact" className="gx-section relative scroll-mt-[var(--gx-anchor)] overflow-hidden border-t border-[var(--gx-line)] bg-[var(--gx-s1)]">
       <div aria-hidden className="pointer-events-none absolute -left-1/4 top-0 h-[80%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.09),transparent)]" />
       <Container className="relative grid grid-cols-12 gap-y-14 lg:gap-x-12">
         <div className="col-span-12 lg:col-span-5">
