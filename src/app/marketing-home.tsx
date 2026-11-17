@@ -18,7 +18,8 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { SiFacebook, SiGoogleadsense, SiInstagram, SiShopify, SiTiktok, SiWhatsapp, SiX, SiYoutube } from "react-icons/si";
+import { FaLinkedinIn } from "react-icons/fa6";
+import { SiFacebook, SiGoogleadsense, SiInstagram, SiPinterest, SiShopify, SiThreads, SiTiktok, SiWhatsapp, SiX, SiYoutube } from "react-icons/si";
 
 import { NAV, audiences, comparison, faqs, handoverChecks, services, steps, whyPoints, type ServiceId } from "@/components/marketing/content";
 import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
@@ -479,7 +480,7 @@ function Hero() {
             </span>
           </h1>
           <p data-hero="fade" className="mt-7 max-w-[46ch] text-[1.0625rem] leading-[1.65] text-[var(--gx-muted)] sm:text-lg">
-            Grow Xeno handles YouTube and TikTok monetization, Google AdSense, social media marketing, and website &amp; Shopify builds. Every delivery is verified before handover, and supported after it.
+            Grow Xeno handles YouTube and TikTok monetization, Google AdSense, social media management, and website &amp; Shopify builds. Every delivery is verified before handover, and supported after it.
           </p>
           <div data-hero="fade" className="mt-9 flex flex-wrap items-center gap-3">
             <Magnetic>
@@ -709,7 +710,7 @@ function VerifiedChip() {
 /*
  * Services as a bento (2026-11-16, owner reference): six illustrated cards.
  * Large screens: YouTube and TikTok wide on top; AdSense and Website & App
- * Design tall at the sides with Social Media Marketing and Shopify stacked
+ * Design tall at the sides with Social Media Management and Shopify stacked
  * between them. "Learn more" expands a card to the full width with all its
  * details while the others settle into a row beneath it (GSAP Flip animates
  * every card from where it was to where it lands). Smaller screens: the
@@ -1125,38 +1126,65 @@ function AdSenseArt() {
   );
 }
 
+/*
+ * Social media management: a post card at the centre with the platforms it is
+ * published to orbiting it on two faint rings, and the results popping up.
+ * Glyphs are silver and turn green on hover, when they also drift along their
+ * orbits. The gentle bob runs on the inner glyph, so the entrance timeline
+ * (which animates the outer layers) never fights it.
+ */
+const SMM_ORBIT: { Icon: (p: { className?: string }) => ReactNode; label: string; pos: string; hover: string; delay: string }[] = [
+  { Icon: SiInstagram, label: "Instagram", pos: "left-[13%] top-[18%]", hover: "group-hover:-translate-y-1.5 group-hover:translate-x-2", delay: "0s" },
+  { Icon: SiFacebook, label: "Facebook", pos: "left-[5%] top-[56%]", hover: "group-hover:-translate-y-2 group-hover:translate-x-1", delay: "-1.2s" },
+  { Icon: FaLinkedinIn, label: "LinkedIn", pos: "left-[24%] top-[78%]", hover: "group-hover:-translate-x-2 group-hover:translate-y-1", delay: "-2.1s" },
+  { Icon: SiX, label: "X", pos: "right-[13%] top-[14%]", hover: "group-hover:translate-y-1.5 group-hover:translate-x-1", delay: "-0.6s" },
+  { Icon: SiThreads, label: "Threads", pos: "right-[4%] top-[50%]", hover: "group-hover:translate-y-2 group-hover:-translate-x-1", delay: "-1.8s" },
+  { Icon: SiPinterest, label: "Pinterest", pos: "right-[22%] top-[80%]", hover: "group-hover:translate-x-2 group-hover:-translate-y-1", delay: "-2.6s" },
+];
+
 function SmmArt() {
-  const dots: [number, number, boolean][] = [
-    [150, 40, true],
-    [92, 70, false],
-    [208, 70, false],
-    [60, 110, false],
-    [240, 110, true],
-    [120, 100, false],
-    [180, 96, false],
-  ];
+  const ease = "transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]";
   return (
     <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
-      <svg viewBox="0 0 300 160" className="absolute bottom-0 left-1/2 h-full w-[115%] -translate-x-1/2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1" preserveAspectRatio="xMidYMax meet">
-        <defs>
-          <radialGradient id="gx-fan" cx="50%" cy="100%" r="100%">
-            <stop offset="0" stopColor="#08E52F" stopOpacity="0.45" />
-            <stop offset="1" stopColor="#00B95B" stopOpacity="0.05" />
-          </radialGradient>
-        </defs>
-        {[140, 110, 80, 50].map((r) => (
-          <path key={r} d={`M ${150 - r} 160 A ${r} ${r} 0 0 1 ${150 + r} 160`} fill="none" stroke="rgb(255 255 255 / 0.1)" />
-        ))}
-        {[-60, -30, 0, 30, 60].map((a) => {
-          const rad = ((a - 90) * Math.PI) / 180;
-          return <line key={a} x1="150" y1="160" x2={150 + Math.cos(rad) * 140} y2={160 + Math.sin(rad) * 140} stroke="rgb(255 255 255 / 0.08)" />;
-        })}
-        <path d="M150 160 L 80 39 A 140 140 0 0 1 220 39 Z" fill="url(#gx-fan)" />
-        {dots.map(([x, y, hot], i) => (
-          <circle key={i} cx={x} cy={y} r={hot ? 3.5 : 2} fill={hot ? "#08E52F" : "#C7C8CC"} opacity={hot ? 1 : 0.6} />
-        ))}
-        <circle cx="150" cy="160" r="14" fill="#151A18" stroke="rgb(255 255 255 / 0.15)" />
+      <div className="absolute left-1/2 top-1/2 h-[90%] w-[70%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.16),transparent)]" />
+      <svg viewBox="0 0 400 200" preserveAspectRatio="none" className={`absolute inset-[6%_2%] h-[88%] w-[96%] ${ease} group-hover:rotate-[2deg]`}>
+        <ellipse cx="200" cy="100" rx="190" ry="88" fill="none" stroke="rgb(255 255 255 / 0.08)" />
+        <ellipse cx="200" cy="100" rx="128" ry="60" fill="none" stroke="rgb(255 255 255 / 0.06)" strokeDasharray="3 5" />
       </svg>
+
+      {/* The post being published. */}
+      <div className={`absolute left-1/2 top-[46%] w-[26%] min-w-[118px] max-w-[150px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] p-1.5 ${ease} group-hover:-translate-y-[54%] ${glass}`}>
+        <div className="flex items-center gap-1.5 px-1 pb-2 pt-0.5">
+          <span className="size-4 rounded-full bg-[linear-gradient(135deg,var(--gx-accent),var(--gx-accent-hi))]" />
+          <span className="h-1.5 w-12 rounded-full bg-white/40" />
+        </div>
+        <div className="aspect-[16/10] overflow-hidden rounded-[9px] bg-[linear-gradient(160deg,#1d2a22,#0a0e0c)]">
+          <div className="h-full w-full bg-[radial-gradient(60%_70%_at_35%_35%,rgb(8_229_47/0.35),transparent_70%)]" />
+        </div>
+        <div className="flex items-center gap-2 px-1 pt-2 text-[0.5625rem] text-white/55">
+          <span className="text-[var(--gx-accent)]">♥</span>
+          <span className="h-1 w-8 rounded-full bg-white/25" />
+          <span className="ml-auto h-1 w-5 rounded-full bg-white/15" />
+        </div>
+      </div>
+
+      {SMM_ORBIT.map(({ Icon, label, pos, hover, delay }) => (
+        <span key={label} className={`absolute ${pos} ${ease} ${hover}`}>
+          <span
+            className={`gx-bob grid size-9 place-items-center rounded-[11px] text-[var(--gx-silver)] transition-colors duration-500 group-hover:text-[var(--gx-accent)] ${glass}`}
+            style={{ animationDelay: delay }}
+          >
+            <Icon className="size-4" />
+          </span>
+        </span>
+      ))}
+
+      <span className={`absolute right-[29%] top-[3%] flex items-center gap-1 rounded-full px-2.5 py-1 text-[0.625rem] font-medium tabular-nums text-[var(--gx-text)] ${ease} group-hover:-translate-y-1 ${glass}`}>
+        <span className="text-[var(--gx-accent)]">♥</span> 2.4k
+      </span>
+      <span className={`absolute bottom-[3%] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.625rem] font-medium tabular-nums text-[var(--gx-accent)] ${ease} group-hover:translate-y-1 ${glass}`}>
+        +312 followers
+      </span>
     </div>
   );
 }

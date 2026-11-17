@@ -52,7 +52,7 @@ export const metadata: Metadata = {
   ...(SITE_URL ? { metadataBase: new URL(SITE_URL), alternates: { canonical: "/" } } : {}),
   title: { absolute: "Grow Xeno — Monetization, growth & web services, verified before handover" },
   description:
-    "YouTube monetization, TikTok growth, Google AdSense, SMM panels, website & app design and Shopify growth. Clear quotes, verified delivery, direct support. Worldwide.",
+    "YouTube monetization, TikTok growth, Google AdSense, social media management, website & app design and Shopify growth. Clear quotes, verified delivery, direct support. Worldwide.",
   openGraph: {
     title: "Grow Xeno — Digital growth services you can verify",
     description: "Monetization, AdSense, social growth and web & store builds — checked before handover, supported after.",

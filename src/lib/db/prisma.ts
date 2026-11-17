@@ -3,6 +3,7 @@ import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { withReadRetry } from "@/lib/db/retry";
 import { getDatabaseEnv } from "@/lib/env";
 
 /**
@@ -98,7 +99,7 @@ function createPrismaClient(): PrismaClient {
     max: 10,
   });
 
-  return new PrismaClient({
+  const client = new PrismaClient({
     adapter,
     /**
      * Prisma's default `maxWait` for acquiring a connection to begin an
@@ -125,6 +126,18 @@ function createPrismaClient(): PrismaClient {
         ? [{ emit: "stdout", level: "warn" }, { emit: "stdout", level: "error" }]
         : [{ emit: "stdout", level: "error" }],
   });
+
+  // Reads that land on a connection the network drop already killed get one
+  // more try on a fresh connection (src/lib/db/retry.ts). Writes are never repeated.
+  return client.$extends({
+    query: {
+      $allModels: {
+        $allOperations({ operation, args, query }) {
+          return withReadRetry(operation, () => query(args));
+        },
+      },
+    },
+  }) as unknown as PrismaClient;
 }
 
 /** Returns the singleton, creating it on first call. Throws if unconfigured. */

@@ -852,3 +852,13 @@ html.lenis body {
   }
   .gx-sheen:hover::after { transition: none; }
 }
+
+/* Home page, social media card: the platform icons float gently in orbit. */
+@keyframes gx-bob {
+  from { transform: translateY(-3px); }
+  to { transform: translateY(3px); }
+}
+.gx-bob { animation: gx-bob 3.2s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) {
+  .gx-bob { animation: none; }
+}

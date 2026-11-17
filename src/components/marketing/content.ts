@@ -53,14 +53,21 @@ export const services: Service[] = [
   },
   {
     id: "smm",
-    name: "Social Media Marketing",
-    short: "SMM panels three ways, plus coaching",
-    audience: "Marketers and resellers building a social media business",
+    name: "Social Media Management",
+    short: "Content, posting and growth across every platform",
+    audience: "Brands and businesses that want an active, growing social presence",
     summary:
-      "SMM panel access the way that suits you (your own panel, a rented panel, or a reseller setup), plus hands-on marketing coaching.",
-    includes: ["Your own SMM panel", "Rented panel access", "Reseller setup", "Hands-on marketing coaching"],
-    target: [["Panel options", "Own · Rent · Resell"], ["Coaching", "Included option"]],
-    outcome: "A working panel setup and the know-how to run it.",
+      "We run your social accounts end to end: content planning, post design, posting on schedule, replying to your audience and paid campaigns, with a monthly report on what grew.",
+    includes: [
+      "Content calendar & post design",
+      "Scheduling & posting across platforms",
+      "Community management (comments & DMs)",
+      "Paid ad campaigns (Meta, LinkedIn)",
+      "Profile setup & optimisation",
+      "Monthly performance report",
+    ],
+    target: [["Platforms", "All major"], ["Reporting", "Monthly"]],
+    outcome: "Consistent, on-brand accounts that grow followers and bring in enquiries.",
   },
   {
     id: "web",
