@@ -1,20 +1,24 @@
 import Link from "next/link";
 
-import { buttonVariants } from "@/components/ui/button";
-import { DASHBOARD_PATH } from "@/lib/routing/hosts";
+import { STATUS_GHOST_CLASS, STATUS_PRIMARY_CLASS, StatusPage } from "@/components/brand/status-page";
+import { DASHBOARD_PATH, SITE_HOME } from "@/lib/routing/hosts";
 
 export default function NotFound() {
   return (
-    <div className="mx-auto max-w-lg px-6 py-20">
-      <h1 className="text-xl font-medium tracking-[-0.01em] text-ink-strong">Not found</h1>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        That page or record does not exist, or you do not have access to it.
-      </p>
-      <div className="mt-6">
-        <Link href={DASHBOARD_PATH} className={buttonVariants({ variant: "secondary" })}>
-          Back to dashboard
-        </Link>
-      </div>
-    </div>
+    <StatusPage
+      code="404"
+      title="Page not found"
+      description="That page or record doesn't exist, or you don't have access to it."
+      actions={
+        <>
+          <Link href={DASHBOARD_PATH} className={STATUS_PRIMARY_CLASS}>
+            Back to dashboard
+          </Link>
+          <Link href={SITE_HOME} className={STATUS_GHOST_CLASS}>
+            Go to website
+          </Link>
+        </>
+      }
+    />
   );
 }

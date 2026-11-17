@@ -45,7 +45,7 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
           </Link>
         </div>
 
-        <div className="gx-auth-rise mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-12">{children}</div>
+        <div className="gx-seq mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-12">{children}</div>
 
         <div className="flex flex-col gap-1.5 border-t border-[var(--gx-line)] pt-5 text-xs leading-relaxed text-[var(--gx-dim)] sm:flex-row sm:items-center sm:justify-between">
           <span>{footer ?? "Need assistance? Contact your coordinator or supervisor for support."}</span>
@@ -59,7 +59,7 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
 /** Eyebrow, large title and one-line description. */
 export function AuthHeading({ title, description }: { title: ReactNode; description?: ReactNode }) {
   return (
-    <div className="mb-10">
+    <div className="gx-stagger mb-10">
       <p className="gx-eyebrow text-[var(--gx-muted)]">Business Manager</p>
       <h1 className="gx-display mt-5 text-[clamp(2.4rem,4vw,3.25rem)] tracking-[-0.045em] text-[var(--gx-text)]">{title}</h1>
       {description ? <p className="mt-3 max-w-[38ch] text-[0.9375rem] leading-relaxed text-[var(--gx-muted)]">{description}</p> : null}
@@ -112,7 +112,7 @@ export function AuthField({
         </p>
       ) : null}
       {error ? (
-        <p id={`${htmlFor}-error`} className="text-xs text-red-300" role="alert">
+        <p id={`${htmlFor}-error`} className="gx-fade text-xs text-red-300" role="alert">
           {error}
         </p>
       ) : null}
@@ -131,7 +131,7 @@ export const AUTH_FIELD_ICON_CLASS = "pl-12";
 
 /** The full-width primary button: electric green with dark text. */
 export const AUTH_BUTTON_CLASS =
-  "group h-[54px] w-full gap-2.5 rounded-full bg-[var(--gx-accent)] px-6 text-[0.9375rem] font-semibold text-[var(--gx-accent-ink)] " +
+  "gx-sheen group h-[54px] w-full gap-2.5 rounded-full bg-[var(--gx-accent)] px-6 text-[0.9375rem] font-semibold text-[var(--gx-accent-ink)] " +
   "shadow-[0_12px_34px_-12px_rgb(8_229_47/0.75)] hover:bg-[var(--gx-accent-hi)] active:bg-[var(--gx-accent-hi)] " +
   "focus-visible:ring-[rgb(8_229_47/0.3)] disabled:opacity-80";
 
@@ -141,7 +141,7 @@ export const AUTH_GHOST_CLASS =
   "text-[var(--gx-text)] transition-colors hover:border-[var(--gx-text)]/40";
 
 /** Error box for a failed submit. */
-export const AUTH_ALERT_CLASS = "rounded-[12px] border border-red-400/30 bg-red-500/10 px-4 py-3 text-[13px] text-red-200";
+export const AUTH_ALERT_CLASS = "gx-shake rounded-[12px] border border-red-400/30 bg-red-500/10 px-4 py-3 text-[13px] text-red-200";
 
 /** Quiet text link. */
 export const AUTH_LINK_CLASS = "font-medium text-[var(--gx-muted)] underline-offset-4 transition-colors hover:text-[var(--gx-text)] hover:underline";

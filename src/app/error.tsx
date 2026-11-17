@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 
-import { Button } from "@/components/ui/button";
+import { STATUS_GHOST_CLASS, STATUS_PRIMARY_CLASS, StatusPage } from "@/components/brand/status-page";
+import { SITE_HOME } from "@/lib/routing/hosts";
 
 /**
  * Global error boundary.
@@ -27,27 +28,29 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-20">
-      <h1 className="text-xl font-medium tracking-[-0.01em] text-ink-strong">Something broke</h1>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        The page could not be loaded. This has been recorded. You can retry, and if it keeps
-        happening, send the reference below to an administrator.
-      </p>
-
+    <StatusPage
+      code="500"
+      title="Something broke"
+      description="The page couldn't be loaded. It has been recorded. Try again, and if it keeps happening, send the reference below to an administrator."
+      actions={
+        <>
+          <button type="button" onClick={reset} className={STATUS_PRIMARY_CLASS}>
+            Try again
+          </button>
+          <a href={SITE_HOME} className={STATUS_GHOST_CLASS}>
+            Go to website
+          </a>
+        </>
+      }
+    >
       {error.digest ? (
-        <p className="mt-4 text-[13px] text-ink-muted">
+        <p className="mt-5 text-[13px] text-[var(--gx-muted)]">
           Reference:{" "}
-          <code className="rounded-[3px] bg-canvas-subtle px-1.5 py-0.5 font-mono text-xs text-ink">
+          <code className="rounded-[6px] border border-[var(--gx-line)] bg-[var(--gx-s2)] px-2 py-0.5 font-mono text-xs text-[var(--gx-text)]">
             {error.digest}
           </code>
         </p>
       ) : null}
-
-      <div className="mt-6">
-        <Button variant="primary" onClick={reset}>
-          Try again
-        </Button>
-      </div>
-    </div>
+    </StatusPage>
   );
 }

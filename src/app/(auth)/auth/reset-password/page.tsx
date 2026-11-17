@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Clock, Mail } from "lucide-react";
 
 import { AUTH_BUTTON_CLASS, AUTH_GHOST_CLASS, AuthHeading, AuthShell } from "@/components/auth/auth-shell";
 import { buttonVariants } from "@/components/ui/button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 import { ResetPasswordForm } from "./reset-password-form";
 
 export const metadata: Metadata = { title: "Set your password" };
@@ -27,24 +27,20 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<"/au
   if (!user) {
     return (
       <AuthShell>
-        <div>
-          <span className="grid size-11 place-items-center rounded-[12px] border border-amber-300/25 bg-amber-400/10 text-amber-300">
-            <Clock aria-hidden="true" className="size-5" />
-          </span>
-          <h1 className="gx-display mt-5 text-[2rem] tracking-[-0.04em] text-[var(--gx-text)]">This link has expired</h1>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--gx-muted)]">
-            Links work once and only for a limited time. Request a new one, or ask your coordinator to resend your
-            invitation.
-          </p>
-          <div className="mt-7 flex flex-col gap-2.5">
-            <Link href="/forgot-password" className={buttonVariants({ variant: "primary", className: AUTH_BUTTON_CLASS })}>
+        <>
+          <AuthHeading
+            title="This link has expired"
+            description="Links work once and only for a limited time. Request a new one, or ask your coordinator to resend your invitation."
+          />
+          <div className="gx-stagger flex flex-col gap-2.5">
+            <Link href="/forgot-password" className={cn(buttonVariants({ variant: "primary", size: "lg" }), AUTH_BUTTON_CLASS)}>
               Request a new link
             </Link>
             <Link href="/login" className={AUTH_GHOST_CLASS}>
               Back to sign in
             </Link>
           </div>
-        </div>
+        </>
       </AuthShell>
     );
   }
@@ -64,10 +60,7 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<"/au
       />
 
       {user.email ? (
-        <div className="mb-6 flex items-center gap-3 rounded-[12px] border border-[var(--gx-line)] bg-[var(--gx-s1)] px-3.5 py-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[rgb(8_229_47/0.12)] text-[var(--gx-accent)]">
-            <Mail aria-hidden="true" className="size-4" />
-          </span>
+        <div className="gx-note -mt-4 mb-8 [--gx-note:var(--gx-line-2)]">
           <div className="min-w-0 leading-tight">
             <p className="gx-eyebrow text-[0.625rem] text-[var(--gx-dim)]">You&apos;ll sign in with</p>
             <p className="mt-0.5 truncate text-sm font-medium text-[var(--gx-text)]">{user.email}</p>

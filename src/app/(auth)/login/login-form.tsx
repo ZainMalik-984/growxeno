@@ -17,7 +17,7 @@ export function LoginForm({ next }: { next?: string }) {
   const [visible, setVisible] = useState(false);
 
   return (
-    <form action={formAction} className="space-y-6" noValidate>
+    <form action={formAction} className="gx-stagger space-y-6" noValidate>
       {next ? <input type="hidden" name="next" value={next} /> : null}
 
       <AuthField label="Email" htmlFor="email" error={state.fieldErrors?.email} icon={<Mail />}>

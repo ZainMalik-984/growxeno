@@ -25,7 +25,7 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
   const strength = passwordStrength(password);
 
   return (
-    <form action={formAction} className="space-y-5" noValidate>
+    <form action={formAction} className="gx-stagger space-y-5" noValidate>
       <AuthField label="Password" htmlFor="password" error={state.fieldErrors?.password} icon={<LockKeyhole />}>
         <div className="relative">
           <Input
@@ -89,7 +89,7 @@ export function ResetPasswordForm({ submitLabel = "Save password" }: { submitLab
         />
       </AuthField>
       {confirm && !state.fieldErrors?.confirmPassword ? (
-        <p className="-mt-3 text-xs">
+        <p className="gx-fade -mt-3 text-xs">
           <Requirement met={matches}>{matches ? "Passwords match" : "Passwords don't match yet"}</Requirement>
         </p>
       ) : null}
