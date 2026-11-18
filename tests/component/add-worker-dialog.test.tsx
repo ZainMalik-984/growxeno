@@ -39,7 +39,7 @@ describe("AddWorkerButton", () => {
     await user.type(screen.getByLabelText(/^Phone/), "+92 300 1234567");
     await user.click(screen.getByLabelText("Same as phone"));
     expect(screen.getByLabelText(/^WhatsApp number/)).toHaveValue("+92 300 1234567");
-    await user.click(screen.getByRole("radio", { name: /^WhatsApp/ }));
+    await user.click(screen.getByRole("radio", { name: "WhatsApp only" }));
     await user.click(screen.getByRole("button", { name: "Add worker" }));
 
     expect(create).toHaveBeenCalledWith({ name: "Inzmam", email: undefined, phone: "+92 300 1234567", whatsappNumber: "+92 300 1234567", notes: undefined, notifyVia: "WHATSAPP" });
