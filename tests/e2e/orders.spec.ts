@@ -88,6 +88,8 @@ async function runOrderLifecycle(page: import("@playwright/test").Page, stamp: n
   // to finish before any field is touched, on this and every other fresh
   // goto() below.
   await page.waitForLoadState("networkidle");
+  // Fiverr is the default source (2026-11-18); this order is external, so no account is needed.
+  await page.getByRole("radio", { name: "External" }).check();
   const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
   await page.getByLabel("Deadline").fill(deadline);
   await page.getByRole("button", { name: "Create order" }).click();

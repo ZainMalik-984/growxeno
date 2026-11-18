@@ -18,7 +18,6 @@ import { CustomerPicker, type SelectedCustomer } from "../customer-picker";
 import {
   FIELD_CLASS,
   FormField,
-  InsetPanel,
   Muted,
   OptionalTag,
   SegmentedControl,
@@ -87,6 +86,23 @@ const blankItem = (key: string): DraftItem => ({
   workerCostCurrency: null,
 });
 
+/** The Fiverr account last used for a new order, on this device only (a convenience, so storage failures are ignored). */
+const LAST_FIVERR_ACCOUNT = "gx:new-order:fiverr-account";
+function recallFiverrAccount(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_FIVERR_ACCOUNT);
+  } catch {
+    return null;
+  }
+}
+function rememberFiverrAccount(id: string) {
+  try {
+    if (id) window.localStorage.setItem(LAST_FIVERR_ACCOUNT, id);
+  } catch {
+    // Private mode or blocked storage: nothing to remember.
+  }
+}
+
 function formatDeadline(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -109,10 +125,21 @@ export function CreateOrderForm({
   const [pending, startTransition] = useTransition();
   const submittingRef = useRef(false);
 
-  const [source, setSource] = useState<Source>("EXTERNAL");
+  // Fiverr by default (owner request, 2026-11-18): most orders come in there. The account
+  // starts on the only one there is, or the one used last on this device.
+  // With no Fiverr account set up yet, External is the only workable start.
+  const [source, setSource] = useState<Source>(fiverrAccounts.length > 0 ? "FIVERR" : "EXTERNAL");
   const [externalReference, setExternalReference] = useState("");
   const [customer, setCustomer] = useState<SelectedCustomer | null>(null);
-  const [fiverrAccountId, setFiverrAccountId] = useState("");
+  const [fiverrAccountId, setFiverrAccountId] = useState(() => (fiverrAccounts.length === 1 ? fiverrAccounts[0]!.id : ""));
+  useEffect(() => {
+    if (fiverrAccounts.length < 2) return;
+    const last = recallFiverrAccount();
+    // Browser storage only exists after hydration, so the remembered account is applied here, once.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (last && fiverrAccounts.some((account) => account.id === last)) setFiverrAccountId((current) => current || last);
+  }, [fiverrAccounts]);
+  const [showNotes, setShowNotes] = useState(false);
   const [totalAmount, setTotalAmount] = useState("");
   const [deadline, setDeadline] = useState("");
   const [notes, setNotes] = useState("");
@@ -335,10 +362,11 @@ export function CreateOrderForm({
         <fieldset disabled={busy} className="min-w-0 space-y-5 max-sm:space-y-3">
           {/* ── A. Order details (primary) ─────────────────────────────── */}
           {/* Phones: full-width bands with no boxes inside boxes (2026-11-12). */}
-          <Card className={cn("border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-12px_rgba(16,24,40,0.12)] sm:p-7", PHONE_SECTION)}>
-            <CardHeader icon={ClipboardList} tone="indigo" title="Order details" description="Where it came from and who it's for." />
+          {/* Compact (2026-11-18, owner request): source, account and reference on one row; hints only where they matter. */}
+          <Card className={cn("border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-12px_rgba(16,24,40,0.12)] sm:p-6", PHONE_SECTION)}>
+            <CardHeader icon={ClipboardList} tone="indigo" title="Order details" />
 
-            <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
+            <div className="-mt-2 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]">
               <div className="min-w-0 space-y-1.5">
                 <p id="order-source-label" className="text-[13px] font-medium text-zinc-800">
                   Source
@@ -352,62 +380,65 @@ export function CreateOrderForm({
                 />
               </div>
 
+              {source === "FIVERR" ? (
+                <FormField
+                  label="Fiverr account"
+                  htmlFor="order-fiverr-account"
+                  hint={
+                    fiverrAccounts.length === 0 ? (
+                      <>
+                        None set up yet.{" "}
+                        <Link href="/fiverr-accounts/new" className="font-medium text-indigo-600 hover:underline">
+                          Add a Fiverr account
+                        </Link>
+                      </>
+                    ) : undefined
+                  }
+                  error={errors.fiverrAccount}
+                >
+                  <Select
+                    id="order-fiverr-account"
+                    className={FIELD_CLASS}
+                    value={fiverrAccountId}
+                    disabled={fiverrAccounts.length === 0}
+                    aria-invalid={Boolean(errors.fiverrAccount) || undefined}
+                    aria-describedby={errors.fiverrAccount ? "order-fiverr-account-error" : undefined}
+                    onChange={(event) => {
+                      setFiverrAccountId(event.target.value);
+                      rememberFiverrAccount(event.target.value);
+                      clearError("fiverrAccount");
+                    }}
+                  >
+                    <option value="">Choose an account…</option>
+                    {fiverrAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              ) : null}
+
               <FormField
-                label="Reference"
+                label={source === "FIVERR" ? "Fiverr order #" : "Reference"}
                 htmlFor="order-external-reference"
                 tag={<OptionalTag />}
-                hint={source === "FIVERR" ? "The Fiverr order number." : "Your own order or invoice number."}
+                className={source === "FIVERR" ? undefined : "lg:col-span-2"}
               >
                 <Input
                   id="order-external-reference"
                   className={FIELD_CLASS}
-                  placeholder={source === "FIVERR" ? "e.g. FO81A2B3C4D5" : "e.g. INV-1042"}
+                  placeholder={source === "FIVERR" ? "FO81A2B3C4D5" : "Your order or invoice no."}
                   value={externalReference}
                   onChange={(event) => setExternalReference(event.target.value)}
-                  aria-describedby="order-external-reference-hint"
                 />
               </FormField>
-
-              {source === "FIVERR" ? (
-                <InsetPanel className="sm:col-span-2">
-                  <FormField
-                    label="Fiverr account"
-                    htmlFor="order-fiverr-account"
-                    hint={fiverrAccounts.length === 0 ? "No Fiverr accounts are set up yet." : "The profile this order came in on."}
-                    error={errors.fiverrAccount}
-                    className="sm:max-w-[calc(50%-10px)]"
-                  >
-                    <Select
-                      id="order-fiverr-account"
-                      className={FIELD_CLASS}
-                      value={fiverrAccountId}
-                      disabled={fiverrAccounts.length === 0}
-                      aria-invalid={Boolean(errors.fiverrAccount) || undefined}
-                      aria-describedby={errors.fiverrAccount ? "order-fiverr-account-error" : "order-fiverr-account-hint"}
-                      onChange={(event) => {
-                        setFiverrAccountId(event.target.value);
-                        clearError("fiverrAccount");
-                      }}
-                    >
-                      <option value="">Choose an account…</option>
-                      {fiverrAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormField>
-                </InsetPanel>
-              ) : null}
-
-              <div className="h-px bg-zinc-100 sm:col-span-2" aria-hidden="true" />
 
               <FormField
                 label="Customer"
                 htmlFor="order-customer"
                 tag={<OptionalTag />}
-                hint={canCreateCustomer ? "Search by name, or create a new customer." : "Search by name."}
-                className="sm:col-span-2"
+                className="sm:col-span-2 lg:col-span-3"
               >
                 <CustomerPicker
                   id="order-customer"
@@ -448,16 +479,16 @@ export function CreateOrderForm({
                     Needed before processing
                   </span>
                 }
-                hint="Can be left empty for now."
                 error={errors.deadline}
+                className="lg:col-span-2"
               >
                 <Input
                   id="order-deadline"
-                  className={FIELD_CLASS}
+                  className={cn(FIELD_CLASS, "lg:max-w-xs")}
                   type="datetime-local"
                   value={deadline}
                   aria-invalid={Boolean(errors.deadline) || undefined}
-                  aria-describedby={errors.deadline ? "order-deadline-error" : "order-deadline-hint"}
+                  aria-describedby={errors.deadline ? "order-deadline-error" : undefined}
                   onChange={(event) => {
                     setDeadline(event.target.value);
                     clearError("deadline");
@@ -465,26 +496,37 @@ export function CreateOrderForm({
                 />
               </FormField>
 
-              <FormField label="Notes" htmlFor="order-notes" tag={<OptionalTag />} className="sm:col-span-2">
-                <Textarea
-                  id="order-notes"
-                  className={TEXTAREA_CLASS}
-                  rows={3}
-                  placeholder="Anything the team should know about this order"
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                />
-              </FormField>
+              {showNotes ? (
+                <FormField label="Notes" htmlFor="order-notes" tag={<OptionalTag />} className="sm:col-span-2 lg:col-span-3">
+                  <Textarea
+                    id="order-notes"
+                    className={TEXTAREA_CLASS}
+                    rows={2}
+                    autoFocus
+                    placeholder="Anything the team should know about this order"
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                  />
+                </FormField>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowNotes(true)}
+                  className="inline-flex w-fit items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 sm:col-span-2 lg:col-span-3"
+                >
+                  <Plus aria-hidden="true" className="size-3.5" /> Add notes
+                </button>
+              )}
             </div>
           </Card>
 
           {/* ── B. Items (optional, secondary) ─────────────────────────── */}
-          <Card className={cn("border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-7", PHONE_SECTION)}>
+          <Card className={cn("border-zinc-200/80 p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-6", PHONE_SECTION)}>
             <CardHeader
               icon={PackagePlus}
               tone="emerald"
               title="Items"
-              description="Add services now, or later from the order page. Duplicate an item to reuse its link with another service."
+              description="Add now or later. Duplicate one to reuse its link."
               actions={
                 <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200">
                   Optional
