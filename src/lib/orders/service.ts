@@ -677,6 +677,8 @@ export async function assignOrderItemWorker(
     });
     // The previous worker's private split among their own team goes with the item (2026-11-17).
     if (reassigned) await clearTeamShares(tx, itemId);
+    // Pay marked as paid belonged to the previous worker (2026-11-18).
+    if (reassigned) await tx.orderItem.update({ where: { id: itemId }, data: { workerPaidAt: null, workerPaidById: null } });
 
     const summary = assigneeName
       ? `Assigned "${item.service.name}" on order #${item.order.orderNumber} to ${assigneeName}${cost ? ` at ${cost} ${costCurrency}` : ""}`
@@ -893,6 +895,58 @@ export async function acceptItemDelivery(actor: Actor, itemId: string): Promise<
  * aggregate progress bar on the orders list clamps per item, for the bar
  * itself to never visually exceed full.
  */
+/**
+ * Mark an item's worker pay as already paid, or undo it (owner request,
+ * 2026-11-18). A flag only: no payment record is created, and the item's pay
+ * is simply left out of the worker's earnings and balance
+ * (src/lib/finance/queries.ts, getWorkerEarnings). The order's cost and profit
+ * figures are unchanged: the work still cost what it cost.
+ */
+export async function setItemWorkerPaid(actor: Actor, itemId: string, paid: boolean): Promise<ServiceResult> {
+  return runTransaction(async (tx) => {
+    const item = await tx.orderItem.findUnique({
+      where: { id: itemId },
+      select: {
+        orderId: true,
+        workerCost: true,
+        workerCostCurrency: true,
+        workerPaidAt: true,
+        order: { select: { orderNumber: true } },
+        service: { select: { name: true } },
+        category: { select: { name: true } },
+        outsourcedWorker: { select: { name: true } },
+        worker: { select: { fullName: true } },
+      },
+    });
+    if (!item) throw new ServiceRejection("That item no longer exists.");
+    const who = item.outsourcedWorker?.name ?? item.worker?.fullName ?? null;
+    if (!who) throw new ServiceRejection("No worker is assigned to this item.");
+    if (paid && !item.workerCost) throw new ServiceRejection("This item has no worker pay to mark as paid.");
+    if (paid === (item.workerPaidAt !== null)) return;
+
+    await tx.orderItem.update({
+      where: { id: itemId },
+      data: paid ? { workerPaidAt: new Date(), workerPaidById: actor.user.id } : { workerPaidAt: null, workerPaidById: null },
+    });
+
+    const label = serviceLabel(item.service.name, item.category.name);
+    const pay = item.workerCost ? `${item.workerCost.toString()} ${item.workerCostCurrency}` : "the pay";
+    const summary = paid
+      ? `Marked ${pay} for "${label}" on order #${item.order.orderNumber} as paid to ${who}`
+      : `Marked ${pay} for "${label}" on order #${item.order.orderNumber} as not paid to ${who} yet`;
+    await logActivity(tx, item.orderId, actor, paid ? "order_item.worker_paid" : "order_item.worker_unpaid", summary);
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: paid ? "order_item.worker_paid" : "order_item.worker_unpaid",
+      entityType: "Order",
+      entityId: item.orderId,
+      summary,
+      newValue: { itemId, paid },
+    });
+  });
+}
+
 export async function updateOrderItemProgress(
   actor: Actor,
   itemId: string,
@@ -1366,7 +1420,7 @@ export async function rejectTask(actor: Actor, itemId: string, reason: string): 
 
     await tx.orderItem.update({
       where: { id: itemId },
-      data: { workerId: null, outsourcedWorkerId: null, assignedById: null, assignedAt: null, workerCost: null },
+      data: { workerId: null, outsourcedWorkerId: null, assignedById: null, assignedAt: null, workerCost: null, workerPaidAt: null, workerPaidById: null },
     });
     await clearTeamShares(tx, itemId);
 

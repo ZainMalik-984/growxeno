@@ -348,6 +348,12 @@ model OrderItem {
   deliveryAcceptedAt   DateTime? @map("delivery_accepted_at") @db.Timestamptz(6)
   deliveryAcceptedById String?   @map("delivery_accepted_by_id") @db.Uuid
 
+  /// The worker has already been paid for this item (owner request, 2026-11-18), so its pay is
+  /// left out of their earnings and balance. A flag only: no payment record is created. Cleared
+  /// when the item is reassigned.
+  workerPaidAt   DateTime? @map("worker_paid_at") @db.Timestamptz(6)
+  workerPaidById String?   @map("worker_paid_by_id") @db.Uuid
+
   /// Public stats pulled from the platform for `channelLink` (owner request,
   /// 2026-11-10; YouTube only so far, see src/lib/youtube/). The resolved
   /// channel (UC…) or video id, its kind ("CHANNEL" | "VIDEO") and title.

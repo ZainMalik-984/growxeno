@@ -342,7 +342,8 @@ export async function getWorkerEarnings(worker: { workerId?: string; outsourcedW
 
   const [items, payments] = await Promise.all([
     prisma.orderItem.findMany({
-      where: { ...itemWhere, workerCost: { not: null } },
+      // Items marked as already paid (2026-11-18) are left out of earnings and the balance.
+      where: { ...itemWhere, workerCost: { not: null }, workerPaidAt: null },
       select: { workerCost: true, workerCostCurrency: true, status: true, deliveryAcceptedAt: true },
     }),
     prisma.workerPayment.findMany({ where: paymentWhere, select: { amount: true, currency: true } }),

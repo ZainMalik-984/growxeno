@@ -559,7 +559,7 @@ function toTaskRow(task: WorkerTask, canChangeItemStatus: boolean, unreadByItem:
     progressPercent: progress?.percent ?? null,
     // Progress as the worker sees it: what they delivered since the task started, out of what was asked (2026-11-11).
     ...deliveredOf(task),
-    earningsLabel: task.workerCost ? formatPay(task.workerCost, task.workerCostCurrency) : null,
+    earningsLabel: task.workerCost ? `${task.workerPaid ? "Paid " : ""}${formatPay(task.workerCost, task.workerCostCurrency)}` : null,
     description: task.description,
     stats: task.stats
       ? // Only what the service follows (2026-11-13).

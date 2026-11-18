@@ -44,7 +44,7 @@ to `/login` by the proxy and refused again by the handler itself.
 
 ## Server Actions
 
-101 actions across 16 files. "Requires" is the permission key checked before any data is touched.
+102 actions across 16 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -123,6 +123,7 @@ removed entirely along with `src/lib/buyers/*`, post-Phase-10 (2026-09-28, owner
 | `getAssignmentMessageAction` | `orders.assign` — "Message worker": the prefilled WhatsApp link again; `resendEmail: true` sends the email once more (logged in `message_logs`) |
 | `changeOrderItemStatusAction` | `orders.change_status`; marking done reads YouTube first, and a worker can mark a YouTube subscribers/views/likes/comments item done only once the count reaches the target |
 | `acceptItemDeliveryAction` | `orders.change_status` + `orders.view.all` — accepts a done item's delivery, which puts its pay in the worker's balance; notifies the worker |
+| `setItemWorkerPaidAction` | `finance.worker_payments.manage` — marks an item's worker pay as already paid, or not (2026-11-18). A flag only: the item's pay is left out of the worker's earnings and balance; no payment record is created. Needs an assigned worker and, to mark paid, a pay amount. Logged in the order's activity and the audit log |
 | `updateOrderItemProgressAction` | `orders.change_status` — narrowed further in the service to the assigned worker (their own item only) or `orders.view.all` |
 | `cancelOrderItemWithAdjustedCostAction` | `orders.change_status` |
 | `rejectTaskAction` | `orders.change_status`, then only the item's assigned worker, and only before accepting: unassigns the task (no worker, no cost), notifies the team with the optional reason (2026-11-12) |

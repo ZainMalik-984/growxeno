@@ -238,6 +238,7 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
               canViewAll={canViewAll}
               canUploadOwn={canUploadOwn}
               showCosts={visibility.costs}
+              canMarkPaid={actor.permissions.has("finance.worker_payments.manage")}
               openUpdatesId={openUpdatesId}
             />
           </Card>

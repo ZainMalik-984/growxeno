@@ -5,6 +5,7 @@ import type { OrderItemStatus } from "@/generated/prisma/client";
 import {
   Ban,
   Camera,
+  Banknote,
   CheckCircle2,
   Hourglass,
   ChevronRight,
@@ -60,6 +61,7 @@ import {
   reassignRemainderAction,
   cancelOrderItemWithAdjustedCostAction,
   acceptItemDeliveryAction,
+  setItemWorkerPaidAction,
   changeOrderItemStatusAction,
   removeOrderItemAction,
   removeOrderItemLinkAction,
@@ -188,6 +190,7 @@ export function OrderItemsPanel({
   canViewAll,
   canUploadOwn,
   showCosts,
+  canMarkPaid = false,
   openUpdatesId = null,
   unreadByItem = {},
 }: {
@@ -209,6 +212,8 @@ export function OrderItemsPanel({
   canUploadOwn: boolean;
   /** False for an actor who may not see what workers are paid. */
   showCosts: boolean;
+  /** `finance.worker_payments.manage`: may mark an item's worker pay as already paid (2026-11-18). */
+  canMarkPaid?: boolean;
   /** An item whose updates open on load (from a notification, 2026-11-11). */
   openUpdatesId?: string | null;
 }) {
@@ -323,6 +328,18 @@ export function OrderItemsPanel({
   const acceptDelivery = (itemId: string) => {
     startTransition(async () => {
       const result = await acceptItemDeliveryAction({ itemId });
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  };
+
+  const setWorkerPaid = (itemId: string, paid: boolean) => {
+    startTransition(async () => {
+      const result = await setItemWorkerPaidAction({ itemId, paid });
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
@@ -507,6 +524,14 @@ export function OrderItemsPanel({
                             onSelect: () => (status === "CANCELLED" && item.outsourcedWorker ? setCancelDialogItem(item) : changeStatus(item.id, status)),
                           });
                         }
+                        // Already paid outside the payments list (2026-11-18): left out of the worker's earnings.
+                        if (canMarkPaid && showCosts && item.workerCost && (item.outsourcedWorker || item.worker)) {
+                          menu.push(
+                            item.workerPaidAt
+                              ? { label: "Mark worker not paid", icon: RotateCcw, disabled: pending, onSelect: () => setWorkerPaid(item.id, false) }
+                              : { label: "Mark worker paid", icon: Banknote, disabled: pending, onSelect: () => setWorkerPaid(item.id, true) },
+                          );
+                        }
                         if (canEdit) menu.push({ label: "Edit item", icon: Pencil, onSelect: () => openEdit(item) });
                         const danger: ActionMenuItem[] = [];
                         if (workerView && canPostUpdate && (item.status === "PROCESSING" || item.status === "REFILL")) {
@@ -556,8 +581,11 @@ export function OrderItemsPanel({
                       <span className="font-medium text-zinc-900">{item.outsourcedWorker?.name ?? item.worker?.fullName ?? "Nobody yet"}</span>
                       {showCosts && item.workerCost ? <span className="text-zinc-500"> · {item.workerCost} {item.workerCostCurrency}</span> : null}
                       {!showCosts && asAssignedWorkerOnly && item.workerCost ? (
-                        <span className="ml-1.5 font-semibold tabular-nums text-emerald-700">You earn {formatPay(item.workerCost, item.workerCostCurrency)}</span>
+                        <span className="ml-1.5 font-semibold tabular-nums text-emerald-700">
+                          {item.workerPaidAt ? "Paid" : "You earn"} {formatPay(item.workerCost, item.workerCostCurrency)}
+                        </span>
                       ) : null}
+                      {item.workerPaidAt && item.workerCost && showCosts ? <PaidBadge /> : null}
                       {item.assignedAt && (item.outsourcedWorker || item.worker) ? (
                         <AssignedSince assignedAt={item.assignedAt} finishedAt={item.status === "DONE" ? item.finishedAt : null} />
                       ) : null}
@@ -1563,5 +1591,15 @@ function ItemLinks({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** Worker pay already paid (2026-11-18): it no longer counts in their earnings. */
+function PaidBadge() {
+  return (
+    <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+      <CheckCircle2 aria-hidden="true" className="size-3" />
+      Paid
+    </span>
   );
 }

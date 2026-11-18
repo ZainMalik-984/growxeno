@@ -7,6 +7,7 @@ import { authorizeAction } from "@/lib/auth/authorize";
 import { canChangeWholeOrderStatus } from "./visibility";
 import {
   acceptItemDelivery,
+  setItemWorkerPaid,
   addOrderItem,
   addOrderItemLink,
   addOrderNote,
@@ -363,6 +364,20 @@ const updateItemProgressSchema = z.object({
   itemId: uuid,
   currentCount: z.number().int().min(0, "Enter a whole number, zero or more."),
 });
+
+const itemPaidSchema = z.object({ itemId: uuid, paid: z.boolean() });
+
+/** Mark an item's worker pay as paid, or not (2026-11-18): left out of the worker's earnings. */
+export async function setItemWorkerPaidAction(input: unknown): Promise<ActionResult> {
+  const parsed = itemPaidSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("finance.worker_payments.manage");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await setItemWorkerPaid(auth.actor, parsed.data.itemId, parsed.data.paid);
+  return result.ok ? { ok: true, message: parsed.data.paid ? "Marked as paid." : "Marked as not paid." } : { ok: false, error: result.error };
+}
 
 export async function updateOrderItemProgressAction(input: unknown): Promise<ActionResult> {
   const parsed = updateItemProgressSchema.safeParse(input);

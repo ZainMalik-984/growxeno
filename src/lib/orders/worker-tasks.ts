@@ -29,6 +29,8 @@ export type WorkerTask = {
   metricType: ServiceMetricType | null;
   /** The team accepted this done task's delivery (2026-11-12). */
   deliveryAccepted: boolean;
+  /** The team marked this task's pay as already paid (2026-11-18). */
+  workerPaid: boolean;
   status: OrderItemStatus;
   description: string | null;
   channelLink: string | null;
@@ -122,6 +124,7 @@ export async function listWorkerTasks(
         startingCount: true,
         workerCost: true,
         workerCostCurrency: true,
+        workerPaidAt: true,
         order: { select: { orderNumber: true } },
         service: { select: { name: true, metricType: true, trackedStats: true } },
         category: { select: { name: true, imagePath: true } },
@@ -161,6 +164,7 @@ export async function listWorkerTasks(
       metricType,
       trackedStats: effectiveTrackedStats(item.service.trackedStats, metricType),
       deliveryAccepted: item.deliveryAcceptedAt !== null,
+      workerPaid: item.workerPaidAt !== null,
       status: item.status,
       description: item.description,
       channelLink: item.channelLink,
