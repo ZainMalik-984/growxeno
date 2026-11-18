@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { buttonVariants } from "@/components/ui/button";
 import { Breadcrumbs, EmptyState, PageHeader, Section } from "@/components/ui/page";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { requirePermission } from "@/lib/auth/authorize";
 import { listOutsourcedWorkers } from "@/lib/outsourced-workers/queries";
+import { AddWorkerButton } from "./add-worker-dialog";
 
 export const metadata: Metadata = { title: "Outsourced Workers" };
 
@@ -15,8 +15,10 @@ export const metadata: Metadata = { title: "Outsourced Workers" };
  * for Order Items, not an actor in the system. See
  * `prisma/schema/orders.prisma`'s `OutsourcedWorker` doc comment.
  */
-export default async function OutsourcedWorkersPage() {
+export default async function OutsourcedWorkersPage({ searchParams }: PageProps<"/outsourced-workers">) {
   const actor = await requirePermission("outsourced_workers.view");
+  const params = await searchParams;
+  const canCreate = actor.permissions.has("outsourced_workers.create");
   const workers = await listOutsourcedWorkers({ includeInactive: true });
 
   return (
@@ -26,11 +28,8 @@ export default async function OutsourcedWorkersPage() {
         title="Outsourced Workers"
         description="Third parties who fulfil Order Items, with no application login of their own."
         actions={
-          actor.permissions.has("outsourced_workers.create") ? (
-            <Link href="/outsourced-workers/new" className={buttonVariants({ variant: "primary" })}>
-              New worker
-            </Link>
-          ) : undefined
+          // Adding a worker is a popup on this page (2026-11-18); /outsourced-workers/new opens it via ?new=1.
+          canCreate ? <AddWorkerButton openOnLoad={params.new === "1"} /> : undefined
         }
       />
 

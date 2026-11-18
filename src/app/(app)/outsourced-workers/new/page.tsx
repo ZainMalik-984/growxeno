@@ -1,28 +1,12 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { Breadcrumbs, PageHeader, Section } from "@/components/ui/page";
 import { requirePermission } from "@/lib/auth/authorize";
-import { CreateOutsourcedWorkerForm } from "./create-outsourced-worker-form";
 
-export const metadata: Metadata = { title: "New outsourced worker" };
-
+/**
+ * Adding a worker is a popup on the Outsourced Workers list now (2026-11-18).
+ * Old links and bookmarks to this page open that popup.
+ */
 export default async function NewOutsourcedWorkerPage() {
   await requirePermission("outsourced_workers.create");
-
-  return (
-    <>
-      <Breadcrumbs
-        items={[
-          { label: "Workforce" },
-          { label: "Outsourced Workers", href: "/outsourced-workers" },
-          { label: "New" },
-        ]}
-      />
-      <PageHeader title="New outsourced worker" description="No application account is created — this is a cost-tracking contact only." />
-
-      <Section>
-        <CreateOutsourcedWorkerForm />
-      </Section>
-    </>
-  );
+  redirect("/outsourced-workers?new=1");
 }
