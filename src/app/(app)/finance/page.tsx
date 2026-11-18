@@ -8,6 +8,7 @@ import { resolveStatsRange, type RangePreset } from "@/lib/daily-stats/date-rang
 import { formatCurrencyBreakdown } from "@/lib/finance/money";
 import { getFinanceSummary } from "@/lib/finance/queries";
 import { FinanceRangeBar } from "./finance-range-bar";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Finance" };
 
@@ -28,7 +29,7 @@ const searchParamsSchema = z.object({
 export default async function FinanceOverviewPage({ searchParams }: PageProps<"/finance">) {
   const actor = await requirePermission("finance.view");
   const raw = await searchParams;
-  const params = searchParamsSchema.parse(raw);
+  const params = parseQuery(searchParamsSchema, raw);
   // Default to 30 days here (unlike Daily Statistics' 7-day default) — a
   // monthly view is the more natural first look for revenue/profit.
   const range = resolveStatsRange((params.range ?? "30d") as RangePreset, { from: params.from, to: params.to });

@@ -9,12 +9,15 @@ import { requirePermission } from "@/lib/auth/authorize";
 import { permissionsByModule } from "@/lib/permissions/catalog";
 import { RoleActions } from "./role-actions";
 import { RolePermissionEditor } from "./role-permission-editor";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Role" };
 
 export default async function RoleDetailPage({ params }: PageProps<"/settings/roles/[id]">) {
   const actor = await requirePermission("roles.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const role = await getRoleDetail(id);
   if (!role) notFound();

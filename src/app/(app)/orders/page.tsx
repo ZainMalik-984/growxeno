@@ -47,6 +47,7 @@ import { OrdersBoard, type BoardCard } from "./orders-board";
 import { OrdersTable, type OrdersTableRow } from "./orders-table";
 import { channelLinks, shortLink, toOrdersTableRows } from "./order-table-rows";
 import { LoadMoreOnScroll } from "./load-more";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Orders" };
 
@@ -91,7 +92,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   const { actor, scope } = await requireScope("orders.view");
 
   const raw = await searchParams;
-  const params = searchParamsSchema.parse(raw);
+  const params = parseQuery(searchParamsSchema, raw);
 
   // What this actor may see — see src/lib/orders/visibility.ts. Filters and columns they may not
   // see are neither loaded nor rendered, so the names/amounts never reach their browser.

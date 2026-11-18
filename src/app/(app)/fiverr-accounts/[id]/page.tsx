@@ -7,12 +7,15 @@ import { getFiverrAccountDetail } from "@/lib/fiverr-accounts/queries";
 import { FiverrAccountForm } from "../fiverr-account-form";
 import { FiverrAccountActivationControl } from "./fiverr-account-activation-control";
 import { GigManager } from "./gig-manager";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Fiverr account" };
 
 export default async function FiverrAccountDetailPage({ params }: PageProps<"/fiverr-accounts/[id]">) {
   const actor = await requirePermission("fiverr_accounts.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const account = await getFiverrAccountDetail(id);
   if (!account) notFound();

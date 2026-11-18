@@ -9,6 +9,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { requirePermission } from "@/lib/auth/authorize";
 import { CUSTOMERS_PAGE_SIZE, listCustomers, MAX_PAGE_SIZE } from "@/lib/customers/queries";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Customers" };
 
@@ -25,7 +26,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
   const actor = await requirePermission("customers.view");
 
   const raw = await searchParams;
-  const params = searchParamsSchema.parse({
+  const params = parseQuery(searchParamsSchema, {
     q: typeof raw.q === "string" ? raw.q : undefined,
     page: raw.page ?? 1,
     size: raw.size ?? CUSTOMERS_PAGE_SIZE,

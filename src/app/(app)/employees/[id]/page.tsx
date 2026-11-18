@@ -21,6 +21,7 @@ import { CLOSED_ORDER_STATUSES, ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS } 
 import { ITEM_STATUS_TONE, ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
 import { ActivityTabs } from "./activity-tabs";
 import { EditProfileButton } from "./edit-profile-dialog";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Employee profile" };
 
@@ -39,6 +40,8 @@ const dayFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZo
 export default async function EmployeeProfilePage({ params }: PageProps<"/employees/[id]">) {
   const actor = await requireActor();
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const isSelf = actor.user.id === id;
   const canViewAll = actor.permissions.has("employees.view.all");

@@ -33,6 +33,7 @@ import { OrderNotesButton } from "./order-notes-button";
 import { OrderDetailsCard } from "./order-details-card";
 import { OrderStatusActions } from "./order-status-actions";
 import { OrderStatusStepper } from "./order-status-stepper";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Order" };
 
@@ -41,6 +42,8 @@ const dateFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeS
 export default async function OrderDetailPage({ params, searchParams }: PageProps<"/orders/[id]">) {
   const actor = await requirePermission("orders.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
   // An item's updates opened from a notification (2026-11-11).
   const rawUpdates = (await searchParams).updates;
   const openUpdatesId = typeof rawUpdates === "string" && /^[0-9a-f-]{36}$/i.test(rawUpdates) ? rawUpdates : null;

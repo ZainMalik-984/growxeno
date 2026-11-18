@@ -13,6 +13,7 @@ import { listAssignableCategories } from "@/lib/categories/queries";
 import { requirePermission } from "@/lib/auth/authorize";
 import { SERVICE_METRIC_TYPE_LABELS } from "@/lib/services/metric-type";
 import { listServices, MAX_PAGE_SIZE, SERVICES_PAGE_SIZE } from "@/lib/services/queries";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Services" };
 
@@ -28,7 +29,7 @@ export default async function ServicesPage({ searchParams }: PageProps<"/service
   const actor = await requirePermission("services.view");
 
   const raw = await searchParams;
-  const params = searchParamsSchema.parse({
+  const params = parseQuery(searchParamsSchema, {
     q: typeof raw.q === "string" ? raw.q : undefined,
     category: typeof raw.category === "string" ? raw.category : undefined,
     page: raw.page ?? 1,

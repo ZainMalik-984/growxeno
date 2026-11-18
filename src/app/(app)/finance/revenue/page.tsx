@@ -9,6 +9,7 @@ import { resolveStatsRange, type RangePreset } from "@/lib/daily-stats/date-rang
 import { formatCurrencyBreakdown } from "@/lib/finance/money";
 import { getFinanceSummary, listRecognizedOrders } from "@/lib/finance/queries";
 import { FinanceRangeBar } from "../finance-range-bar";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Revenue" };
 
@@ -24,7 +25,7 @@ const searchParamsSchema = z.object({
 export default async function RevenuePage({ searchParams }: PageProps<"/finance/revenue">) {
   await requirePermission("finance.revenue.view");
   const raw = await searchParams;
-  const params = searchParamsSchema.parse(raw);
+  const params = parseQuery(searchParamsSchema, raw);
   const range = resolveStatsRange((params.range ?? "30d") as RangePreset, { from: params.from, to: params.to });
 
   const [summary, orders] = await Promise.all([getFinanceSummary(range), listRecognizedOrders(range)]);

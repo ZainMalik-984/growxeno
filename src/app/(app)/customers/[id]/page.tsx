@@ -17,6 +17,7 @@ import { toOrdersTableRows } from "../../orders/order-table-rows";
 import { OrdersTable } from "../../orders/orders-table";
 import { CustomerDeleteControl } from "./customer-delete-control";
 import { CustomerEditButton } from "./customer-profile-form";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Customer" };
 
@@ -33,6 +34,8 @@ const moneyFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 })
 export default async function CustomerDetailPage({ params }: PageProps<"/customers/[id]">) {
   const actor = await requirePermission("customers.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const customer = await getCustomerDetail(id);
   if (!customer) notFound();

@@ -23,6 +23,7 @@ import { DailyStatsFilterBar } from "./daily-stats-filter-bar";
 import { DailyStatForm, EditDailyStatButton } from "./daily-stat-form";
 import { DeleteDailyStatButton } from "./daily-stat-delete-button";
 import { DASHBOARD_PATH } from "@/lib/routing/hosts";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Daily Statistics" };
 
@@ -41,7 +42,7 @@ const searchParamsSchema = z.object({
 export default async function DailyStatsPage({ searchParams }: PageProps<"/daily-stats">) {
   const { actor, scope } = await requireScope("daily_stats.view");
   const raw = await searchParams;
-  const params = searchParamsSchema.parse(raw);
+  const params = parseQuery(searchParamsSchema, raw);
 
   const statScope: DailyStatScope = scope === "ALL" ? { mode: "ALL" } : { mode: "OWN", userId: actor.user.id };
   const range = resolveStatsRange(params.range as RangePreset | undefined, { from: params.from, to: params.to });

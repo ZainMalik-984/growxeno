@@ -9,6 +9,7 @@ import { FINANCE_PAGE_SIZE, listWorkerPayments, MAX_PAGE_SIZE } from "@/lib/fina
 import { listAssignableWorkers } from "@/lib/orders/queries";
 import { listAssignableOutsourcedWorkers } from "@/lib/outsourced-workers/queries";
 import { WorkerPaymentForm, EditWorkerPaymentButton } from "./worker-payment-form";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Worker Payments" };
 
@@ -22,7 +23,7 @@ const searchParamsSchema = z.object({
 export default async function WorkerPaymentsPage({ searchParams }: PageProps<"/finance/worker-payments">) {
   const actor = await requirePermission("finance.worker_payments.view");
   const raw = await searchParams;
-  const params = searchParamsSchema.parse(raw);
+  const params = parseQuery(searchParamsSchema, raw);
 
   const canManage = actor.permissions.has("finance.worker_payments.manage");
 

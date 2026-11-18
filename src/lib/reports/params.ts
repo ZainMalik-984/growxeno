@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { resolveStatsRange, type RangePreset } from "@/lib/daily-stats/date-ranges";
 import { chooseBucket, clampRange, type Bucket } from "./range";
+import { parseQuery } from "@/lib/validation/url-params";
 
 const searchParamsSchema = z.object({
   range: z.enum(["today", "7d", "30d", "90d", "custom"]).catch("30d").optional(),
@@ -15,7 +16,7 @@ export function resolveReportRange(raw: Record<string, string | string[] | undef
   bucket: Bucket;
   clamped: boolean;
 } {
-  const params = searchParamsSchema.parse({
+  const params = parseQuery(searchParamsSchema, {
     range: typeof raw.range === "string" ? raw.range : undefined,
     from: typeof raw.from === "string" ? raw.from : undefined,
     to: typeof raw.to === "string" ? raw.to : undefined,

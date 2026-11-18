@@ -11,6 +11,7 @@ import { listAssignableWorkers } from "@/lib/orders/queries";
 import { CategoryActiveToggle } from "./category-active-toggle";
 import { CategoryManager } from "./category-manager";
 import { ExpenseForm, EditExpenseButton } from "./expense-form";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Expenses" };
 
@@ -24,7 +25,7 @@ const searchParamsSchema = z.object({
 export default async function ExpensesPage({ searchParams }: PageProps<"/finance/expenses">) {
   const actor = await requirePermission("finance.expenses.view");
   const raw = await searchParams;
-  const params = searchParamsSchema.parse(raw);
+  const params = parseQuery(searchParamsSchema, raw);
 
   const canCreate = actor.permissions.has("finance.expenses.create");
   const canEdit = actor.permissions.has("finance.expenses.edit");

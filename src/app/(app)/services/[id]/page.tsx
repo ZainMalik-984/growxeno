@@ -8,6 +8,7 @@ import { requirePermission } from "@/lib/auth/authorize";
 import { getServiceDetail } from "@/lib/services/queries";
 import { ServiceActions } from "./service-actions";
 import { ServiceProfileForm } from "./service-profile-form";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Service" };
 
@@ -20,6 +21,8 @@ const dateFormat = new Intl.DateTimeFormat("en-GB", {
 export default async function ServiceDetailPage({ params }: PageProps<"/services/[id]">) {
   const actor = await requirePermission("services.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const service = await getServiceDetail(id);
   if (!service) notFound();

@@ -9,6 +9,7 @@ import { PERMISSION_CATALOG } from "@/lib/permissions/catalog";
 import { AccessMatrix } from "./access-matrix";
 import { ActivationControl } from "./activation-control";
 import { RoleEditor } from "./role-editor";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "User access" };
 
@@ -21,6 +22,8 @@ const dateFormat = new Intl.DateTimeFormat("en-GB", {
 export default async function UserDetailPage({ params }: PageProps<"/settings/users/[id]">) {
   const actor = await requirePermission("users.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const user = await getUserAccessDetail(id);
   if (!user) notFound();

@@ -9,6 +9,7 @@ import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/tabl
 import { listUsers, MAX_PAGE_SIZE, USERS_PAGE_SIZE } from "@/lib/access/queries";
 import { requirePermission } from "@/lib/auth/authorize";
 import { UserListControls } from "./user-list-controls";
+import { parseQuery } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -29,7 +30,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/settings/u
   const actor = await requirePermission("users.view");
 
   const raw = await searchParams;
-  const params = searchParamsSchema.parse({
+  const params = parseQuery(searchParamsSchema, {
     q: typeof raw.q === "string" ? raw.q : undefined,
     page: raw.page ?? 1,
     size: raw.size ?? USERS_PAGE_SIZE,

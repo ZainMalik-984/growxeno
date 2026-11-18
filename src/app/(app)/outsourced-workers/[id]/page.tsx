@@ -19,6 +19,7 @@ import { OutsourcedWorkerActivationControl } from "./outsourced-worker-activatio
 import { OutsourcedWorkerLoginControl } from "./outsourced-worker-login-control";
 import { ServiceRatesPanel } from "./service-rates-panel";
 import { WorkerContactCard } from "./worker-contact-card";
+import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Outsourced worker" };
 
@@ -47,6 +48,8 @@ export default async function OutsourcedWorkerDetailPage({
 }: PageProps<"/outsourced-workers/[id]">) {
   const actor = await requirePermission("outsourced_workers.view");
   const { id } = await params;
+  // A malformed id (a truncated or hand-edited link) can't name a record: not found, not a 500.
+  if (!isUuid(id)) notFound();
 
   const canEdit = actor.permissions.has("outsourced_workers.edit");
   const canViewEarnings = actor.permissions.has("finance.worker_payments.view");
