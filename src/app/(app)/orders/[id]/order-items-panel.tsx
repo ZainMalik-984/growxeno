@@ -167,6 +167,8 @@ const EMPTY_ITEM_FORM = {
   channelLink: "",
   targetCount: "",
   currentCount: "",
+  /** Started at, when editing an existing item (2026-11-18). */
+  startingCount: "",
   // Only used when adding a new item (confirmed directly, 2026-10-05): "i'll
   // enter 1000 as starting count, and 5000 as required, it'll automatically
   // set target to 6000" — `currentCount` doubles as "starting count" here
@@ -262,6 +264,7 @@ export function OrderItemsPanel({
       channelLink: item.channelLink ?? "",
       targetCount: item.targetCount != null ? String(item.targetCount) : "",
       currentCount: item.currentCount != null ? String(item.currentCount) : "",
+      startingCount: item.startingCount != null ? String(item.startingCount) : "",
       requiredCount: "",
     });
     setError(undefined);
@@ -286,6 +289,7 @@ export function OrderItemsPanel({
               : undefined
           : undefined,
         currentCount: selectedMetricType && form.currentCount !== "" ? Number(form.currentCount) : undefined,
+        startingCount: !isNew && selectedMetricType && form.startingCount !== "" ? Number(form.startingCount) : undefined,
       };
       const result =
         dialogItemId === "new"
@@ -711,7 +715,16 @@ export function OrderItemsPanel({
                   ) : null}
                 </>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="Started at" htmlFor="item-starting-count">
+                    <Input
+                      id="item-starting-count"
+                      className={FIELD}
+                      inputMode="numeric"
+                      value={form.startingCount}
+                      onChange={(event) => setForm((c) => ({ ...c, startingCount: event.target.value }))}
+                    />
+                  </Field>
                   <Field label={METRIC_TARGET_LABELS[selectedMetricType]} htmlFor="item-target-count">
                     <Input
                       id="item-target-count"
@@ -721,7 +734,7 @@ export function OrderItemsPanel({
                       onChange={(event) => setForm((c) => ({ ...c, targetCount: event.target.value }))}
                     />
                   </Field>
-                  <Field label={METRIC_CURRENT_LABELS[selectedMetricType]} htmlFor="item-current-count" hint="Optional — defaults to 0.">
+                  <Field label={METRIC_CURRENT_LABELS[selectedMetricType]} htmlFor="item-current-count">
                     <Input
                       id="item-current-count"
                       className={FIELD}

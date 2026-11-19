@@ -118,6 +118,8 @@ export type OrderInput = {
   customerId?: string | null;
   fiverrAccountId?: string | null;
   deadline?: string | null;
+  /** When the order came in; stored as `createdAt`. Absent: now (create) or unchanged (update). */
+  orderedAt?: string | null;
   notes?: string;
   currency?: string;
   /**
@@ -141,6 +143,7 @@ function normalizeOrderInput(input: OrderInput) {
     // picking an account is never trusted.
     fiverrAccountId: input.source === "FIVERR" ? input.fiverrAccountId || null : null,
     deadline: input.deadline ? new Date(input.deadline) : null,
+    orderedAt: input.orderedAt ? new Date(input.orderedAt) : undefined,
     notes: input.notes?.trim() || null,
     currency: (input.currency?.trim() || "USD").toUpperCase(),
     totalAmount: input.totalAmount?.trim() || "0",
@@ -180,6 +183,7 @@ export async function createOrder(
         currency: data.currency,
         totalAmount: data.totalAmount,
         createdById: actor.user.id,
+        ...(data.orderedAt ? { createdAt: data.orderedAt } : {}),
       },
       select: { id: true, orderNumber: true },
     });
@@ -238,6 +242,7 @@ export async function updateOrder(
         deadline: data.deadline,
         notes: data.notes,
         totalAmount: data.totalAmount,
+        ...(data.orderedAt ? { createdAt: data.orderedAt } : {}),
       },
     });
 
@@ -335,6 +340,8 @@ export type OrderItemInput = {
   channelLink?: string | null;
   targetCount?: number | null;
   currentCount?: number | null;
+  /** Where the work started from; set when editing an item (2026-11-18). Ignored on create, where it is the current count. */
+  startingCount?: number | null;
   // No workerCost/workerCostCurrency here, 2026-10-08 — cost now lives
   // entirely with assignment (`assignOrderItemWorker`), computed from the
   // assigned External Worker's `ServiceRate`. There is exactly one place
@@ -456,6 +463,20 @@ export async function updateOrderItem(
     if (!service) throw new ServiceRejection("That service no longer exists.");
 
     const metric = resolveMetricFields(service, input);
+    // Started at (2026-11-18): only for a counted service, a whole number, not above the target.
+    let startingCount: number | null | undefined;
+    if (input.startingCount !== undefined && input.startingCount !== null) {
+      if (!service.metricType) startingCount = null;
+      else {
+        if (!Number.isInteger(input.startingCount) || input.startingCount < 0) {
+          throw new ServiceRejection("Started at must be a whole number, zero or more.");
+        }
+        if (metric.targetCount !== null && input.startingCount > metric.targetCount) {
+          throw new ServiceRejection("Started at can't be above the target.");
+        }
+        startingCount = input.startingCount;
+      }
+    }
     const linkChanged = (existing.channelLink ?? null) !== metric.channelLink;
 
     await tx.orderItem.update({
@@ -469,6 +490,7 @@ export async function updateOrderItem(
         channelLink: metric.channelLink,
         targetCount: metric.targetCount,
         currentCount: metric.currentCount,
+        ...(startingCount !== undefined ? { startingCount } : {}),
         // A new link is a different channel/video: its stats start over
         // (the old readings stay in the history under their own source id).
         ...(linkChanged

@@ -45,6 +45,7 @@ export function OrderProfileForm({
   const [fiverrAccountId, setFiverrAccountId] = useState(order.fiverrAccount?.id ?? "");
   const [totalAmount, setTotalAmount] = useState(order.totalAmount);
   const [deadline, setDeadline] = useState(toLocalInputValue(order.deadline));
+  const [orderedAt, setOrderedAt] = useState(toLocalInputValue(order.createdAt));
   const [notes, setNotes] = useState(order.notes ?? "");
   const [error, setError] = useState<string | undefined>();
 
@@ -74,6 +75,7 @@ export function OrderProfileForm({
         fiverrAccountId: source === "FIVERR" ? fiverrAccountId || null : null,
         totalAmount: totalAmount || undefined,
         deadline: deadline ? new Date(`${deadline}:00Z`).toISOString() : null,
+        orderedAt: orderedAt ? new Date(`${orderedAt}:00Z`).toISOString() : undefined,
         notes: notes || undefined,
       });
       if (result.ok) {
@@ -132,9 +134,14 @@ export function OrderProfileForm({
         />
       </Field>
 
-      <Field label="Deadline" htmlFor="edit-order-deadline" hint="Required before the order can be processed.">
-        <Input id="edit-order-deadline" className={field} type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Order date" htmlFor="edit-order-ordered-at" hint="When the order came in.">
+          <Input id="edit-order-ordered-at" className={field} type="datetime-local" value={orderedAt} onChange={(event) => setOrderedAt(event.target.value)} />
+        </Field>
+        <Field label="Delivery date (deadline)" htmlFor="edit-order-deadline" hint="Extended? Change it here. Needed before processing.">
+          <Input id="edit-order-deadline" className={field} type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
+        </Field>
+      </div>
 
       <Field label="Notes" htmlFor="edit-order-notes" hint="Optional.">
         <Textarea id="edit-order-notes" className={field} rows={4} value={notes} onChange={(event) => setNotes(event.target.value)} />

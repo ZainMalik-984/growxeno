@@ -142,6 +142,8 @@ export function CreateOrderForm({
   const [showNotes, setShowNotes] = useState(false);
   const [totalAmount, setTotalAmount] = useState("");
   const [deadline, setDeadline] = useState("");
+  // Empty: now. Set for an order that came in earlier (2026-11-18).
+  const [orderedAt, setOrderedAt] = useState("");
   const [notes, setNotes] = useState("");
 
   // Items (2026-11-03: several can be entered before the order is created).
@@ -276,6 +278,7 @@ export function CreateOrderForm({
           fiverrAccountId: source === "FIVERR" ? fiverrAccountId || null : null,
           totalAmount: totalAmount.trim() || undefined,
           deadline: deadline || null,
+          orderedAt: orderedAt ? new Date(`${orderedAt}:00Z`).toISOString() : undefined,
           notes: notes.trim() || undefined,
         });
         if (!result.ok) {
@@ -480,11 +483,10 @@ export function CreateOrderForm({
                   </span>
                 }
                 error={errors.deadline}
-                className="lg:col-span-2"
               >
                 <Input
                   id="order-deadline"
-                  className={cn(FIELD_CLASS, "lg:max-w-xs")}
+                  className={FIELD_CLASS}
                   type="datetime-local"
                   value={deadline}
                   aria-invalid={Boolean(errors.deadline) || undefined}
@@ -493,6 +495,18 @@ export function CreateOrderForm({
                     setDeadline(event.target.value);
                     clearError("deadline");
                   }}
+                />
+              </FormField>
+
+              <FormField label="Order date" htmlFor="order-ordered-at" tag={<OptionalTag />}>
+                <Input
+                  id="order-ordered-at"
+                  className={FIELD_CLASS}
+                  type="datetime-local"
+                  value={orderedAt}
+                  max={new Date().toISOString().slice(0, 16)}
+                  onChange={(event) => setOrderedAt(event.target.value)}
+                  aria-label="Order date (leave empty for now)"
                 />
               </FormField>
 

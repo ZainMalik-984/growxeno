@@ -81,6 +81,13 @@ const orderInputSchema = z.object({
   // an EXTERNAL order.
   fiverrAccountId: uuid.nullable().optional(),
   deadline: deadlineSchema,
+  // When the order came in (2026-11-18, owner request): editable, e.g. for orders entered late. Defaults to now.
+  orderedAt: z
+    .string()
+    .nullable()
+    .optional()
+    .refine((value) => !value || !Number.isNaN(Date.parse(value)), "Enter a valid order date.")
+    .refine((value) => !value || Date.parse(value) <= Date.now() + 60 * 60 * 1000, "The order date can't be in the future."),
   notes: z.string().trim().max(4000).optional(),
   currency: z.string().trim().length(3).optional(),
   // The whole order's price (owner-directed redesign, confirmed directly
@@ -177,6 +184,8 @@ const orderItemInputSchema = z.object({
   channelLink: z.union([z.url("Enter a valid URL, including https://."), z.literal("")]).optional(),
   targetCount: z.coerce.number().int().min(0, "Cannot be negative.").optional(),
   currentCount: z.coerce.number().int().min(0, "Cannot be negative.").optional(),
+  // Editable on an existing item (2026-11-18, owner request): where the work started from.
+  startingCount: z.coerce.number().int().min(0, "Cannot be negative.").optional(),
   // No workerCost/workerCostCurrency here, 2026-10-08 — see service.ts's
   // OrderItemInput doc comment: cost now lives entirely with assignment.
 });
