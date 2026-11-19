@@ -19,6 +19,7 @@ const worker: OutsourcedWorkerDetail = {
   whatsappNumber: null,
   notes: null,
   notifyVia: "BOTH",
+  paymentDetails: null,
   isActive: true,
   assignedItemCount: 0,
   rates: [],

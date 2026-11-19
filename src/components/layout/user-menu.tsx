@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import { LogOut, UserRound } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -82,12 +83,23 @@ export function UserMenu({
           <p className="mt-2 text-xs text-ink-faint">
             {roleNames.length > 0 ? roleNames.join(", ") : "No roles assigned"}
           </p>
-          <form action={signOut} className="mt-3 border-t border-line-soft pt-3">
-            <Button type="submit" variant="ghost" size="sm" role="menuitem" className="w-full justify-start">
-              <LogOut aria-hidden="true" />
-              Sign out
-            </Button>
-          </form>
+          <div className="mt-3 space-y-0.5 border-t border-line-soft pt-3">
+            <Link
+              href="/profile"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2.5 text-[13px] font-medium text-ink hover:bg-canvas-subtle [&_svg]:size-4"
+            >
+              <UserRound aria-hidden="true" />
+              Profile
+            </Link>
+            <form action={signOut}>
+              <Button type="submit" variant="ghost" size="sm" role="menuitem" className="w-full justify-start">
+                <LogOut aria-hidden="true" />
+                Sign out
+              </Button>
+            </form>
+          </div>
         </div>
       ) : null}
     </div>

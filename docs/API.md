@@ -44,7 +44,7 @@ to `/login` by the proxy and refused again by the handler itself.
 
 ## Server Actions
 
-102 actions across 16 files. "Requires" is the permission key checked before any data is touched.
+104 actions across 17 files. "Requires" is the permission key checked before any data is touched.
 A key ending `.all` widens *which records*, not *whether* — see `docs/PERMISSIONS.md` §3.
 
 ### Authentication — `src/lib/auth/actions.ts`
@@ -256,6 +256,16 @@ reads as not found. Private to the worker: no audit rows, and no admin screen re
 | `updateShareAction` | outsourced worker, own share. Amount (same limit) and progress (kept within the amount) |
 | `setShareStatusAction` | outsourced worker, own share. Done (stamps the finish time) or back to Processing |
 | `removeShareAction` | outsourced worker, own share |
+
+### Own profile — `src/lib/profile/actions.ts`
+
+The signed-in person's own account on /profile (2026-11-19). No permission key and no target id: both
+act only on the session's own account. Both are recorded in the audit log.
+
+| Action | Requires |
+| --- | --- |
+| `changePasswordAction` | signed in. Current password is re-checked first; the new one is 12 to 72 characters, matches the confirmation and differs from the current one |
+| `savePaymentDetailsAction` | signed-in **outsourced worker**, own record. One free-text line up to 500 characters (empty clears it); admins see it on the worker's page |
 
 ---
 

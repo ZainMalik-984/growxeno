@@ -109,6 +109,9 @@ model OutsourcedWorker {
   phone          String? @db.VarChar(32)
   whatsappNumber String? @map("whatsapp_number") @db.VarChar(32)
   notes          String? @db.Text
+  /// How the worker wants to be paid, in their own words (account, number, name). Set by the
+  /// worker on their profile page (2026-11-19); admins see it on the worker's page.
+  paymentDetails String? @map("payment_details") @db.VarChar(500)
 
   /// Where a new task is sent when it's assigned (owner request, 2026-11-11).
   /// A channel without an email/number on file is skipped.

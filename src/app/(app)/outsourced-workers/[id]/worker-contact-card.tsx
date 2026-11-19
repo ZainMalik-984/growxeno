@@ -58,6 +58,9 @@ export function WorkerContactCard({ worker, canEdit }: { worker: OutsourcedWorke
           </Row>
           <Row label="WhatsApp">{worker.whatsappNumber ?? <Muted>Not set</Muted>}</Row>
           <Row label="New tasks sent by">{WORKER_NOTIFY_LABELS[worker.notifyVia]}</Row>
+          <Row label="Payment details">
+            {worker.paymentDetails ? <span className="whitespace-pre-wrap break-words">{worker.paymentDetails}</span> : <Muted>Not added by the worker</Muted>}
+          </Row>
           <div className="py-3 text-[13px]">
             <dt className="text-zinc-500">Notes</dt>
             <dd className="mt-1 whitespace-pre-wrap break-words text-zinc-800">

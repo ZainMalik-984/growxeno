@@ -83,6 +83,8 @@ export type OutsourcedWorkerDetail = {
   notes: string | null;
   /** Where new-task messages go (2026-11-11). */
   notifyVia: WorkerNotifyChannel;
+  /** How the worker wants to be paid, set by them on /profile (2026-11-19). */
+  paymentDetails: string | null;
   isActive: boolean;
   assignedItemCount: number;
   rates: ServiceRateRow[];
@@ -105,6 +107,7 @@ export async function getOutsourcedWorkerDetail(id: string): Promise<OutsourcedW
       whatsappNumber: true,
       notes: true,
       notifyVia: true,
+      paymentDetails: true,
       isActive: true,
       userId: true,
       user: { select: { invitePending: true, invitedAt: true } },
@@ -128,6 +131,7 @@ export async function getOutsourcedWorkerDetail(id: string): Promise<OutsourcedW
     whatsappNumber: worker.whatsappNumber,
     notes: worker.notes,
     notifyVia: worker.notifyVia,
+    paymentDetails: worker.paymentDetails,
     isActive: worker.isActive,
     assignedItemCount: worker._count.orderItems,
     rates: worker.rates.map((r) => ({ serviceId: r.serviceId, serviceName: serviceLabel(r.service.name, r.service.category.name), rate: r.rate.toString(), currency: r.currency })),
