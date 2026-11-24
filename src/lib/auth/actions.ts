@@ -196,5 +196,10 @@ export async function updatePasswordAction(
     .updateMany({ where: { authUserId: user.id, invitePending: true }, data: { invitePending: false, isActive: true, deactivatedAt: null } })
     .catch(() => undefined);
 
-  redirect(DASHBOARD_PATH);
+  // Sign out so the OTP session is cleared — this prevents the user from
+  // landing back on this page (via browser history) while still signed in,
+  // which would show the form again. They sign in fresh with their new password.
+  await supabase.auth.signOut().catch(() => undefined);
+
+  redirect("/login?passwordSet=1");
 }
