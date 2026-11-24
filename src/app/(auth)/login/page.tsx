@@ -10,6 +10,7 @@ export const metadata: Metadata = { title: "Sign in" };
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams;
   const nextParam = typeof params.next === "string" ? params.next : undefined;
+  const linkExpired = params.error === "link-expired";
 
   const supabaseReady = isSupabaseConfigured();
   const databaseReady = isDatabaseConfigured();
@@ -17,6 +18,15 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <AuthShell>
       <AuthHeading title="Welcome back" description="Sign in to Grow Xeno Business Manager." />
+      {linkExpired ? (
+        <div role="alert" className="gx-shake -mt-4 mb-6 rounded-[12px] border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-200">
+          That link has expired or was already used.{" "}
+          <a href="/forgot-password" className="font-medium underline underline-offset-4 hover:text-amber-100">
+            Request a new one
+          </a>
+          .
+        </div>
+      ) : null}
 
       {supabaseReady && databaseReady ? (
         <LoginForm next={nextParam} />

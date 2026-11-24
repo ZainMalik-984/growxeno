@@ -1,9 +1,8 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, BarChart3, ClipboardList, Wallet } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { AuthScene } from "@/components/auth/auth-scene";
 import { GrowXenoLoader } from "@/components/brand/grow-xeno-loader";
 import { SITE_HOME } from "@/lib/routing/hosts";
 
@@ -163,35 +162,82 @@ export function AuthSubmitLabel({ pending, idle, busy }: { pending: boolean; idl
   );
 }
 
+const BRAND_FEATURES = [
+  {
+    icon: ClipboardList,
+    title: "Order management",
+    text: "Create, assign and track orders from intake to delivery in one place.",
+  },
+  {
+    icon: BarChart3,
+    title: "Team performance",
+    text: "Daily stats, commission tracking and worker output at a glance.",
+  },
+  {
+    icon: Wallet,
+    title: "Finance overview",
+    text: "Revenue, expenses and worker payments — always up to date.",
+  },
+] as const;
+
 function BrandPanel() {
   return (
-    <aside className="relative hidden overflow-hidden bg-[var(--gx-bg)] lg:block">
-      <AuthScene />
-
-      {/* Light and texture over the scene. */}
+    <aside className="relative hidden overflow-hidden bg-[var(--gx-bg)] lg:flex lg:flex-col lg:justify-between lg:p-12 xl:p-16">
+      {/* Background accents */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="gx-ambient absolute -left-1/4 -top-1/3 h-[70%] w-[80%] rounded-full bg-[radial-gradient(closest-side,rgb(0_185_91/0.16),transparent)]" />
-        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[var(--gx-bg)] via-[var(--gx-bg)]/70 to-transparent" />
+        <div className="absolute -left-1/4 top-0 h-[55%] w-[90%] rounded-full bg-[radial-gradient(closest-side,rgb(0_185_91/0.1),transparent)]" />
+        <div className="absolute bottom-0 right-0 h-[45%] w-[70%] rounded-full bg-[radial-gradient(closest-side,rgb(0_185_91/0.07),transparent)]" />
         <div className="gx-grain absolute inset-0" />
+        {/* Subtle grid */}
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "linear-gradient(var(--gx-line-2) 1px,transparent 1px),linear-gradient(90deg,var(--gx-line-2) 1px,transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+        />
       </div>
 
-      <div className="pointer-events-none relative flex h-full min-h-dvh flex-col justify-between p-12 xl:p-16">
-        <Link href={SITE_HOME} className="pointer-events-auto flex w-fit items-center gap-3 rounded-[6px]" aria-label="Grow Xeno home">
-          <Image src="/brand/gx-symbol-light.svg" alt="" aria-hidden="true" width={1050} height={780} className="h-9 w-auto" priority />
-          <span className="leading-tight">
-            <span className="gx-display block text-lg tracking-[-0.03em] text-[var(--gx-text)]">Grow Xeno</span>
-            <span className="block text-xs text-[var(--gx-dim)]">Business Manager</span>
-          </span>
-        </Link>
+      {/* Logo */}
+      <Link href={SITE_HOME} className="relative flex w-fit items-center gap-3 rounded-[6px]" aria-label="Grow Xeno home">
+        <Image src="/brand/gx-symbol-light.svg" alt="" aria-hidden="true" width={1050} height={780} className="h-9 w-auto" priority />
+        <span className="leading-tight">
+          <span className="gx-display block text-lg tracking-[-0.03em] text-[var(--gx-text)]">Grow Xeno</span>
+          <span className="block text-xs text-[var(--gx-dim)]">Business Manager</span>
+        </span>
+      </Link>
 
-        <div className="gx-auth-rise max-w-[30rem]">
-          <h2 className="gx-display text-[clamp(2.6rem,4.3vw,4.25rem)] leading-[0.95] tracking-[-0.05em] text-[var(--gx-text)]">
+      {/* Headline + feature list */}
+      <div className="relative max-w-[30rem] space-y-10">
+        <div>
+          <h2 className="gx-display text-[clamp(2.4rem,3.8vw,3.75rem)] leading-[0.95] tracking-[-0.05em] text-[var(--gx-text)]">
             Your workspace,
             <br />
             <span className="gx-serif gx-metal pr-2 text-[1.06em]">all in one place.</span>
           </h2>
+          <p className="mt-4 text-[0.9375rem] leading-relaxed text-[var(--gx-muted)]">
+            Manage orders, workers and finances — without switching between tools.
+          </p>
         </div>
+
+        <ul className="space-y-5">
+          {BRAND_FEATURES.map(({ icon: Icon, title, text }) => (
+            <li key={title} className="flex items-start gap-4">
+              <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-[10px] border border-[rgb(8_229_47/0.25)] bg-[rgb(8_229_47/0.08)] text-[var(--gx-accent)]">
+                <Icon aria-hidden className="size-4" />
+              </span>
+              <div>
+                <p className="text-sm font-medium text-[var(--gx-text)]">{title}</p>
+                <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-[var(--gx-muted)]">{text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
+
+      {/* Footer stamp */}
+      <p className="relative text-xs text-[var(--gx-dim)]">© {new Date().getFullYear()} Grow Xeno</p>
     </aside>
   );
 }

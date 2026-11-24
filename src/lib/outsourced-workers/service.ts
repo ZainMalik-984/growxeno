@@ -252,7 +252,7 @@ export async function inviteOutsourcedWorkerToLogin(actor: Actor, workerId: stri
 export async function resendOutsourcedWorkerInvite(actor: Actor, workerId: string): Promise<ServiceResult> {
   const worker = await prisma.outsourcedWorker.findUnique({
     where: { id: workerId },
-    select: { name: true, user: { select: { id: true, email: true, invitePending: true } } },
+    select: { name: true, user: { select: { id: true, email: true, authUserId: true, invitePending: true } } },
   });
   if (!worker) return failure("That worker no longer exists.");
   if (!worker.user) return failure("Invite them first.");
@@ -264,12 +264,21 @@ export async function resendOutsourcedWorkerInvite(actor: Actor, workerId: strin
   } catch (error) {
     return failure(error instanceof Error ? error.message : "Supabase administrative access is not configured.");
   }
-  const sent = await resendInviteEmail(admin, { email: worker.user.email, fullName: worker.name, kind: "worker" });
-  if (!sent.ok) return failure(sent.error);
+
+  // Recovery tokens don't work for unconfirmed Supabase users (never accepted
+  // their first invite). Delete the stale auth account and re-invite so a fresh
+  // invite token is issued.
+  if (worker.user.authUserId) {
+    await admin.auth.admin.deleteUser(worker.user.authUserId).catch(() => {});
+  }
+
+  const invited = await inviteByEmail(admin, { email: worker.user.email, fullName: worker.name, kind: "worker" });
+  if (!invited.ok) return failure(invited.error);
+  const newAuthUserId = invited.authUserId;
 
   const userId = worker.user.id;
-  return runTransaction(async (tx) => {
-    await tx.user.update({ where: { id: userId }, data: { invitedAt: new Date() } });
+  const result = await runTransaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { authUserId: newAuthUserId, invitedAt: new Date() } });
     await recordAudit(tx, {
       actorUserId: actor.user.id,
       actorEmail: actor.user.email,
@@ -279,6 +288,11 @@ export async function resendOutsourcedWorkerInvite(actor: Actor, workerId: strin
       summary: `Sent ${worker.name} (${worker.user!.email}) a new portal invitation`,
     });
   });
+
+  if (!result.ok) {
+    await admin.auth.admin.deleteUser(newAuthUserId).catch(() => {});
+  }
+  return result;
 }
 
 export async function setOutsourcedWorkerActive(

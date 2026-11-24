@@ -135,6 +135,7 @@ export type EmployeeListRow = {
   email: string;
   jobTitle: string | null;
   roleNames: string[];
+  invitePending: boolean;
   /** Orders they created that are not delivered, finalized or cancelled. */
   openOrderCount: number;
 };
@@ -142,12 +143,13 @@ export type EmployeeListRow = {
 /** Active internal users, for the `/employees` roster (`employees.view.all`). */
 export async function listEmployees(): Promise<EmployeeListRow[]> {
   const users = await prisma.user.findMany({
-    where: { isActive: true },
+    where: { OR: [{ isActive: true }, { invitePending: true }], outsourcedWorkerProfile: null },
     select: {
       id: true,
       fullName: true,
       email: true,
       jobTitle: true,
+      invitePending: true,
       roles: { select: { role: { select: { name: true } } } },
       // Employees create orders rather than do the work (2026-11-04), so the
       // roster counts their open orders, not items assigned to them.
@@ -161,6 +163,7 @@ export async function listEmployees(): Promise<EmployeeListRow[]> {
     fullName: user.fullName,
     email: user.email,
     jobTitle: user.jobTitle,
+    invitePending: user.invitePending,
     roleNames: user.roles.map((assignment) => assignment.role.name).sort(),
     openOrderCount: user._count.createdOrders,
   }));
@@ -208,9 +211,12 @@ export async function getEmployeeProfile(userId: string): Promise<EmployeeProfil
       createdAt: true,
       commissionPercent: true,
       roles: { select: { role: { select: { id: true, name: true } } } },
+      outsourcedWorkerProfile: { select: { id: true } },
     },
   });
   if (!user) return null;
+  // This user is an outsourced worker's portal account, not an employee.
+  if (user.outsourcedWorkerProfile) return null;
 
   const [categoryRows, activity] = await Promise.all([
     prisma.orderItem.findMany({

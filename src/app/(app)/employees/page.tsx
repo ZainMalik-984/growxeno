@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Breadcrumbs, EmptyState, PageHeader, Section } from "@/components/ui/page";
+import { StatusDot } from "@/components/ui/status-dot";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { listRoles } from "@/lib/access/queries";
 import { requirePermission } from "@/lib/auth/authorize";
 import { listEmployees } from "@/lib/employees/queries";
+import { AddEmployeeButton } from "./add-employee-dialog";
 
 export const metadata: Metadata = { title: "Employees" };
 
@@ -18,17 +21,22 @@ export const metadata: Metadata = { title: "Employees" };
  * their own profile at `/employees/[id]`, never this list.
  */
 export default async function EmployeesPage() {
-  await requirePermission("employees.view.all");
-  const employees = await listEmployees();
+  const actor = await requirePermission("employees.view.all");
+  const canCreate = actor.permissions.has("users.create");
+  const [employees, roles] = await Promise.all([listEmployees(), canCreate ? listRoles() : Promise.resolve([])]);
 
   return (
     <>
       <Breadcrumbs items={[{ label: "Workforce" }, { label: "Employees" }]} />
-      <PageHeader title="Employees" description="Internal users who manage orders and assignments." />
+      <PageHeader
+        title="Employees"
+        description="Internal users who manage orders and assignments."
+        actions={canCreate ? <AddEmployeeButton roles={roles} /> : undefined}
+      />
 
       <Section>
         {employees.length === 0 ? (
-          <EmptyState title="No employees yet" description="Active users appear here once they exist." />
+          <EmptyState title="No employees yet" description="Invite a user to have them appear here." />
         ) : (
           <TableWrap>
             <Table>
@@ -38,6 +46,7 @@ export default async function EmployeesPage() {
                   <TH>Name</TH>
                   <TH>Email</TH>
                   <TH>Roles</TH>
+                  <TH>Status</TH>
                   <TH className="text-right">Open orders</TH>
                 </TR>
               </THead>
@@ -52,6 +61,13 @@ export default async function EmployeesPage() {
                     <TD className="text-ink-muted">{employee.email}</TD>
                     <TD className="text-ink-muted">
                       {employee.roleNames.length > 0 ? employee.roleNames.join(", ") : <span className="text-ink-faint">None</span>}
+                    </TD>
+                    <TD>
+                      {employee.invitePending ? (
+                        <StatusDot tone="warning" label="Invite pending" />
+                      ) : (
+                        <StatusDot tone="done" label="Active" />
+                      )}
                     </TD>
                     <TD className="text-right text-ink-muted">{employee.openOrderCount}</TD>
                   </TR>

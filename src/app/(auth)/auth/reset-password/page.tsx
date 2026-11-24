@@ -5,6 +5,7 @@ import { AUTH_BUTTON_CLASS, AUTH_GHOST_CLASS, AuthHeading, AuthShell } from "@/c
 import { buttonVariants } from "@/components/ui/button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { ExpiredLinkResend } from "./expired-link-resend";
 import { ResetPasswordForm } from "./reset-password-form";
 
 export const metadata: Metadata = { title: "Set your password" };
@@ -26,21 +27,18 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<"/au
 
   if (!user) {
     return (
-      <AuthShell>
-        <>
-          <AuthHeading
-            title="This link has expired"
-            description="Links work once and only for a limited time. Request a new one, or ask your coordinator to resend your invitation."
-          />
-          <div className="gx-stagger flex flex-col gap-2.5">
-            <Link href="/forgot-password" className={cn(buttonVariants({ variant: "primary", size: "lg" }), AUTH_BUTTON_CLASS)}>
-              Request a new link
-            </Link>
-            <Link href="/login" className={AUTH_GHOST_CLASS}>
-              Back to sign in
-            </Link>
-          </div>
-        </>
+      <AuthShell
+        footer={
+          <Link href="/login" className="text-[var(--gx-muted)] underline-offset-4 transition-colors hover:text-[var(--gx-text)] hover:underline text-xs font-medium">
+            Back to sign in
+          </Link>
+        }
+      >
+        <AuthHeading
+          title="This link has expired"
+          description="Enter your email and we'll send a fresh link right away."
+        />
+        <ExpiredLinkResend />
       </AuthShell>
     );
   }
