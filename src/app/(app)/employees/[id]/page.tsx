@@ -22,6 +22,7 @@ import { ITEM_STATUS_TONE, ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
 import { ActivityTabs } from "./activity-tabs";
 import { EditProfileButton } from "./edit-profile-dialog";
 import { ResendInviteButton } from "./resend-invite-button";
+import { SetPasswordButton } from "@/components/admin/set-password-dialog";
 import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Employee profile" };
@@ -120,6 +121,9 @@ export default async function EmployeeProfilePage({ params }: PageProps<"/employ
           <div className="flex shrink-0 items-center gap-2">
           {canEdit && profile.invitePending ? (
             <ResendInviteButton userId={profile.id} />
+          ) : null}
+          {canEdit && profile.hasLogin ? (
+            <SetPasswordButton userId={profile.id} name={profile.fullName} />
           ) : null}
           {canEdit ? (
             <EditProfileButton

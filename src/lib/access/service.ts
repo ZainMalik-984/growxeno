@@ -870,6 +870,47 @@ export async function createUser(
   return result;
 }
 
+/**
+ * Set a password directly for any user from the admin dashboard.
+ * Also activates invite-pending accounts so the user can sign in immediately.
+ */
+export async function setUserPassword(actor: Actor, userId: string, password: string): Promise<ServiceResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fullName: true, email: true, authUserId: true, invitePending: true, isActive: true },
+  });
+  if (!user) return failure("That user no longer exists.");
+  if (!user.authUserId) return failure("This user has no auth account yet — invite them first.");
+
+  let admin: SupabaseClient;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : "Supabase administrative access is not configured.");
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(user.authUserId, { password });
+  if (error) return failure(error.message);
+
+  // Activate invite-pending accounts so the user can sign in right away.
+  if (user.invitePending) {
+    await prisma.user.update({ where: { id: userId }, data: { invitePending: false, isActive: true, deactivatedAt: null } }).catch(() => {});
+  }
+
+  await runTransaction(async (tx) => {
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "user.password_set",
+      entityType: "User",
+      entityId: userId,
+      summary: `Admin set password for ${user.fullName} (${user.email})`,
+    });
+  });
+
+  return { ok: true, data: undefined };
+}
+
 /** Resend an employee invite that hasn't been accepted yet (delete + reinvite, same as the outsourced worker flow). */
 export async function resendEmployeeInvite(actor: Actor, userId: string): Promise<ServiceResult> {
   const user = await prisma.user.findUnique({

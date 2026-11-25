@@ -19,6 +19,7 @@ import { OutsourcedWorkerActivationControl } from "./outsourced-worker-activatio
 import { OutsourcedWorkerLoginControl } from "./outsourced-worker-login-control";
 import { ServiceRatesPanel } from "./service-rates-panel";
 import { WorkerContactCard } from "./worker-contact-card";
+import { SetPasswordButton } from "@/components/admin/set-password-dialog";
 import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Outsourced worker" };
@@ -52,6 +53,7 @@ export default async function OutsourcedWorkerDetailPage({
   if (!isUuid(id)) notFound();
 
   const canEdit = actor.permissions.has("outsourced_workers.edit");
+  const canSetPassword = actor.permissions.has("users.edit");
   const canViewEarnings = actor.permissions.has("finance.worker_payments.view");
   // One round of requests: earnings and the service list only need the id.
   const [worker, earnings, services, workload] = await Promise.all([
@@ -107,7 +109,12 @@ export default async function OutsourcedWorkerDetailPage({
           </div>
         </div>
 
-        {canEdit ? <OutsourcedWorkerActivationControl workerId={worker.id} isActive={worker.isActive} /> : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {canSetPassword && worker.loginUserId ? (
+            <SetPasswordButton userId={worker.loginUserId} name={worker.name} />
+          ) : null}
+          {canEdit ? <OutsourcedWorkerActivationControl workerId={worker.id} isActive={worker.isActive} /> : null}
+        </div>
       </header>
 
       {!worker.isActive ? (

@@ -16,6 +16,7 @@ import {
   setDirectPermission,
   setRolePermission,
   setUserActive,
+  setUserPassword,
   updateEmployeeProfile,
   updateRole,
   type ServiceResult,
@@ -313,6 +314,39 @@ export type CreateUserActionResult =
   | { ok: false; error: string };
 
 const userIdSchema = z.object({ userId: uuid });
+
+const setPasswordSchema = z
+  .object({
+    userId: uuid,
+    password: z.string().min(12, "Use at least 12 characters."),
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.password === v.confirmPassword, { path: ["confirmPassword"], message: "Passwords do not match." });
+
+export type SetPasswordActionResult = { ok: true; message: string } | { ok: false; error?: string; fieldErrors?: { password?: string; confirmPassword?: string } };
+
+export async function setUserPasswordAction(input: unknown): Promise<SetPasswordActionResult> {
+  const parsed = setPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    const fieldErrors: { password?: string; confirmPassword?: string } = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0];
+      if (field === "password") fieldErrors.password = issue.message;
+      if (field === "confirmPassword") fieldErrors.confirmPassword = issue.message;
+    }
+    return { ok: false, fieldErrors };
+  }
+
+  const auth = await authorizeAction("users.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await setUserPassword(auth.actor, parsed.data.userId, parsed.data.password);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/employees/${parsed.data.userId}`);
+  revalidatePath(`/settings/users/${parsed.data.userId}`);
+  return { ok: true, message: "Password updated." };
+}
 
 export async function resendEmployeeInviteAction(input: unknown): Promise<ActionResult> {
   const parsed = userIdSchema.safeParse(input);
