@@ -104,9 +104,8 @@ export function AuthLines() {
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        {/* Glow halo: blurred duplicate behind the sharp core = 3-D depth illusion */}
-        <filter id="gx-glow" x="-40%" y="-40%" width="180%" height="180%" colorInterpolationFilters="sRGB">
-          <feGaussianBlur stdDeviation="3" result="blur" />
+        <filter id="gx-glow" x="-50%" y="-50%" width="200%" height="200%" colorInterpolationFilters="sRGB">
+          <feGaussianBlur stdDeviation="3.5" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
         <filter id="gx-glow-sm" x="-30%" y="-30%" width="160%" height="160%" colorInterpolationFilters="sRGB">
@@ -135,62 +134,82 @@ export function AuthLines() {
         `}</style>
       </defs>
 
-      {/* ── Far depth — very faint, slow, wide arcs ── */}
-      <path className="gxs gxc" d="M-200 720 C100 620 500 280 820 200 S1250 360 1550 140"
-        stroke="#08e52f" strokeWidth="0.4" strokeDasharray="380 2320" opacity="0.13"
-        style={{ "--d": "24s", "--dl": "0s" } as React.CSSProperties} />
-      <path className="gxs gxcr" d="M1550 580 C1200 510 900 660 580 590 S180 390 -180 460"
-        stroke="#08e52f" strokeWidth="0.4" strokeDasharray="320 2380" opacity="0.1"
-        style={{ "--d": "28s", "--dl": "10s" } as React.CSSProperties} />
-
-      {/* ── Mid depth — moderate opacity ── */}
-      <path className="gxs gxc" d="M-80 420 C150 350 380 480 620 380 S950 160 1300 220"
-        stroke="#08e52f" strokeWidth="0.55" strokeDasharray="190 2510" opacity="0.38"
-        style={{ "--d": "15s", "--dl": "3s" } as React.CSSProperties} />
-      <path className="gxs gxcr" d="M1350 350 C1080 310 800 440 540 380 S220 250 -100 300"
-        stroke="#00b95b" strokeWidth="0.5" strokeDasharray="170 2530" opacity="0.3"
-        style={{ "--d": "17s", "--dl": "12s" } as React.CSSProperties} />
-
-      {/* ── Foreground — glowing comet: soft halo layer ── */}
+      {/* ══ PLANE A — main sweep, bottom-left → top-right ══ */}
+      {/* Halo */}
       <path className="gxs gxc" d="M-100 650 C200 580 400 200 700 160 S1050 300 1350 180"
-        stroke="#08e52f" strokeWidth="1" strokeDasharray="220 2480" opacity="0.55"
+        stroke="#08e52f" strokeWidth="1.1" strokeDasharray="220 2480" opacity="0.5"
         filter="url(#gx-glow)"
         style={{ "--d": "11s", "--dl": "0s" } as React.CSSProperties} />
-      {/* Bright thin core on top — creates 3-D tube effect */}
+      {/* Bright thin core */}
       <path className="gxs gxc" d="M-100 650 C200 580 400 200 700 160 S1050 300 1350 180"
-        stroke="#b0ffcc" strokeWidth="0.35" strokeDasharray="100 2600" opacity="0.95"
+        stroke="#b0ffcc" strokeWidth="0.3" strokeDasharray="90 2610" opacity="1"
         style={{ "--d": "11s", "--dl": "0s" } as React.CSSProperties} />
+      {/* Phase fill */}
+      <path className="gxs gxc" d="M-100 650 C200 580 400 200 700 160 S1050 300 1350 180"
+        stroke="#08e52f" strokeWidth="0.45" strokeDasharray="140 2560" opacity="0.38"
+        style={{ "--d": "11s", "--dl": "5.5s" } as React.CSSProperties} />
 
-      {/* ── Reverse foreground comet with glow ── */}
+      {/* ══ PLANE B — reverse sweep, top-right → bottom-left ══ */}
       <path className="gxs gxcr" d="M1400 500 C1100 440 860 620 580 540 S220 350 -120 420"
-        stroke="#08e52f" strokeWidth="0.85" strokeDasharray="190 2510" opacity="0.5"
+        stroke="#08e52f" strokeWidth="0.9" strokeDasharray="190 2510" opacity="0.45"
         filter="url(#gx-glow-sm)"
         style={{ "--d": "13s", "--dl": "5s" } as React.CSSProperties} />
       <path className="gxs gxcr" d="M1400 500 C1100 440 860 620 580 540 S220 350 -120 420"
-        stroke="#b0ffcc" strokeWidth="0.3" strokeDasharray="85 2615" opacity="0.85"
+        stroke="#b0ffcc" strokeWidth="0.28" strokeDasharray="75 2625" opacity="0.9"
         style={{ "--d": "13s", "--dl": "5s" } as React.CSSProperties} />
+      <path className="gxs gxcr" d="M1400 500 C1100 440 860 620 580 540 S220 350 -120 420"
+        stroke="#00b95b" strokeWidth="0.4" strokeDasharray="130 2570" opacity="0.3"
+        style={{ "--d": "13s", "--dl": "11.5s" } as React.CSSProperties} />
 
-      {/* ── Phase-offset fills — same paths, staggered so something is always moving ── */}
-      <path className="gxs gxc" d="M-100 650 C200 580 400 200 700 160 S1050 300 1350 180"
-        stroke="#08e52f" strokeWidth="0.45" strokeDasharray="150 2550" opacity="0.4"
-        style={{ "--d": "11s", "--dl": "5.5s" } as React.CSSProperties} />
-      <path className="gxs gxc" d="M-80 420 C150 350 380 480 620 380 S950 160 1300 220"
-        stroke="#00b95b" strokeWidth="0.4" strokeDasharray="130 2570" opacity="0.35"
-        style={{ "--d": "15s", "--dl": "9s" } as React.CSSProperties} />
+      {/* ══ PLANE C — crossing diagonal, top-left → bottom-right ══ */}
+      {/* Crosses planes A & B — creates the 3-D intersection feel */}
+      <path className="gxs gxc" d="M-80 50 C180 220 420 380 650 440 S1000 580 1380 720"
+        stroke="#08e52f" strokeWidth="0.75" strokeDasharray="160 2540" opacity="0.4"
+        filter="url(#gx-glow-sm)"
+        style={{ "--d": "14s", "--dl": "2s" } as React.CSSProperties} />
+      <path className="gxs gxc" d="M-80 50 C180 220 420 380 650 440 S1000 580 1380 720"
+        stroke="#b0ffcc" strokeWidth="0.25" strokeDasharray="60 2640" opacity="0.9"
+        style={{ "--d": "14s", "--dl": "2s" } as React.CSSProperties} />
+      {/* Counter-traffic on same path */}
+      <path className="gxs gxcr" d="M-80 50 C180 220 420 380 650 440 S1000 580 1380 720"
+        stroke="#00b95b" strokeWidth="0.45" strokeDasharray="110 2590" opacity="0.3"
+        style={{ "--d": "16s", "--dl": "9s" } as React.CSSProperties} />
 
-      {/* ── Silver accents — different plane, adds visual layering ── */}
-      <path className="gxs gxc" d="M-150 200 C100 260 320 140 580 200 S900 400 1200 300"
-        stroke="#c7c8cc" strokeWidth="0.45" strokeDasharray="100 2600" opacity="0.26"
-        style={{ "--d": "18s", "--dl": "2s" } as React.CSSProperties} />
-      <path className="gxs gxcr" d="M1400 700 C1100 660 850 740 600 680 S280 560 -100 640"
-        stroke="#c7c8cc" strokeWidth="0.4" strokeDasharray="85 2615" opacity="0.2"
-        style={{ "--d": "20s", "--dl": "7s" } as React.CSSProperties} />
-      <path className="gxs gxc" d="M-50 80 C180 130 400 60 650 110 S980 240 1300 150"
-        stroke="#c7c8cc" strokeWidth="0.35" strokeDasharray="70 2630" opacity="0.16"
-        style={{ "--d": "22s", "--dl": "14s" } as React.CSSProperties} />
-      <path className="gxs gxcr" d="M1400 300 C1150 280 900 180 650 220 S300 400 -100 350"
-        stroke="#08e52f" strokeWidth="0.35" strokeDasharray="80 2620" opacity="0.2"
-        style={{ "--d": "19s", "--dl": "16s" } as React.CSSProperties} />
+      {/* ══ PLANE D — near-horizontal mid-screen spark rail ══ */}
+      {/* Tiny 8 px sparks fly across a nearly flat curve — very different rhythm */}
+      <path className="gxs gxc" d="M-100 390 C200 370 500 415 800 395 S1100 375 1420 400"
+        stroke="#08e52f" strokeWidth="0.5" strokeDasharray="8 2650" opacity="0.65"
+        style={{ "--d": "5s", "--dl": "0s" } as React.CSSProperties} />
+      <path className="gxs gxc" d="M-100 390 C200 370 500 415 800 395 S1100 375 1420 400"
+        stroke="#08e52f" strokeWidth="0.5" strokeDasharray="8 2650" opacity="0.65"
+        style={{ "--d": "5s", "--dl": "2.5s" } as React.CSSProperties} />
+      <path className="gxs gxcr" d="M-100 390 C200 370 500 415 800 395 S1100 375 1420 400"
+        stroke="#c7c8cc" strokeWidth="0.4" strokeDasharray="6 2652" opacity="0.35"
+        style={{ "--d": "6s", "--dl": "1.5s" } as React.CSSProperties} />
+
+      {/* ══ PLANE E — left edge vertical curve (into/out-of screen feel) ══ */}
+      <path className="gxs gxc" d="M75 -60 C100 150 45 350 85 560 S55 760 90 900"
+        stroke="#c7c8cc" strokeWidth="0.45" strokeDasharray="90 2610" opacity="0.2"
+        style={{ "--d": "21s", "--dl": "4s" } as React.CSSProperties} />
+      <path className="gxs gxcr" d="M75 -60 C100 150 45 350 85 560 S55 760 90 900"
+        stroke="#08e52f" strokeWidth="0.35" strokeDasharray="55 2645" opacity="0.17"
+        style={{ "--d": "24s", "--dl": "14s" } as React.CSSProperties} />
+
+      {/* ══ PLANE F — right edge vertical curve ══ */}
+      <path className="gxs gxcr" d="M1125 -60 C1095 150 1155 350 1115 560 S1145 760 1110 900"
+        stroke="#c7c8cc" strokeWidth="0.4" strokeDasharray="80 2620" opacity="0.17"
+        style={{ "--d": "23s", "--dl": "8s" } as React.CSSProperties} />
+      <path className="gxs gxc" d="M1125 -60 C1095 150 1155 350 1115 560 S1145 760 1110 900"
+        stroke="#08e52f" strokeWidth="0.3" strokeDasharray="50 2650" opacity="0.14"
+        style={{ "--d": "27s", "--dl": "19s" } as React.CSSProperties} />
+
+      {/* ══ PLANE G — far ghost arcs (z-depth background layer) ══ */}
+      <path className="gxs gxc" d="M-200 720 C100 620 500 280 820 200 S1250 360 1550 140"
+        stroke="#08e52f" strokeWidth="0.4" strokeDasharray="300 2400" opacity="0.1"
+        style={{ "--d": "26s", "--dl": "0s" } as React.CSSProperties} />
+      <path className="gxs gxcr" d="M1550 580 C1200 510 900 660 580 590 S180 390 -180 460"
+        stroke="#08e52f" strokeWidth="0.35" strokeDasharray="260 2440" opacity="0.08"
+        style={{ "--d": "30s", "--dl": "12s" } as React.CSSProperties} />
     </svg>
   );
 }
