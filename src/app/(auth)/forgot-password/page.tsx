@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { AUTH_LINK_CLASS, AuthHeading, AuthShell } from "@/components/auth/auth-shell";
+import { AuthPageHeading, AuthPageLayout } from "@/components/auth/auth-page";
 import { isDatabaseConfigured, isSupabaseConfigured } from "@/lib/env";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
@@ -11,23 +11,28 @@ export default function ForgotPasswordPage() {
   const ready = isSupabaseConfigured() && isDatabaseConfigured();
 
   return (
-    <AuthShell
+    <AuthPageLayout
       footer={
-        <Link href="/login" className={AUTH_LINK_CLASS}>
+        <Link
+          href="/login"
+          className="text-[var(--gx-muted)] underline-offset-4 transition-colors hover:text-[var(--gx-text)] hover:underline"
+        >
           Back to sign in
         </Link>
       }
     >
-      <AuthHeading
-        title="Reset your password"
-        description="Enter your email address. If it matches an account, we'll send a link to set a new password."
+      <AuthPageHeading
+        title="Reset password"
+        description="Enter your email and we'll send a link to set a new password."
       />
 
       {ready ? (
         <ForgotPasswordForm />
       ) : (
-        <p className="text-[13px] text-[var(--gx-muted)]">This deployment is not configured yet. See docs/ENVIRONMENT.md.</p>
+        <p className="text-[13px] text-[var(--gx-muted)]">
+          This deployment is not configured yet.
+        </p>
       )}
-    </AuthShell>
+    </AuthPageLayout>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { AuthLines } from "@/components/auth/auth-page";
 import { isDatabaseConfigured, isSupabaseConfigured } from "@/lib/env";
 import { SITE_HOME } from "@/lib/routing/hosts";
 import { LoginForm } from "./login-form";
@@ -20,7 +21,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <div className="gxo relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-[var(--gx-bg)] px-6 py-10">
       {/* Animated curved line background */}
-      <Lines />
+      <AuthLines />
 
       {/* Radial glow */}
       <div
@@ -93,71 +94,3 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   );
 }
 
-/** Animated SVG curved streaks spanning the full background. */
-function Lines() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      preserveAspectRatio="xMidYMid slice"
-      viewBox="0 0 1200 800"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ opacity: 0.45 }}
-    >
-      <defs>
-        <style>{`
-          @keyframes gx-streak {
-            0%   { stroke-dashoffset: 2400; opacity: 0; }
-            8%   { opacity: 1; }
-            80%  { opacity: 1; }
-            100% { stroke-dashoffset: 0; opacity: 0; }
-          }
-          @keyframes gx-streak-r {
-            0%   { stroke-dashoffset: -2400; opacity: 0; }
-            8%   { opacity: 1; }
-            80%  { opacity: 1; }
-            100% { stroke-dashoffset: 0; opacity: 0; }
-          }
-          .s { fill: none; stroke-linecap: round; }
-          .a { animation: gx-streak var(--d,28s) ease-in-out var(--dl,0s) infinite; }
-          .ar { animation: gx-streak-r var(--d,28s) ease-in-out var(--dl,0s) infinite; }
-          @media (prefers-reduced-motion: reduce) { .a, .ar { animation: none; opacity: 0.12; } }
-        `}</style>
-      </defs>
-
-      {/* Green accent streaks */}
-      <path className="s a" d="M-100 650 C200 580 400 200 700 160 S1050 300 1350 180"
-        stroke="#08e52f" strokeWidth="1.2" strokeDasharray="2400"
-        style={{ "--d": "32s", "--dl": "0s" } as React.CSSProperties} />
-
-      <path className="s a" d="M-80 420 C150 350 380 480 620 380 S950 160 1300 220"
-        stroke="#08e52f" strokeWidth="0.8" strokeDasharray="2200"
-        style={{ "--d": "40s", "--dl": "6s" } as React.CSSProperties} />
-
-      <path className="s ar" d="M1350 500 C1050 440 820 620 560 540 S200 350 -120 420"
-        stroke="#00b95b" strokeWidth="1" strokeDasharray="2300"
-        style={{ "--d": "36s", "--dl": "3s" } as React.CSSProperties} />
-
-      {/* Dim white/silver streaks for depth */}
-      <path className="s a" d="M-150 200 C100 260 320 140 580 200 S900 400 1200 300"
-        stroke="#c7c8cc" strokeWidth="0.6" strokeDasharray="2000"
-        style={{ "--d": "45s", "--dl": "10s" } as React.CSSProperties} />
-
-      <path className="s ar" d="M1400 700 C1100 660 850 740 600 680 S280 560 -100 640"
-        stroke="#c7c8cc" strokeWidth="0.5" strokeDasharray="2100"
-        style={{ "--d": "50s", "--dl": "2s" } as React.CSSProperties} />
-
-      <path className="s a" d="M-50 80 C180 130 400 60 650 110 S980 240 1300 150"
-        stroke="#08e52f" strokeWidth="0.5" strokeDasharray="1900"
-        style={{ "--d": "55s", "--dl": "18s" } as React.CSSProperties} />
-
-      <path className="s ar" d="M1350 350 C1080 310 800 440 540 380 S220 250 -100 300"
-        stroke="#00b95b" strokeWidth="0.7" strokeDasharray="2000"
-        style={{ "--d": "38s", "--dl": "14s" } as React.CSSProperties} />
-
-      <path className="s a" d="M-200 760 C150 700 380 780 650 720 S980 600 1350 660"
-        stroke="#08e52f" strokeWidth="0.4" strokeDasharray="2200"
-        style={{ "--d": "60s", "--dl": "8s" } as React.CSSProperties} />
-    </svg>
-  );
-}

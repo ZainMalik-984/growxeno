@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { CircleOff } from "lucide-react";
 
-import { AUTH_GHOST_CLASS, AuthHeading, AuthShell } from "@/components/auth/auth-shell";
+import { AuthPageLayout } from "@/components/auth/auth-page";
+import { AUTH_BUTTON_CLASS } from "@/components/auth/auth-shell";
 import { signOut } from "@/lib/auth/actions";
 
 export const metadata: Metadata = { title: "Account inactive" };
@@ -10,20 +12,30 @@ export const metadata: Metadata = { title: "Account inactive" };
  *
  * This route lives OUTSIDE the (app) group deliberately: the app layout calls
  * requireActor(), which redirects inactive users here, so rendering it inside
- * that layout would loop. Uses the shared signed-out frame (2026-11-16).
+ * that layout would loop.
  */
 export default function AccountInactivePage() {
   return (
-    <AuthShell>
-      <AuthHeading
-        title="Account inactive"
-        description="This account has been deactivated, so it currently has no access. Your work history is preserved. Contact an administrator if this is unexpected."
-      />
+    <AuthPageLayout>
+      {/* Icon */}
+      <div className="mb-7 grid size-12 place-items-center rounded-[14px] border border-[var(--gx-line)] bg-[var(--gx-s1)] text-[var(--gx-muted)]">
+        <CircleOff aria-hidden="true" className="size-5" />
+      </div>
+
+      <div className="mb-8">
+        <h1 className="gx-display text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[var(--gx-text)]">
+          Account inactive
+        </h1>
+        <p className="mt-2.5 max-w-[36ch] text-[0.875rem] leading-relaxed text-[var(--gx-muted)]">
+          This account has been deactivated and no longer has access. Your work history is preserved. Contact an administrator if this is unexpected.
+        </p>
+      </div>
+
       <form action={signOut}>
-        <button type="submit" className={AUTH_GHOST_CLASS}>
+        <button type="submit" className={AUTH_BUTTON_CLASS}>
           Sign out
         </button>
       </form>
-    </AuthShell>
+    </AuthPageLayout>
   );
 }
