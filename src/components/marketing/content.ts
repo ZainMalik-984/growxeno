@@ -134,17 +134,17 @@ export const audiences = [
 
 /** The market vs. Grow Xeno, in the order the brief names them. */
 export const comparison: { area: string; market: string; us: string }[] = [
-  { area: "Transparent delivery", market: "Vague promises", us: "Delivery checked against what was promised" },
-  { area: "Direct communication", market: "Ticket queues and auto-replies", us: "You talk to the person doing the work" },
-  { area: "Straight pricing", market: "Bundled extras you didn't ask for", us: "A straight quote for exactly what you need" },
-  { area: "Support after delivery", market: "Relationship ends at payment", us: "Support continues if something needs adjusting" },
-  { area: "Verification before handover", market: "Anonymous handoff, then silence", us: "Every account or asset checked before it's handed to you" },
+  { area: "Delivery criteria", market: "No agreed standard; you get what you get", us: "Delivery checked against what was promised" },
+  { area: "Communication", market: "Reseller or agency in the middle", us: "You talk to the person doing the work" },
+  { area: "Pricing", market: "Package pricing with extras built in", us: "A straight quote for exactly what you need" },
+  { area: "After delivery", market: "Contact stops at payment", us: "Support continues if something needs adjusting" },
+  { area: "Handover", market: "Credentials dropped, no walkthrough", us: "Every account checked and walked through before it's yours" },
 ];
 
 export const whyPoints: [string, string][] = [
-  ["Transparent, verified delivery", "No anonymous handoffs. Checked before it's yours, not after you've paid and gone quiet."],
-  ["Real people, direct communication", "Questions get answered, not auto-replied."],
-  ["Support after delivery", "If something needs adjusting afterwards, we're still here."],
+  ["Verified before handover", "Every order is checked against what was agreed. Nothing changes hands until it matches."],
+  ["Direct communication", "You deal with the person doing the work, not a reseller or a ticket queue."],
+  ["Support after delivery", "Questions after handover get answered. The job isn't done until you're set up."],
 ];
 
 /** Pre-handover checks: what is checked, and how. */

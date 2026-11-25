@@ -466,10 +466,7 @@ function Hero() {
 
       <Container className="relative grid grid-cols-12 items-center gap-y-6 pb-14 pt-28 sm:pt-32 lg:min-h-[100svh] lg:gap-x-8 lg:pb-20 lg:pt-28">
         <div data-hero-copy className="relative z-10 col-span-12 lg:col-span-6">
-          <div data-hero="fade">
-            <Eyebrow>Digital growth services, run honestly</Eyebrow>
-          </div>
-          <h1 data-hero-words className="gx-display mt-6 text-[clamp(2.9rem,6.4vw,6.4rem)] text-[var(--gx-text)]">
+          <h1 data-hero-words className="gx-display text-[clamp(2.9rem,6.4vw,6.4rem)] text-[var(--gx-text)]">
             <span className="sr-only">Real growth for your channels, store and brand.</span>
             <span aria-hidden>
               <MaskWords text="Real growth for your channels, store" wordClassName="gx-hero-word" />{" "}
@@ -493,7 +490,7 @@ function Hero() {
             </Btn>
           </div>
           <ul data-hero="fade" className="mt-12 grid max-w-xl grid-cols-3 border-t border-[var(--gx-line)] text-[0.8125rem] leading-snug text-[var(--gx-muted)]">
-            {["Verified before handover", "Direct communication", "No bundled upsells"].map((t, i) => (
+            {["Numbers checked before handover", "One contact for the whole order", "Quote covers exactly what you asked"].map((t, i) => (
               <li key={t} className={`pt-4 ${i > 0 ? "border-l border-[var(--gx-line)] pl-4" : "pr-4"}`}>
                 <span className="mb-1.5 block text-[0.6875rem] tabular-nums text-[var(--gx-accent)]">0{i + 1}</span>
                 {t}
@@ -843,8 +840,7 @@ function Services() {
       <Container className="relative">
         <div className="grid grid-cols-12 items-end gap-y-6">
           <div className="col-span-12 lg:col-span-8">
-            <Eyebrow>Services</Eyebrow>
-            <SplitHeading text="Seven services, held to one standard:" serif="it actually works." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+            <SplitHeading text="Seven services, one standard." className="text-[clamp(2.4rem,5.2vw,5rem)]" />
           </div>
           <p className="col-span-12 max-w-[40ch] leading-[1.65] text-[var(--gx-muted)] lg:col-span-4 lg:justify-self-end">
             Pick a service to see who it&apos;s for, what&apos;s included, and what you end up with.
@@ -1117,31 +1113,43 @@ function YouTubeArt() {
 function TikTokArt() {
   return (
     <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
-      <div className="absolute right-[8%] top-[-10%] h-[80%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.14),transparent)]" />
-      <div className={`absolute left-[40%] top-[6%] h-[78%] w-[26%] min-w-[130px] -rotate-6 rounded-[22px] p-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-rotate-3 ${glass}`}>
+      <div className="absolute left-1/2 top-1/2 h-[80%] w-[70%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.13),transparent)]" />
+      {/* phone — centred, no rotation */}
+      <div className={`absolute left-1/2 top-[6%] h-[80%] w-[36%] min-w-[140px] max-w-[180px] -translate-x-1/2 rounded-[22px] p-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1 ${glass}`}>
         <div className="relative h-full overflow-hidden rounded-[16px] bg-[linear-gradient(170deg,#1d2621,#090c0a)]">
-          <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(70%_60%_at_40%_40%,rgb(0_185_91/0.4),transparent_70%)]" />
-          <div className="absolute bottom-3 left-3 space-y-1.5">
-            <span className="block h-1.5 w-16 rounded-full bg-white/60" />
-            <span className="block h-1.5 w-10 rounded-full bg-white/25" />
+          <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(70%_60%_at_50%_40%,rgb(0_185_91/0.35),transparent_70%)]" />
+          <div className="absolute bottom-10 left-3 space-y-1.5">
+            <span className="block h-1.5 w-14 rounded-full bg-white/60" />
+            <span className="block h-1.5 w-9 rounded-full bg-white/25" />
           </div>
-          <div className="absolute bottom-3 right-2 flex flex-col items-center gap-2 text-[0.5rem] text-white/60">
-            <span className="grid size-6 place-items-center rounded-full bg-white/10">♥</span>
-            <span className="grid size-6 place-items-center rounded-full bg-white/10">↗</span>
+          <div className="absolute bottom-8 right-2 flex flex-col items-center gap-3">
+            <span className="grid size-6 place-items-center rounded-full bg-white/10 text-[0.5rem] text-white/60">♥</span>
+            <SiTiktok className="size-3 text-white/35" />
           </div>
+          <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/50 to-transparent" />
         </div>
       </div>
-      <div className={`absolute left-[14%] top-[8%] w-[26%] min-w-[120px] rounded-[12px] p-3 transition-transform duration-700 group-hover:translate-x-1 ${glass}`}>
-        <span className="flex items-center gap-2 text-[0.625rem] text-white/55">
-          <SiTiktok className="size-3 text-[var(--gx-silver)]" />
+      {/* followers — left */}
+      <div className={`absolute left-[6%] top-[18%] w-[30%] min-w-[108px] max-w-[130px] rounded-[12px] p-3 transition-transform duration-700 group-hover:-translate-y-1 ${glass}`}>
+        <span className="flex items-center gap-1.5 text-[0.6rem] text-white/50">
+          <SiTiktok className="size-2.5 text-[var(--gx-silver)]" />
           Followers
         </span>
-        <span className="mt-1 block text-lg font-medium tabular-nums text-[var(--gx-text)]">10,000</span>
+        <span className="mt-1 block text-lg font-semibold tabular-nums leading-none text-[var(--gx-text)]">10,000</span>
         <span className="mt-2 block h-1 overflow-hidden rounded-full bg-white/10">
           <span className="block h-full w-full rounded-full bg-[var(--gx-accent)]" />
         </span>
       </div>
-      <Keycap className="right-[10%] top-[16%] rotate-[10deg] group-hover:rotate-[4deg]">1M+</Keycap>
+      {/* views — right */}
+      <div className={`absolute right-[6%] top-[28%] rounded-[12px] px-3 py-2.5 transition-transform duration-700 group-hover:translate-y-1 ${glass}`}>
+        <span className="block text-[0.6rem] text-white/50">Views / 28d</span>
+        <span className="mt-0.5 block text-base font-semibold tabular-nums leading-none text-[var(--gx-text)]">1M+</span>
+      </div>
+      {/* eligible badge */}
+      <span className={`absolute bottom-[8%] left-1/2 -translate-x-1/2 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[0.6rem] font-medium text-[var(--gx-accent)] transition-transform duration-700 group-hover:translate-y-1 ${glass}`}>
+        <Check className="size-3" strokeWidth={3} />
+        Monetization eligible
+      </span>
     </div>
   );
 }
@@ -1168,64 +1176,52 @@ function AdSenseArt() {
   );
 }
 
-/*
- * Social media management: a post card at the centre with the platforms it is
- * published to orbiting it on two faint rings, and the results popping up.
- * Glyphs are silver and turn green on hover, when they also drift along their
- * orbits. The gentle bob runs on the inner glyph, so the entrance timeline
- * (which animates the outer layers) never fights it.
- */
-const SMM_ORBIT: { Icon: (p: { className?: string }) => ReactNode; label: string; pos: string; hover: string; delay: string }[] = [
-  { Icon: SiInstagram, label: "Instagram", pos: "left-[13%] top-[18%]", hover: "group-hover:-translate-y-1.5 group-hover:translate-x-2", delay: "0s" },
-  { Icon: SiFacebook, label: "Facebook", pos: "left-[5%] top-[56%]", hover: "group-hover:-translate-y-2 group-hover:translate-x-1", delay: "-1.2s" },
-  { Icon: FaLinkedinIn, label: "LinkedIn", pos: "left-[24%] top-[78%]", hover: "group-hover:-translate-x-2 group-hover:translate-y-1", delay: "-2.1s" },
-  { Icon: SiX, label: "X", pos: "right-[13%] top-[14%]", hover: "group-hover:translate-y-1.5 group-hover:translate-x-1", delay: "-0.6s" },
-  { Icon: SiThreads, label: "Threads", pos: "right-[4%] top-[50%]", hover: "group-hover:translate-y-2 group-hover:-translate-x-1", delay: "-1.8s" },
-  { Icon: SiPinterest, label: "Pinterest", pos: "right-[22%] top-[80%]", hover: "group-hover:translate-x-2 group-hover:-translate-y-1", delay: "-2.6s" },
+const SMM_SCHEDULE: (((p: { className?: string }) => ReactNode) | null)[][] = [
+  [SiInstagram, SiFacebook, SiX, SiInstagram, FaLinkedinIn, null, SiThreads],
+  [FaLinkedinIn, SiInstagram, null, SiX, SiInstagram, SiFacebook, null],
 ];
 
 function SmmArt() {
   const ease = "transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]";
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   return (
     <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
-      <div className="absolute left-1/2 top-1/2 h-[90%] w-[70%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.16),transparent)]" />
-      <svg viewBox="0 0 400 200" preserveAspectRatio="none" className={`absolute inset-[6%_2%] h-[88%] w-[96%] ${ease} group-hover:rotate-[2deg]`}>
-        <ellipse cx="200" cy="100" rx="190" ry="88" fill="none" stroke="rgb(255 255 255 / 0.08)" />
-        <ellipse cx="200" cy="100" rx="128" ry="60" fill="none" stroke="rgb(255 255 255 / 0.06)" strokeDasharray="3 5" />
-      </svg>
+      <div className="absolute left-1/2 top-1/2 h-[90%] w-[80%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.12),transparent)]" />
 
-      {/* The post being published. */}
-      <div className={`absolute left-1/2 top-[46%] w-[26%] min-w-[118px] max-w-[150px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] p-1.5 ${ease} group-hover:-translate-y-[54%] ${glass}`}>
-        <div className="flex items-center gap-1.5 px-1 pb-2 pt-0.5">
-          <span className="size-4 rounded-full bg-[linear-gradient(135deg,var(--gx-accent),var(--gx-accent-hi))]" />
-          <span className="h-1.5 w-12 rounded-full bg-white/40" />
+      {/* weekly content schedule */}
+      <div className={`absolute left-1/2 top-[8%] w-[88%] max-w-[300px] -translate-x-1/2 rounded-[14px] p-3 ${ease} group-hover:-translate-y-1 ${glass}`}>
+        <div className="mb-2.5 flex items-center justify-between">
+          <span className="text-[0.625rem] font-medium text-[var(--gx-text)]">This week</span>
+          <span className="rounded-full bg-[var(--gx-accent)]/15 px-2 py-0.5 text-[0.5625rem] font-medium text-[var(--gx-accent)]">14 posts</span>
         </div>
-        <div className="aspect-[16/10] overflow-hidden rounded-[9px] bg-[linear-gradient(160deg,#1d2a22,#0a0e0c)]">
-          <div className="h-full w-full bg-[radial-gradient(60%_70%_at_35%_35%,rgb(8_229_47/0.35),transparent_70%)]" />
-        </div>
-        <div className="flex items-center gap-2 px-1 pt-2 text-[0.5625rem] text-white/55">
-          <span className="text-[var(--gx-accent)]">♥</span>
-          <span className="h-1 w-8 rounded-full bg-white/25" />
-          <span className="ml-auto h-1 w-5 rounded-full bg-white/15" />
+        <div className="grid grid-cols-7 gap-x-1 gap-y-1.5">
+          {days.map((d) => (
+            <div key={d} className="flex justify-center">
+              <span className="text-[0.5rem] text-white/35">{d}</span>
+            </div>
+          ))}
+          {SMM_SCHEDULE.map((row, ri) =>
+            row.map((Icon, di) =>
+              Icon ? (
+                <div key={`${ri}-${di}`} className="flex justify-center">
+                  <span className={`grid size-5 place-items-center rounded-[6px] text-[var(--gx-silver)] transition-colors duration-500 group-hover:text-[var(--gx-accent)] ${glass}`}>
+                    <Icon className="size-2.5" />
+                  </span>
+                </div>
+              ) : (
+                <div key={`${ri}-${di}`} className="flex justify-center">
+                  <span className="size-5 rounded-[6px] border border-dashed border-white/[0.08]" />
+                </div>
+              )
+            )
+          )}
         </div>
       </div>
 
-      {SMM_ORBIT.map(({ Icon, label, pos, hover, delay }) => (
-        <span key={label} className={`absolute ${pos} ${ease} ${hover}`}>
-          <span
-            className={`gx-bob grid size-9 place-items-center rounded-[11px] text-[var(--gx-silver)] transition-colors duration-500 group-hover:text-[var(--gx-accent)] ${glass}`}
-            style={{ animationDelay: delay }}
-          >
-            <Icon className="size-4" />
-          </span>
-        </span>
-      ))}
-
-      <span className={`absolute right-[29%] top-[3%] flex items-center gap-1 rounded-full px-2.5 py-1 text-[0.625rem] font-medium tabular-nums text-[var(--gx-text)] ${ease} group-hover:-translate-y-1 ${glass}`}>
-        <span className="text-[var(--gx-accent)]">♥</span> 2.4k
-      </span>
-      <span className={`absolute bottom-[3%] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.625rem] font-medium tabular-nums text-[var(--gx-accent)] ${ease} group-hover:translate-y-1 ${glass}`}>
-        +312 followers
+      {/* going live today */}
+      <span className={`absolute bottom-[12%] left-1/2 -translate-x-1/2 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[0.625rem] font-medium text-[var(--gx-text)] ${ease} group-hover:translate-y-1 ${glass}`}>
+        <span className="size-1.5 animate-pulse rounded-full bg-[var(--gx-accent)]" />
+        3 going live today
       </span>
     </div>
   );
@@ -1557,7 +1553,7 @@ function Audience() {
       <Container>
         <div className="grid grid-cols-12 items-end gap-y-6">
           <div className="col-span-12 lg:col-span-9">
-            <Eyebrow>Who we work with</Eyebrow>
+            <Eyebrow>Creators, publishers, stores and brands</Eyebrow>
             <SplitHeading text="Built for people turning" serif="attention into income." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
           </div>
         </div>
@@ -1618,11 +1614,10 @@ function Why() {
       <Container className="relative">
         <div className="grid grid-cols-12 gap-y-10">
           <div className="col-span-12 lg:col-span-7">
-            <Eyebrow>Why Grow Xeno</Eyebrow>
-            <SplitHeading text="Scams are common in this space." serif="Accountability isn't." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+            <SplitHeading text="We show our work." className="text-[clamp(2.4rem,5.2vw,5rem)]" />
           </div>
           <div className="col-span-12 lg:col-span-4 lg:col-start-9 lg:pt-10">
-            <p className="leading-[1.65] text-[var(--gx-muted)]">That&apos;s the bar we hold ourselves to on every order. Here&apos;s what it means in practice.</p>
+            <p className="leading-[1.65] text-[var(--gx-muted)]">Here&apos;s how that works in practice.</p>
             <ul className="mt-8 divide-y divide-[var(--gx-line)] border-y border-[var(--gx-line)]">
               {whyPoints.map(([t, d], i) => (
                 <li key={t} className="flex gap-4 py-4">
@@ -1641,15 +1636,16 @@ function Why() {
           {/* Recessed: what is common in the market. */}
           <div
             data-market
-            className="col-span-12 rounded-[var(--gx-r-lg)] border border-[var(--gx-line)] bg-[var(--gx-bg)] p-6 shadow-[inset_0_2px_18px_rgb(0_0_0/0.55)] sm:p-9 lg:col-span-7 lg:col-start-1 lg:row-start-1 lg:pr-[31%]"
+            className="relative col-span-12 overflow-hidden rounded-[var(--gx-r-lg)] border border-[var(--gx-line)] bg-[var(--gx-bg)] p-6 shadow-[inset_0_2px_18px_rgb(0_0_0/0.55)] sm:p-9 lg:col-span-7 lg:col-start-1 lg:row-start-1 lg:pr-[31%]"
           >
-            <p className="gx-eyebrow text-[var(--gx-dim)]">Common in the market</p>
+            <span aria-hidden className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-red-500/50 to-transparent" />
+            <p className="gx-eyebrow text-red-400/70">Common in the market</p>
             <ul className="mt-6 divide-y divide-[var(--gx-line)]">
               {comparison.map((c) => (
                 <li key={c.area} className="grid gap-1 py-4 sm:grid-cols-[1fr_1.2fr] sm:gap-6">
                   <span className="text-xs text-[var(--gx-dim)]">{c.area}</span>
                   <span className="flex gap-2.5 text-[0.9375rem] text-[var(--gx-dim)]">
-                    <X className="mt-1 size-3.5 shrink-0" aria-hidden />
+                    <X className="mt-1 size-3.5 shrink-0 text-red-400/70" aria-hidden />
                     <span>
                       <span className="sr-only">Common in the market: </span>
                       {c.market}
@@ -1751,8 +1747,7 @@ function Process() {
         <Container className="pt-[var(--gx-section)] lg:pt-24">
           <div className="grid grid-cols-12 items-end gap-y-6">
             <div className="col-span-12 lg:col-span-8">
-              <Eyebrow>How it works</Eyebrow>
-              <SplitHeading text="What happens after" serif="you get in touch." className="mt-5 text-[clamp(2.4rem,5.2vw,5rem)]" />
+              <SplitHeading text="What happens after" serif="you get in touch." className="text-[clamp(2.4rem,5.2vw,5rem)]" />
             </div>
             <p className="col-span-12 max-w-[36ch] leading-[1.65] text-[var(--gx-muted)] lg:col-span-4 lg:justify-self-end">
               Four steps, start to finish. You&apos;ll always know where your order stands.
@@ -1840,8 +1835,7 @@ function Verification() {
         >
           <div aria-hidden className="gx-grain absolute inset-0" />
           <div className="relative border-b border-[var(--gx-line)] p-6 sm:p-10 lg:col-span-5 lg:border-b-0 lg:border-r lg:p-12">
-            <Eyebrow className="text-[var(--gx-accent-hi)]">Pre-handover verification</Eyebrow>
-            <SplitHeading text="Before every" serif="handover." className="mt-5 text-[clamp(2.2rem,4vw,3.75rem)]" />
+            <SplitHeading text="Before every" serif="handover." className="text-[clamp(2.2rem,4vw,3.75rem)]" />
             <p className="mt-6 max-w-[40ch] leading-[1.65] text-[var(--gx-muted)]">
               The work is checked against what was promised before it&apos;s called done. Nothing is handed over until every check has passed.
             </p>
@@ -1936,8 +1930,7 @@ function Faq() {
       <Container className="grid grid-cols-12 gap-y-12 lg:gap-x-10">
         <div className="col-span-12 lg:col-span-4">
           <div className="lg:sticky lg:top-28">
-            <Eyebrow>FAQ</Eyebrow>
-            <SplitHeading text="Good to know" serif="before you reach out." className="mt-5 text-[clamp(2.2rem,4vw,3.75rem)]" />
+            <SplitHeading text="Good to know" serif="before you reach out." className="text-[clamp(2.2rem,4vw,3.75rem)]" />
             <div className="mt-10 border-t border-[var(--gx-line)] pt-6">
               <p className="font-medium text-[var(--gx-text)]">Have a different question?</p>
               <p className="mt-1 text-sm text-[var(--gx-muted)]">You&apos;ll get an answer from a real person.</p>
@@ -2050,8 +2043,7 @@ function Contact() {
       <div aria-hidden className="pointer-events-none absolute -left-1/4 top-0 h-[80%] w-[60%] rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.09),transparent)]" />
       <Container className="relative grid grid-cols-12 gap-y-14 lg:gap-x-12">
         <div className="col-span-12 lg:col-span-5">
-          <Eyebrow>Get started</Eyebrow>
-          <SplitHeading text="Tell us what you need." serif="Get a straight quote back." className="mt-5 text-[clamp(2.4rem,4.6vw,4.5rem)]" />
+          <SplitHeading text="Tell us your goal." serif="We'll quote exactly that." className="text-[clamp(2.4rem,4.6vw,4.5rem)]" />
           <p className="mt-7 max-w-[42ch] leading-[1.65] text-[var(--gx-muted)] sm:text-lg">
             A channel, an account, a store or a site. Describe your goal and we&apos;ll reply directly.
           </p>
@@ -2210,7 +2202,7 @@ function Footer() {
       <Container className="grid grid-cols-2 gap-x-6 gap-y-12 pt-20 md:grid-cols-12 lg:pt-28">
         <div className="col-span-2 md:col-span-5">
           <Logo size="lg" />
-          <p className="mt-5 max-w-[36ch] leading-[1.65] text-[var(--gx-muted)]">Digital growth services, run honestly. Verified before handover, supported after.</p>
+          <p className="mt-5 max-w-[36ch] leading-[1.65] text-[var(--gx-muted)]">Monetization, growth and web services. Worldwide.</p>
           <Magnetic className="mt-8">
             <Btn href="#contact">
               Book a meeting <ArrowUpRight className="size-4" aria-hidden />
