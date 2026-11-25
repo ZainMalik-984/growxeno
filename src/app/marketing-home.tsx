@@ -1111,45 +1111,31 @@ function YouTubeArt() {
 }
 
 function TikTokArt() {
+  const bars = [18, 32, 26, 44, 60, 75, 100];
   return (
     <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
-      <div className="absolute left-1/2 top-1/2 h-[80%] w-[70%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.13),transparent)]" />
-      {/* phone — centred, no rotation */}
-      <div className={`absolute left-1/2 top-[6%] h-[80%] w-[36%] min-w-[140px] max-w-[180px] -translate-x-1/2 rounded-[22px] p-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1 ${glass}`}>
-        <div className="relative h-full overflow-hidden rounded-[16px] bg-[linear-gradient(170deg,#1d2621,#090c0a)]">
-          <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(70%_60%_at_50%_40%,rgb(0_185_91/0.35),transparent_70%)]" />
-          <div className="absolute bottom-10 left-3 space-y-1.5">
-            <span className="block h-1.5 w-14 rounded-full bg-white/60" />
-            <span className="block h-1.5 w-9 rounded-full bg-white/25" />
-          </div>
-          <div className="absolute bottom-8 right-2 flex flex-col items-center gap-3">
-            <span className="grid size-6 place-items-center rounded-full bg-white/10 text-[0.5rem] text-white/60">♥</span>
-            <SiTiktok className="size-3 text-white/35" />
-          </div>
-          <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/50 to-transparent" />
+      <div className="absolute left-1/2 top-[-6%] h-[70%] w-[78%] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.18),transparent)]" />
+      <div className={`absolute left-[14%] top-[9%] h-[62%] w-[70%] rounded-[14px] p-3 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1.5 ${glass}`}>
+        <div className="flex items-center gap-2 pb-3">
+          <SiTiktok className="size-3 text-[var(--gx-silver)]" />
+          <span className="text-[0.5625rem] text-white/45">Views · last 28 days</span>
+        </div>
+        <div className="flex h-[calc(100%-2.25rem)] items-end gap-[3px]">
+          {bars.map((h, i) => (
+            <span
+              key={i}
+              className="flex-1 rounded-t-[3px] transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
+              style={{
+                height: `${h}%`,
+                background: i === bars.length - 1 ? "var(--gx-accent)" : `rgb(8 229 47 / ${0.12 + (i / bars.length) * 0.28})`,
+                boxShadow: i === bars.length - 1 ? "0 0 14px rgb(8 229 47 / 0.55)" : undefined,
+              }}
+            />
+          ))}
         </div>
       </div>
-      {/* followers — left */}
-      <div className={`absolute left-[6%] top-[18%] w-[30%] min-w-[108px] max-w-[130px] rounded-[12px] p-3 transition-transform duration-700 group-hover:-translate-y-1 ${glass}`}>
-        <span className="flex items-center gap-1.5 text-[0.6rem] text-white/50">
-          <SiTiktok className="size-2.5 text-[var(--gx-silver)]" />
-          Followers
-        </span>
-        <span className="mt-1 block text-lg font-semibold tabular-nums leading-none text-[var(--gx-text)]">10,000</span>
-        <span className="mt-2 block h-1 overflow-hidden rounded-full bg-white/10">
-          <span className="block h-full w-full rounded-full bg-[var(--gx-accent)]" />
-        </span>
-      </div>
-      {/* views — right */}
-      <div className={`absolute right-[6%] top-[28%] rounded-[12px] px-3 py-2.5 transition-transform duration-700 group-hover:translate-y-1 ${glass}`}>
-        <span className="block text-[0.6rem] text-white/50">Views / 28d</span>
-        <span className="mt-0.5 block text-base font-semibold tabular-nums leading-none text-[var(--gx-text)]">1M+</span>
-      </div>
-      {/* eligible badge */}
-      <span className={`absolute bottom-[8%] left-1/2 -translate-x-1/2 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[0.6rem] font-medium text-[var(--gx-accent)] transition-transform duration-700 group-hover:translate-y-1 ${glass}`}>
-        <Check className="size-3" strokeWidth={3} />
-        Monetization eligible
-      </span>
+      <Keycap className="left-[7%] top-[12%] -rotate-[14deg] group-hover:-rotate-[8deg]">10,000</Keycap>
+      <Keycap className="right-[5%] top-[36%] rotate-[12deg] group-hover:rotate-[6deg]">1M+</Keycap>
     </div>
   );
 }
