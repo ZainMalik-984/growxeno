@@ -1111,31 +1111,48 @@ function YouTubeArt() {
 }
 
 function TikTokArt() {
-  const bars = [18, 32, 26, 44, 60, 75, 100];
+  const ease = "transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]";
   return (
     <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
-      <div className="absolute left-1/2 top-[-6%] h-[70%] w-[78%] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.18),transparent)]" />
-      <div className={`absolute left-[14%] top-[9%] h-[62%] w-[70%] rounded-[14px] p-3 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1.5 ${glass}`}>
-        <div className="flex items-center gap-2 pb-3">
-          <SiTiktok className="size-3 text-[var(--gx-silver)]" />
-          <span className="text-[0.5625rem] text-white/45">Views · last 28 days</span>
+      <div className="absolute right-0 top-0 h-full w-[55%] bg-[radial-gradient(60%_60%_at_80%_20%,rgb(8_229_47/0.16),transparent_70%)]" />
+      {/* post card — bleeds off left/bottom like a cropped fragment */}
+      <div className={`absolute -bottom-[4%] left-[6%] h-[90%] w-[44%] min-w-[130px] overflow-hidden rounded-[16px] ${ease} group-hover:-translate-y-1.5 ${glass}`}>
+        <div className="absolute inset-0 bg-[linear-gradient(160deg,#182018,#090d0a)]">
+          <div className="absolute inset-0 bg-[radial-gradient(55%_50%_at_40%_30%,rgb(8_229_47/0.28),transparent_70%)]" />
         </div>
-        <div className="flex h-[calc(100%-2.25rem)] items-end gap-[3px]">
-          {bars.map((h, i) => (
-            <span
-              key={i}
-              className="flex-1 rounded-t-[3px] transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
-              style={{
-                height: `${h}%`,
-                background: i === bars.length - 1 ? "var(--gx-accent)" : `rgb(8 229 47 / ${0.12 + (i / bars.length) * 0.28})`,
-                boxShadow: i === bars.length - 1 ? "0 0 14px rgb(8 229 47 / 0.55)" : undefined,
-              }}
-            />
-          ))}
+        <div className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/80 to-transparent p-3">
+          <span className="block h-1.5 w-16 rounded-full bg-white/60" />
+          <span className="mt-1.5 block h-1 w-10 rounded-full bg-white/30" />
+          <div className="mt-2 flex items-center gap-1.5">
+            <span className="size-2 rounded-full bg-[var(--gx-accent)]" />
+            <span className="h-1 w-10 rounded-full bg-white/20" />
+          </div>
         </div>
       </div>
-      <Keycap className="left-[7%] top-[12%] -rotate-[14deg] group-hover:-rotate-[8deg]">10,000</Keycap>
-      <Keycap className="right-[5%] top-[36%] rotate-[12deg] group-hover:rotate-[6deg]">1M+</Keycap>
+      {/* engagement column */}
+      <div className="absolute bottom-[22%] left-[46%] flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="grid size-9 place-items-center rounded-full bg-white/[0.07] text-[0.9rem] text-white/55">♥</span>
+          <span className="text-[0.5rem] tabular-nums text-white/35">1.2M</span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="grid size-9 place-items-center rounded-full bg-white/[0.07] text-[0.9rem] text-white/55">⟳</span>
+          <span className="text-[0.5rem] tabular-nums text-white/35">48k</span>
+        </div>
+      </div>
+      {/* metric pills */}
+      <div className={`absolute right-[6%] top-[10%] rounded-[12px] p-3 ${ease} group-hover:-translate-y-1 ${glass}`}>
+        <span className="block text-[0.5625rem] text-white/45">Followers</span>
+        <span className="mt-0.5 block text-xl font-semibold tabular-nums leading-none text-[var(--gx-text)]">10,000</span>
+      </div>
+      <div className={`absolute right-[6%] top-[42%] rounded-[12px] p-3 ${ease} group-hover:translate-y-1 ${glass}`}>
+        <span className="block text-[0.5625rem] text-white/45">Views / 28d</span>
+        <span className="mt-0.5 block text-xl font-semibold tabular-nums leading-none text-[var(--gx-text)]">1M+</span>
+      </div>
+      <span className={`absolute bottom-[6%] right-[6%] flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.5625rem] font-medium text-[var(--gx-accent)] ${ease} group-hover:translate-y-0.5 ${glass}`}>
+        <Check className="size-2.5" strokeWidth={3} />
+        Eligible
+      </span>
     </div>
   );
 }
@@ -1162,52 +1179,43 @@ function AdSenseArt() {
   );
 }
 
-const SMM_SCHEDULE: (((p: { className?: string }) => ReactNode) | null)[][] = [
-  [SiInstagram, SiFacebook, SiX, SiInstagram, FaLinkedinIn, null, SiThreads],
-  [FaLinkedinIn, SiInstagram, null, SiX, SiInstagram, SiFacebook, null],
-];
+const SMM_PLATFORMS = [SiInstagram, SiFacebook, FaLinkedinIn, SiX, SiThreads] as const;
 
 function SmmArt() {
   const ease = "transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]";
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   return (
     <div aria-hidden data-art className="absolute inset-0 overflow-hidden">
-      <div className="absolute left-1/2 top-1/2 h-[90%] w-[80%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.12),transparent)]" />
-
-      {/* weekly content schedule */}
-      <div className={`absolute left-1/2 top-[8%] w-[88%] max-w-[300px] -translate-x-1/2 rounded-[14px] p-3 ${ease} group-hover:-translate-y-1 ${glass}`}>
-        <div className="mb-2.5 flex items-center justify-between">
-          <span className="text-[0.625rem] font-medium text-[var(--gx-text)]">This week</span>
-          <span className="rounded-full bg-[var(--gx-accent)]/15 px-2 py-0.5 text-[0.5625rem] font-medium text-[var(--gx-accent)]">14 posts</span>
+      <div className="absolute left-1/2 top-0 h-3/4 w-3/4 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(8_229_47/0.14),transparent)]" />
+      {/* post card */}
+      <div className={`absolute inset-x-[8%] top-[8%] h-[56%] overflow-hidden rounded-[14px] ${ease} group-hover:-translate-y-1 ${glass}`}>
+        <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
+          <span className="size-5 rounded-full bg-[linear-gradient(135deg,var(--gx-accent),#005a2c)]" />
+          <span className="h-1.5 w-14 rounded-full bg-white/40" />
+          <span className="ml-auto text-[0.5rem] text-white/30">Now</span>
         </div>
-        <div className="grid grid-cols-7 gap-x-1 gap-y-1.5">
-          {days.map((d) => (
-            <div key={d} className="flex justify-center">
-              <span className="text-[0.5rem] text-white/35">{d}</span>
-            </div>
-          ))}
-          {SMM_SCHEDULE.map((row, ri) =>
-            row.map((Icon, di) =>
-              Icon ? (
-                <div key={`${ri}-${di}`} className="flex justify-center">
-                  <span className={`grid size-5 place-items-center rounded-[6px] text-[var(--gx-silver)] transition-colors duration-500 group-hover:text-[var(--gx-accent)] ${glass}`}>
-                    <Icon className="size-2.5" />
-                  </span>
-                </div>
-              ) : (
-                <div key={`${ri}-${di}`} className="flex justify-center">
-                  <span className="size-5 rounded-[6px] border border-dashed border-white/[0.08]" />
-                </div>
-              )
-            )
-          )}
+        <div className="relative mx-3 mt-2 h-[52%] overflow-hidden rounded-[8px] bg-[linear-gradient(160deg,#1d2a22,#0a0e0c)]">
+          <div className="h-full w-full bg-[radial-gradient(55%_65%_at_30%_30%,rgb(8_229_47/0.3),transparent_70%)]" />
+        </div>
+        <div className="mt-2 space-y-1.5 px-3">
+          <span className="block h-1.5 w-3/4 rounded-full bg-white/20" />
+          <span className="block h-1 w-1/2 rounded-full bg-white/[0.12]" />
         </div>
       </div>
-
-      {/* going live today */}
-      <span className={`absolute bottom-[12%] left-1/2 -translate-x-1/2 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[0.625rem] font-medium text-[var(--gx-text)] ${ease} group-hover:translate-y-1 ${glass}`}>
-        <span className="size-1.5 animate-pulse rounded-full bg-[var(--gx-accent)]" />
-        3 going live today
+      {/* platform strip */}
+      <div className="absolute inset-x-[8%] bottom-[18%] flex items-center justify-between">
+        {SMM_PLATFORMS.map((Icon, i) => (
+          <span
+            key={i}
+            className={`grid size-9 place-items-center rounded-[10px] text-[var(--gx-silver)] transition-colors duration-500 group-hover:text-[var(--gx-accent)] ${glass}`}
+            style={{ transitionDelay: `${i * 55}ms` }}
+          >
+            <Icon className="size-4" />
+          </span>
+        ))}
+      </div>
+      {/* engagement */}
+      <span className={`absolute bottom-[5%] right-[8%] flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.625rem] font-medium tabular-nums text-[var(--gx-text)] ${ease} group-hover:translate-y-0.5 ${glass}`}>
+        <span className="text-[var(--gx-accent)]">♥</span> 2.4k this week
       </span>
     </div>
   );
