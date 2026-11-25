@@ -12,6 +12,7 @@ import {
   deleteRole,
   duplicateRole,
   removeRoleFromUser,
+  resendEmployeeInvite,
   setDirectPermission,
   setRolePermission,
   setUserActive,
@@ -310,6 +311,20 @@ const createUserSchema = z.object({
 export type CreateUserActionResult =
   | { ok: true; message: string; userId: string }
   | { ok: false; error: string };
+
+const userIdSchema = z.object({ userId: uuid });
+
+export async function resendEmployeeInviteAction(input: unknown): Promise<ActionResult> {
+  const parsed = userIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("users.edit");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await resendEmployeeInvite(auth.actor, parsed.data.userId);
+  if (result.ok) revalidatePath(`/employees/${parsed.data.userId}`);
+  return result.ok ? { ok: true, message: "A new invitation is on its way." } : { ok: false, error: result.error };
+}
 
 export async function createUserAction(input: unknown): Promise<CreateUserActionResult> {
   const parsed = createUserSchema.safeParse(input);

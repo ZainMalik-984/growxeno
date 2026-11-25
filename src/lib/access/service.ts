@@ -869,3 +869,45 @@ export async function createUser(
 
   return result;
 }
+
+/** Resend an employee invite that hasn't been accepted yet (delete + reinvite, same as the outsourced worker flow). */
+export async function resendEmployeeInvite(actor: Actor, userId: string): Promise<ServiceResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fullName: true, email: true, authUserId: true, invitePending: true },
+  });
+  if (!user) return failure("That user no longer exists.");
+  if (!user.invitePending) return failure("This employee has already accepted their invitation.");
+
+  let admin: SupabaseClient;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : "Supabase administrative access is not configured.");
+  }
+
+  if (user.authUserId) {
+    await admin.auth.admin.deleteUser(user.authUserId).catch(() => {});
+  }
+
+  const invited = await inviteByEmail(admin, { email: user.email, fullName: user.fullName, kind: "team" });
+  if (!invited.ok) return failure(invited.error);
+  const newAuthUserId = invited.authUserId;
+
+  const result = await runTransaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { authUserId: newAuthUserId, invitedAt: new Date() } });
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "user.invite_resent",
+      entityType: "User",
+      entityId: userId,
+      summary: `Resent invite to ${user.fullName} (${user.email})`,
+    });
+  });
+
+  if (!result.ok) {
+    await admin.auth.admin.deleteUser(newAuthUserId).catch(() => {});
+  }
+  return result;
+}

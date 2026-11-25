@@ -186,6 +186,7 @@ export type EmployeeProfile = {
   createdAt: Date;
   /** Null = no commission. */
   commissionPercent: number | null;
+  invitePending: boolean;
   roleNames: string[];
   /** For the Edit Profile form. */
   roles: Array<{ id: string; name: string }>;
@@ -210,6 +211,7 @@ export async function getEmployeeProfile(userId: string): Promise<EmployeeProfil
       lastLoginAt: true,
       createdAt: true,
       commissionPercent: true,
+      invitePending: true,
       roles: { select: { role: { select: { id: true, name: true } } } },
       outsourcedWorkerProfile: { select: { id: true } },
     },
@@ -248,6 +250,7 @@ export async function getEmployeeProfile(userId: string): Promise<EmployeeProfil
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     commissionPercent: user.commissionPercent === null ? null : Number(user.commissionPercent),
+    invitePending: user.invitePending,
     roleNames: user.roles.map((assignment) => assignment.role.name).sort(),
     roles: user.roles.map((assignment) => assignment.role).sort((a, b) => a.name.localeCompare(b.name)),
     categories: categoryRows.map((row) => row.category).sort((a, b) => a.name.localeCompare(b.name)),

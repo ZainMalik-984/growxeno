@@ -21,6 +21,7 @@ import { CLOSED_ORDER_STATUSES, ORDER_ITEM_STATUS_LABELS, ORDER_STATUS_LABELS } 
 import { ITEM_STATUS_TONE, ORDER_STATUS_TONE } from "@/lib/orders/status-tone";
 import { ActivityTabs } from "./activity-tabs";
 import { EditProfileButton } from "./edit-profile-dialog";
+import { ResendInviteButton } from "./resend-invite-button";
 import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Employee profile" };
@@ -86,7 +87,9 @@ export default async function EmployeeProfilePage({ params }: PageProps<"/employ
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate text-[22px] font-semibold tracking-[-0.02em] text-zinc-900">{profile.fullName}</h1>
-                <StatusBadge tone={profile.isActive ? "done" : "danger"} label={profile.isActive ? "Active" : "Inactive"} />
+                {profile.invitePending
+                  ? <StatusBadge tone="warning" label="Invite pending" />
+                  : <StatusBadge tone={profile.isActive ? "done" : "danger"} label={profile.isActive ? "Active" : "Inactive"} />}
               </div>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-zinc-500">
                 <span className="inline-flex min-w-0 items-center gap-1">
@@ -114,6 +117,10 @@ export default async function EmployeeProfilePage({ params }: PageProps<"/employ
             </div>
           </div>
 
+          <div className="flex shrink-0 items-center gap-2">
+          {canEdit && profile.invitePending ? (
+            <ResendInviteButton userId={profile.id} />
+          ) : null}
           {canEdit ? (
             <EditProfileButton
               isSelf={isSelf}
@@ -134,6 +141,7 @@ export default async function EmployeeProfilePage({ params }: PageProps<"/employ
               }}
             />
           ) : null}
+          </div>
         </div>
       </Card>
 
