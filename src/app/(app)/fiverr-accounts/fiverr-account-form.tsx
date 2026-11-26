@@ -79,68 +79,94 @@ export function FiverrAccountForm({
     });
   };
 
+  if (mode === "create") {
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+          <Field label="Name" htmlFor="fiverr-account-name">
+            <Input id="fiverr-account-name" required value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Field label="Email" htmlFor="fiverr-account-email" hint="Optional.">
+            <Input id="fiverr-account-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+          <Field label="PayPal email" htmlFor="fiverr-account-paypal-email" hint="Optional.">
+            <Input id="fiverr-account-paypal-email" type="email" value={paypalEmail} onChange={(e) => setPaypalEmail(e.target.value)} />
+          </Field>
+          <Field label="PayPal password" htmlFor="fiverr-account-paypal-password" hint="Stored encrypted. Never shown again except on request.">
+            <Input
+              id="fiverr-account-paypal-password"
+              type="password"
+              autoComplete="new-password"
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setPasswordTouched(true); }}
+            />
+          </Field>
+        </div>
+        {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
+        <Button type="button" variant="primary" onClick={submit} disabled={pending || !name.trim()}>
+          {pending ? "Adding…" : "Add account"}
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-lg space-y-5">
-      <Field label="Name" htmlFor="fiverr-account-name">
-        <Input id="fiverr-account-name" required value={name} onChange={(event) => setName(event.target.value)} />
-      </Field>
-
-      <Field label="Email" htmlFor="fiverr-account-email" hint="Optional.">
-        <Input id="fiverr-account-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-      </Field>
-
-      <Field label="PayPal email" htmlFor="fiverr-account-paypal-email" hint="Optional.">
-        <Input id="fiverr-account-paypal-email" type="email" value={paypalEmail} onChange={(event) => setPaypalEmail(event.target.value)} />
-      </Field>
-
-      <Field
-        label="PayPal password"
-        htmlFor="fiverr-account-paypal-password"
-        hint={
-          mode === "edit" && initial?.hasPaypalPassword && !passwordTouched
-            ? "A password is saved. Leave blank to keep it, or type a new one to replace it."
-            : "Stored encrypted. Never shown again except on request."
-        }
-      >
-        <Input
-          id="fiverr-account-paypal-password"
-          type="password"
-          autoComplete="new-password"
-          placeholder={mode === "edit" && initial?.hasPaypalPassword && !passwordTouched ? "•••••••• (unchanged)" : ""}
-          value={passwordInput}
-          onChange={(event) => {
-            setPasswordInput(event.target.value);
-            setPasswordTouched(true);
-          }}
-        />
-      </Field>
-
-      {mode === "edit" && initial?.hasPaypalPassword ? (
-        <div className="text-[13px]">
-          {revealedPassword !== null ? (
-            <p className="text-ink">
-              Current password: <span className="font-mono">{revealedPassword}</span>{" "}
-              <button type="button" onClick={() => setRevealedPassword(null)} className="text-ink-muted underline hover:text-ink">
-                Hide
-              </button>
-            </p>
-          ) : canRevealCredentials ? (
-            <button type="button" onClick={reveal} disabled={revealing} className="text-ink-muted underline hover:text-ink">
-              {revealing ? "Revealing…" : "Show current password"}
-            </button>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+        <Field label="Name" htmlFor="fiverr-account-name">
+          <Input id="fiverr-account-name" required value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Email" htmlFor="fiverr-account-email">
+          <Input id="fiverr-account-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Field label="PayPal email" htmlFor="fiverr-account-paypal-email">
+          <Input id="fiverr-account-paypal-email" type="email" value={paypalEmail} onChange={(e) => setPaypalEmail(e.target.value)} />
+        </Field>
+        <div>
+          <Field
+            label="PayPal password"
+            htmlFor="fiverr-account-paypal-password"
+            hint={
+              initial?.hasPaypalPassword && !passwordTouched
+                ? "A password is saved. Leave blank to keep it."
+                : "Stored encrypted. Never shown again except on request."
+            }
+          >
+            <Input
+              id="fiverr-account-paypal-password"
+              type="password"
+              autoComplete="new-password"
+              placeholder={initial?.hasPaypalPassword && !passwordTouched ? "•••••••• (unchanged)" : ""}
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setPasswordTouched(true); }}
+            />
+          </Field>
+          {initial?.hasPaypalPassword ? (
+            <div className="mt-1.5 text-xs">
+              {revealedPassword !== null ? (
+                <span className="text-ink">
+                  <span className="font-mono">{revealedPassword}</span>{" "}
+                  <button type="button" onClick={() => setRevealedPassword(null)} className="text-ink-muted underline hover:text-ink">
+                    Hide
+                  </button>
+                </span>
+              ) : canRevealCredentials ? (
+                <button type="button" onClick={reveal} disabled={revealing} className="text-ink-muted underline hover:text-ink">
+                  {revealing ? "Revealing…" : "Show current password"}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
-      ) : null}
+      </div>
 
-      {error ? (
-        <p role="alert" className="text-[13px] text-red-600">
-          {error}
-        </p>
-      ) : null}
+      {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
 
-      <Button type="button" variant="primary" onClick={submit} disabled={pending || !name.trim()}>
-        {pending ? "Saving…" : mode === "create" ? "Add account" : "Save changes"}
-      </Button>
+      <div className="flex justify-end pt-1">
+        <Button type="button" variant="primary" onClick={submit} disabled={pending || !name.trim()}>
+          {pending ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
     </div>
   );
 }

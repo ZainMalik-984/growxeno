@@ -52,7 +52,7 @@ export type FiverrAccountDetail = {
   hasPaypalPassword: boolean;
   isActive: boolean;
   createdAt: Date;
-  gigs: Array<{ id: string; name: string; isActive: boolean }>;
+  gigs: Array<{ id: string; name: string; thumbnailUrl: string | null; isActive: boolean }>;
 };
 
 export async function getFiverrAccountDetail(id: string): Promise<FiverrAccountDetail | null> {
@@ -66,7 +66,7 @@ export async function getFiverrAccountDetail(id: string): Promise<FiverrAccountD
       paypalPasswordEncrypted: true,
       isActive: true,
       createdAt: true,
-      gigs: { select: { id: true, name: true, isActive: true }, orderBy: { name: "asc" } },
+      gigs: { select: { id: true, name: true, thumbnailUrl: true, isActive: true }, orderBy: { name: "asc" } },
     },
   });
   if (!account) return null;
@@ -85,6 +85,7 @@ export async function getFiverrAccountDetail(id: string): Promise<FiverrAccountD
 export type GigWithAccount = {
   id: string;
   name: string;
+  thumbnailUrl: string | null;
   isActive: boolean;
   fiverrAccountId: string;
   fiverrAccountName: string;
@@ -94,22 +95,32 @@ export type GigWithAccount = {
 export async function listGigsWithAccounts(includeInactive = false): Promise<GigWithAccount[]> {
   const gigs = await prisma.fiverrGig.findMany({
     where: includeInactive ? {} : { isActive: true, fiverrAccount: { isActive: true } },
-    select: { id: true, name: true, isActive: true, fiverrAccountId: true, fiverrAccount: { select: { name: true } } },
+    select: { id: true, name: true, thumbnailUrl: true, isActive: true, fiverrAccountId: true, fiverrAccount: { select: { name: true } } },
     orderBy: [{ fiverrAccount: { name: "asc" } }, { name: "asc" }],
   });
-  return gigs.map((g) => ({ id: g.id, name: g.name, isActive: g.isActive, fiverrAccountId: g.fiverrAccountId, fiverrAccountName: g.fiverrAccount.name }));
+  return gigs.map((g) => ({ id: g.id, name: g.name, thumbnailUrl: g.thumbnailUrl, isActive: g.isActive, fiverrAccountId: g.fiverrAccountId, fiverrAccountName: g.fiverrAccount.name }));
 }
 
-export type GigStatRow = { id: string; date: string; impressions: number; clicks: number };
+export type GigStatRow = { id: string; date: string; impressions: number; clicks: number; orders: number };
 
 export async function listGigStats(gigId: string, limit = 90): Promise<GigStatRow[]> {
   const rows = await prisma.fiverrGigStat.findMany({
     where: { gigId },
-    select: { id: true, statDate: true, impressions: true, clicks: true },
+    select: { id: true, statDate: true, impressions: true, clicks: true, orders: true },
     orderBy: { statDate: "desc" },
     take: limit,
   });
   return rows
-    .map((r) => ({ id: r.id, date: r.statDate.toISOString().slice(0, 10), impressions: r.impressions, clicks: r.clicks }))
+    .map((r) => ({ id: r.id, date: r.statDate.toISOString().slice(0, 10), impressions: r.impressions, clicks: r.clicks, orders: r.orders }))
     .reverse();
+}
+
+/** Stats for a specific date range — used by bulk add/update to pre-fill existing rows. */
+export async function listGigStatsForRange(gigId: string, from: Date, to: Date): Promise<GigStatRow[]> {
+  const rows = await prisma.fiverrGigStat.findMany({
+    where: { gigId, statDate: { gte: from, lte: to } },
+    select: { id: true, statDate: true, impressions: true, clicks: true, orders: true },
+    orderBy: { statDate: "asc" },
+  });
+  return rows.map((r) => ({ id: r.id, date: r.statDate.toISOString().slice(0, 10), impressions: r.impressions, clicks: r.clicks, orders: r.orders }));
 }

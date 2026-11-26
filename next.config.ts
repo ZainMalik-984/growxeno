@@ -2,6 +2,14 @@ import type { NextConfig } from "next";
 
 const isProduction = process.env.NODE_ENV === "production";
 
+const supabaseHost = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL) : null;
+  } catch {
+    return null;
+  }
+})();
+
 /**
  * Content-Security-Policy (Phase 10).
  *
@@ -23,7 +31,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob:${supabaseHost ? ` ${supabaseHost.origin}` : ""}`,
   "font-src 'self' data:",
   `connect-src 'self'${isProduction ? "" : " ws: wss:"}`,
   "object-src 'none'",
@@ -45,19 +53,6 @@ const securityHeaders = [
   ...(isProduction ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" }] : []),
 ];
 
-/**
- * Category images live in this project's public Supabase Storage bucket
- * (2026-11-05). next/image fetches and serves them from this app's own origin,
- * so the CSP above (img-src 'self') needs no change. Only that bucket is allowed.
- */
-const supabaseHost = (() => {
-  try {
-    return process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL) : null;
-  } catch {
-    return null;
-  }
-})();
-
 const nextConfig: NextConfig = {
   // Do not advertise the framework and version on every response.
   poweredByHeader: false,
@@ -71,6 +66,11 @@ const nextConfig: NextConfig = {
             protocol: supabaseHost.protocol.replace(":", "") as "https" | "http",
             hostname: supabaseHost.hostname,
             pathname: "/storage/v1/object/public/category-images/**",
+          },
+          {
+            protocol: supabaseHost.protocol.replace(":", "") as "https" | "http",
+            hostname: supabaseHost.hostname,
+            pathname: "/storage/v1/object/public/fiverr-gig-thumbnails/**",
           },
         ]
       : [],

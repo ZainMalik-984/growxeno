@@ -146,7 +146,8 @@ export const PERMISSION_CATALOG = [
 
   // --- Fiverr accounts and gigs (confirmed directly, 2026-09-27) ----------
   { key: "fiverr_accounts.view", name: "View Fiverr accounts", module: "fiverr_accounts", description: "See Fiverr accounts, their gigs, and gig stats/charts." },
-  { key: "fiverr_accounts.manage", name: "Manage Fiverr accounts", module: "fiverr_accounts", description: "Create and edit Fiverr accounts and gigs, and enter daily gig stats." },
+  { key: "fiverr_accounts.manage", name: "Manage Fiverr accounts", module: "fiverr_accounts", description: "Create and edit Fiverr accounts and gigs. Also grants fiverr_accounts.stats.manage." },
+  { key: "fiverr_accounts.stats.manage", name: "Manage Fiverr gig stats", module: "fiverr_accounts", description: "ADDED. Add and edit daily gig stats (impressions, clicks, orders) without full account management access." },
   { key: "fiverr_accounts.credentials.view", name: "View Fiverr PayPal credentials", module: "fiverr_accounts", description: "Reveal a Fiverr account's PayPal password. Separate from just seeing that the account exists." },
 
   // --- Reports (specification Section 8) ----------------------------------

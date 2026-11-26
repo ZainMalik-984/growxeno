@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { recordAudit } from "@/lib/audit/record";
 import type { Actor } from "@/lib/auth/session";
 import { decryptSecret, encryptSecret } from "@/lib/crypto/secret-box";
@@ -10,6 +12,10 @@ import {
   serviceFailure as failure,
   type ServiceResult,
 } from "@/lib/db/transaction";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { sniffImage } from "@/lib/categories/images";
+import { optimizeCategoryImage } from "@/lib/categories/optimize";
+import { GIG_THUMBNAIL_BUCKET, GIG_THUMBNAIL_MAX_BYTES, gigThumbnailUrl, pathFromGigThumbnailUrl } from "./thumbnail";
 
 export type { ServiceResult };
 
@@ -245,10 +251,10 @@ export async function setGigActive(actor: Actor, gigId: string, isActive: boolea
 // Gig daily stats — same "reject a duplicate day" rule as DailyStat (D10)
 // ---------------------------------------------------------------------------
 
-export type GigStatInput = { statDate: Date; impressions: number; clicks: number };
+export type GigStatInput = { statDate: Date; impressions: number; clicks: number; orders: number };
 
 function validateStat(input: GigStatInput): string | undefined {
-  if (input.impressions < 0 || input.clicks < 0) return "Counts cannot be negative.";
+  if (input.impressions < 0 || input.clicks < 0 || input.orders < 0) return "Counts cannot be negative.";
 }
 
 export async function createGigStat(actor: Actor, gigId: string, input: GigStatInput): Promise<ServiceResult<{ id: string }>> {
@@ -266,7 +272,7 @@ export async function createGigStat(actor: Actor, gigId: string, input: GigStatI
     if (clash) throw new ServiceRejection(`${gig.name} already has an entry for this date — edit it instead.`);
 
     const stat = await tx.fiverrGigStat.create({
-      data: { gigId, statDate: input.statDate, impressions: input.impressions, clicks: input.clicks, createdById: actor.user.id },
+      data: { gigId, statDate: input.statDate, impressions: input.impressions, clicks: input.clicks, orders: input.orders, createdById: actor.user.id },
       select: { id: true },
     });
 
@@ -276,8 +282,8 @@ export async function createGigStat(actor: Actor, gigId: string, input: GigStatI
       action: "fiverr_gig_stat.created",
       entityType: "FiverrGig",
       entityId: gigId,
-      summary: `Recorded ${gig.name}'s stats for ${input.statDate.toISOString().slice(0, 10)}: ${input.impressions} impressions, ${input.clicks} clicks`,
-      newValue: { statDate: input.statDate.toISOString().slice(0, 10), impressions: input.impressions, clicks: input.clicks },
+      summary: `Recorded ${gig.name}'s stats for ${input.statDate.toISOString().slice(0, 10)}: ${input.impressions} impressions, ${input.clicks} clicks, ${input.orders} orders`,
+      newValue: { statDate: input.statDate.toISOString().slice(0, 10), impressions: input.impressions, clicks: input.clicks, orders: input.orders },
     });
 
     return { id: stat.id };
@@ -291,11 +297,11 @@ export async function updateGigStat(actor: Actor, statId: string, input: Omit<Gi
   return runTransaction(async (tx) => {
     const existing = await tx.fiverrGigStat.findUnique({
       where: { id: statId },
-      select: { impressions: true, clicks: true, statDate: true, gig: { select: { name: true } } },
+      select: { impressions: true, clicks: true, orders: true, statDate: true, gig: { select: { name: true } } },
     });
     if (!existing) throw new ServiceRejection("That entry no longer exists.");
 
-    await tx.fiverrGigStat.update({ where: { id: statId }, data: { impressions: input.impressions, clicks: input.clicks } });
+    await tx.fiverrGigStat.update({ where: { id: statId }, data: { impressions: input.impressions, clicks: input.clicks, orders: input.orders } });
 
     await recordAudit(tx, {
       actorUserId: actor.user.id,
@@ -304,8 +310,151 @@ export async function updateGigStat(actor: Actor, statId: string, input: Omit<Gi
       entityType: "FiverrGig",
       entityId: statId,
       summary: `Edited ${existing.gig.name}'s stats for ${existing.statDate.toISOString().slice(0, 10)}`,
-      previousValue: { impressions: existing.impressions, clicks: existing.clicks },
-      newValue: { impressions: input.impressions, clicks: input.clicks },
+      previousValue: { impressions: existing.impressions, clicks: existing.clicks, orders: existing.orders },
+      newValue: { impressions: input.impressions, clicks: input.clicks, orders: input.orders },
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Gig thumbnail image — stored in Supabase Storage bucket "fiverr-gig-thumbnails"
+// ---------------------------------------------------------------------------
+
+const STORAGE_NOT_READY =
+  'Image storage isn\'t set up yet. In Supabase, create a public Storage bucket named "fiverr-gig-thumbnails".';
+
+/** Uploads (or replaces) a gig's thumbnail. The file is checked by bytes, compressed to WebP, then stored. */
+export async function setGigThumbnail(actor: Actor, gigId: string, file: File): Promise<ServiceResult<{ thumbnailUrl: string }>> {
+  if (file.size === 0) return failure("Choose an image to upload.");
+  if (file.size > GIG_THUMBNAIL_MAX_BYTES) return failure("That image is larger than 8 MB. Choose a smaller one.");
+
+  const original = new Uint8Array(await file.arrayBuffer());
+  if (!sniffImage(original)) return failure("Use a PNG, JPEG or WebP image.");
+
+  const optimized = await optimizeCategoryImage(original);
+  if (!optimized.ok) return failure(optimized.error);
+
+  const gig = await prisma.fiverrGig.findUnique({ where: { id: gigId }, select: { name: true, thumbnailUrl: true } });
+  if (!gig) return failure("That gig no longer exists.");
+
+  let storage: ReturnType<ReturnType<typeof createSupabaseAdminClient>["storage"]["from"]>;
+  try {
+    storage = createSupabaseAdminClient().storage.from(GIG_THUMBNAIL_BUCKET);
+  } catch {
+    return failure("Supabase administrative access is not configured.");
+  }
+
+  const path = `${gigId}/${randomUUID()}.webp`;
+  const upload = await storage.upload(path, optimized.bytes, { contentType: "image/webp", cacheControl: "31536000", upsert: false });
+  if (upload.error) {
+    return failure(/bucket not found/i.test(upload.error.message) ? STORAGE_NOT_READY : `Upload failed: ${upload.error.message}`);
+  }
+
+  const url = gigThumbnailUrl(path);
+  if (!url) return failure("Supabase URL is not configured.");
+
+  const prevPath = gig.thumbnailUrl ? pathFromGigThumbnailUrl(gig.thumbnailUrl) : null;
+
+  const result = await runTransaction(async (tx) => {
+    await tx.fiverrGig.update({ where: { id: gigId }, data: { thumbnailUrl: url } });
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "fiverr_gig.thumbnail_updated",
+      entityType: "FiverrGig",
+      entityId: gigId,
+      summary: `${prevPath ? "Replaced" : "Added"} thumbnail for gig ${gig.name}`,
+      newValue: { path, bytes: optimized.bytes.length },
+    });
+    return { thumbnailUrl: url };
+  });
+
+  if (!result.ok) {
+    await storage.remove([path]).catch(() => {});
+    return result;
+  }
+  if (prevPath) await storage.remove([prevPath]).catch(() => {});
+  return result;
+}
+
+/** Removes a gig's thumbnail (file and reference). */
+export async function removeGigThumbnail(actor: Actor, gigId: string): Promise<ServiceResult> {
+  const gig = await prisma.fiverrGig.findUnique({ where: { id: gigId }, select: { name: true, thumbnailUrl: true } });
+  if (!gig) return failure("That gig no longer exists.");
+  if (!gig.thumbnailUrl) return { ok: true, data: undefined };
+
+  const result = await runTransaction(async (tx) => {
+    await tx.fiverrGig.update({ where: { id: gigId }, data: { thumbnailUrl: null } });
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "fiverr_gig.thumbnail_removed",
+      entityType: "FiverrGig",
+      entityId: gigId,
+      summary: `Removed thumbnail for gig ${gig.name}`,
+    });
+  });
+
+  if (result.ok && gig.thumbnailUrl) {
+    const path = pathFromGigThumbnailUrl(gig.thumbnailUrl);
+    if (path) {
+      try {
+        await createSupabaseAdminClient().storage.from(GIG_THUMBNAIL_BUCKET).remove([path]);
+      } catch {
+        // Leftover file is harmless.
+      }
+    }
+  }
+  return result;
+}
+
+export type BulkGigStatEntry = { statDate: Date; impressions: number; clicks: number; orders: number };
+
+/** Upsert multiple days at once — creates rows that don't exist yet, updates existing ones. */
+export async function bulkUpsertGigStats(actor: Actor, gigId: string, entries: BulkGigStatEntry[]): Promise<ServiceResult<{ created: number; updated: number }>> {
+  if (entries.length === 0) return { ok: true, data: { created: 0, updated: 0 } };
+  for (const entry of entries) {
+    const problem = validateStat(entry);
+    if (problem) return failure(problem);
+  }
+
+  return runTransaction(async (tx) => {
+    const gig = await tx.fiverrGig.findUnique({ where: { id: gigId }, select: { name: true } });
+    if (!gig) throw new ServiceRejection("That gig no longer exists.");
+
+    let created = 0;
+    let updated = 0;
+
+    for (const entry of entries) {
+      const existing = await tx.fiverrGigStat.findUnique({
+        where: { gigId_statDate: { gigId, statDate: entry.statDate } },
+        select: { id: true },
+      });
+
+      if (existing) {
+        await tx.fiverrGigStat.update({
+          where: { id: existing.id },
+          data: { impressions: entry.impressions, clicks: entry.clicks, orders: entry.orders },
+        });
+        updated++;
+      } else {
+        await tx.fiverrGigStat.create({
+          data: { gigId, statDate: entry.statDate, impressions: entry.impressions, clicks: entry.clicks, orders: entry.orders, createdById: actor.user.id },
+        });
+        created++;
+      }
+    }
+
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "fiverr_gig_stat.bulk_upserted",
+      entityType: "FiverrGig",
+      entityId: gigId,
+      summary: `Bulk-updated ${gig.name}: ${created} created, ${updated} updated`,
+      newValue: { created, updated, entries: entries.length },
+    });
+
+    return { created, updated };
   });
 }

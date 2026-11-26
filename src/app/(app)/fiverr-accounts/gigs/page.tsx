@@ -4,6 +4,7 @@ import { Breadcrumbs, EmptyState, PageHeader } from "@/components/ui/page";
 import { requirePermission } from "@/lib/auth/authorize";
 import { listGigsWithAccounts, listGigStats } from "@/lib/fiverr-accounts/queries";
 import { GigStatsPanel } from "./gig-stats-panel";
+import { GigListFilter } from "./gig-list-filter";
 
 export const metadata: Metadata = { title: "Gigs" };
 
@@ -16,6 +17,7 @@ export const metadata: Metadata = { title: "Gigs" };
 export default async function GigsPage() {
   const actor = await requirePermission("fiverr_accounts.view");
   const canManage = actor.permissions.has("fiverr_accounts.manage");
+  const canManageStats = canManage || actor.permissions.has("fiverr_accounts.stats.manage");
 
   const gigs = await listGigsWithAccounts();
   const withStats = await Promise.all(
@@ -36,11 +38,15 @@ export default async function GigsPage() {
           description="Add a gig from its Fiverr account's page first."
         />
       ) : (
-        <div className="space-y-10">
-          {withStats.map(({ gig, stats }) => (
-            <GigStatsPanel key={gig.id} gig={gig} initialStats={stats} canManage={canManage} />
-          ))}
-        </div>
+        <GigListFilter
+          panels={withStats.map(({ gig, stats }) => ({
+            key: gig.id,
+            gig,
+            initialStats: stats,
+            canManage,
+            canManageStats,
+          }))}
+        />
       )}
     </>
   );

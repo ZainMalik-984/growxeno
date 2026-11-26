@@ -52,8 +52,9 @@ model FiverrGig {
   fiverrAccountId String        @map("fiverr_account_id") @db.Uuid
   fiverrAccount   FiverrAccount @relation(fields: [fiverrAccountId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
-  name     String  @db.VarChar(160)
-  isActive Boolean @default(true) @map("is_active")
+  name         String  @db.VarChar(160)
+  thumbnailUrl String? @map("thumbnail_url") @db.Text
+  isActive     Boolean @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -80,6 +81,7 @@ model FiverrGigStat {
 
   impressions Int @default(0)
   clicks      Int @default(0)
+  orders      Int @default(0)
 
   createdById String @map("created_by_id") @db.Uuid
   createdBy   User   @relation("FiverrGigStatCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
