@@ -56,6 +56,7 @@ const PUBLIC_APP_ROUTES = [
   "/auth/reset-password",
   "/auth/sign-out",
   "/error",
+  "/privacy",
   // Scheduled jobs: no session; the handler checks CRON_SECRET itself.
   "/api/cron",
 ];
@@ -76,7 +77,7 @@ export function isPublicRoute(pathname: string, mode: HostMode): boolean {
  * Everything else belongs to the app and is redirected there.
  */
 export function isSitePath(pathname: string): boolean {
-  return pathname === "/" || matches(pathname, "/api") || pathname.startsWith("/_next") || pathname.startsWith("/__nextjs");
+  return pathname === "/" || matches(pathname, "/privacy") || matches(pathname, "/api") || pathname.startsWith("/_next") || pathname.startsWith("/__nextjs");
 }
 
 export type RouteDecision =
