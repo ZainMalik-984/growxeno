@@ -7,6 +7,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { toast } from "sonner";
 
 import { ActionMenu } from "@/components/ui/action-menu";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -343,23 +344,11 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
           <p className="text-[13px] text-ink-muted">Pick a date range. Existing entries will be pre-filled.</p>
           <div>
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Date range</label>
-            <div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500">
-              <input
-                type="date"
-                id="bulk-from"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="flex-1 bg-transparent text-[13px] text-zinc-900 outline-none"
-              />
-              <span className="text-zinc-400">–</span>
-              <input
-                type="date"
-                id="bulk-to"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="flex-1 bg-transparent text-[13px] text-zinc-900 outline-none"
-              />
-            </div>
+            <DateRangePicker
+              from={from}
+              to={to}
+              onChange={(f, t) => { setFrom(f); setTo(t); }}
+            />
           </div>
           {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
           <div className="flex justify-end gap-2">

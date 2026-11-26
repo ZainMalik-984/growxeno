@@ -1,4 +1,14 @@
 @import "tailwindcss";
+@import "react-day-picker/style.css";
+
+/* react-day-picker — override accent to match indigo-600 */
+.rdp-root {
+  --rdp-accent-color: #4f46e5;
+  --rdp-accent-background-color: #e0e7ff;
+  --rdp-day-height: 2rem;
+  --rdp-day-width: 2rem;
+  font-size: 13px;
+}
 
 /* ---------------------------------------------------------------------------
    Business Manager — design tokens
