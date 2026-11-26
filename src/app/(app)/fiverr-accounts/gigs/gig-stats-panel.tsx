@@ -149,21 +149,40 @@ export function GigStatsPanel({
       )}
 
       {showAddLog ? (
-        <AddLogModal gigId={gig.id} onClose={() => setShowAddLog(false)} />
+        <AddLogModal gig={gig} onClose={() => setShowAddLog(false)} />
       ) : null}
 
       {showDetails ? (
-        <DetailsModal gigName={gig.name} stats={initialStats} canManage={canManageStats} onClose={() => setShowDetails(false)} />
+        <DetailsModal gig={gig} stats={initialStats} canManage={canManageStats} onClose={() => setShowDetails(false)} />
       ) : null}
 
       {showBulk ? (
-        <BulkModal gigId={gig.id} gigName={gig.name} onClose={() => setShowBulk(false)} />
+        <BulkModal gig={gig} onClose={() => setShowBulk(false)} />
       ) : null}
     </Section>
   );
 }
 
-function AddLogModal({ gigId, onClose }: { gigId: string; onClose: () => void }) {
+function GigHeader({ gig }: { gig: GigWithAccount }) {
+  return (
+    <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+      {gig.thumbnailUrl ? (
+        <div className="size-9 shrink-0 overflow-hidden rounded border border-zinc-200 bg-zinc-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={gig.thumbnailUrl} alt="" className="h-auto w-full" />
+        </div>
+      ) : (
+        <div className="size-9 shrink-0 rounded border border-zinc-200 bg-zinc-100" />
+      )}
+      <div className="min-w-0">
+        <p className="text-[11px] text-zinc-500">{gig.fiverrAccountName}</p>
+        <p className="truncate text-[12px] font-medium leading-snug text-zinc-900">{gig.name}</p>
+      </div>
+    </div>
+  );
+}
+
+function AddLogModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [date, setDate] = useState(todayIso());
@@ -175,7 +194,7 @@ function AddLogModal({ gigId, onClose }: { gigId: string; onClose: () => void })
   const submit = () => {
     setError(undefined);
     startTransition(async () => {
-      const result = await createGigStatAction({ gigId, statDate: date, impressions, clicks, orders: orders || "0" });
+      const result = await createGigStatAction({ gigId: gig.id, statDate: date, impressions, clicks, orders: orders || "0" });
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
@@ -188,19 +207,20 @@ function AddLogModal({ gigId, onClose }: { gigId: string; onClose: () => void })
 
   return (
     <Modal open onClose={onClose} labelledBy="add-log-title">
-      <h2 id="add-log-title" className="text-[15px] font-medium text-ink-strong">Add log</h2>
-      <div className="mt-5 space-y-3">
-        <Field label="Date" htmlFor={`gig-log-date-${gigId}`}>
-          <Input id={`gig-log-date-${gigId}`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <h2 id="add-log-title" className="mb-4 text-[15px] font-medium text-ink-strong">Add log</h2>
+      <GigHeader gig={gig} />
+      <div className="space-y-3">
+        <Field label="Date" htmlFor={`gig-log-date-${gig.id}`}>
+          <Input id={`gig-log-date-${gig.id}`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label="Impressions" htmlFor={`gig-log-impressions-${gigId}`}>
-          <Input id={`gig-log-impressions-${gigId}`} inputMode="numeric" value={impressions} onChange={(e) => setImpressions(e.target.value)} />
+        <Field label="Impressions" htmlFor={`gig-log-impressions-${gig.id}`}>
+          <Input id={`gig-log-impressions-${gig.id}`} inputMode="numeric" value={impressions} onChange={(e) => setImpressions(e.target.value)} />
         </Field>
-        <Field label="Clicks" htmlFor={`gig-log-clicks-${gigId}`}>
-          <Input id={`gig-log-clicks-${gigId}`} inputMode="numeric" value={clicks} onChange={(e) => setClicks(e.target.value)} />
+        <Field label="Clicks" htmlFor={`gig-log-clicks-${gig.id}`}>
+          <Input id={`gig-log-clicks-${gig.id}`} inputMode="numeric" value={clicks} onChange={(e) => setClicks(e.target.value)} />
         </Field>
-        <Field label="Orders" htmlFor={`gig-log-orders-${gigId}`}>
-          <Input id={`gig-log-orders-${gigId}`} inputMode="numeric" value={orders} onChange={(e) => setOrders(e.target.value)} placeholder="0" />
+        <Field label="Orders" htmlFor={`gig-log-orders-${gig.id}`}>
+          <Input id={`gig-log-orders-${gig.id}`} inputMode="numeric" value={orders} onChange={(e) => setOrders(e.target.value)} placeholder="0" />
         </Field>
         {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
       </div>
@@ -220,7 +240,7 @@ function AddLogModal({ gigId, onClose }: { gigId: string; onClose: () => void })
 
 type BulkRow = { date: string; impressions: string; clicks: string; orders: string; existingId?: string };
 
-function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string; onClose: () => void }) {
+function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [step, setStep] = useState<"range" | "table">("range");
@@ -247,7 +267,7 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
     setLoadingRange(true);
 
     startTransition(async () => {
-      const result = await getGigStatsForRangeAction({ gigId, from, to });
+      const result = await getGigStatsForRangeAction({ gigId: gig.id, from, to });
       setLoadingRange(false);
       if (!result.ok) {
         setError(result.error);
@@ -276,7 +296,6 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
 
   const save = () => {
     setError(undefined);
-    // Only submit rows that have at least impressions filled in
     const filled = rows.filter((r) => r.impressions !== "" || r.clicks !== "" || r.orders !== "");
     if (filled.length === 0) {
       setError("Fill in at least one row.");
@@ -290,7 +309,7 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
     }));
 
     startTransition(async () => {
-      const result = await bulkUpsertGigStatsAction({ gigId, entries });
+      const result = await bulkUpsertGigStatsAction({ gigId: gig.id, entries });
       if (result.ok) {
         toast.success(result.message);
         router.refresh();
@@ -302,15 +321,14 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
   };
 
   return (
-    <Modal open onClose={onClose} labelledBy="bulk-modal-title" className="mx-0 mb-0 mt-auto max-h-[92dvh] w-full max-w-none overflow-hidden rounded-t-[20px] border border-zinc-200 bg-white p-0 text-ink shadow-xl shadow-zinc-900/10 backdrop:bg-zinc-950/30 sm:m-auto sm:max-h-[85dvh] sm:max-w-3xl sm:rounded-[16px]">
-      <div className="p-5 sm:p-6">
-        <h2 id="bulk-modal-title" className="text-[15px] font-medium text-ink-strong">
-          {gigName} — bulk add / update
-        </h2>
-      </div>
+    <Modal open onClose={onClose} labelledBy="bulk-modal-title">
+      <h2 id="bulk-modal-title" className="mb-4 text-[15px] font-medium text-ink-strong">
+        Bulk add / update
+      </h2>
+      <GigHeader gig={gig} />
 
       {step === "range" ? (
-        <div className="space-y-4 px-5 pb-5 sm:px-6 sm:pb-6">
+        <div className="space-y-4">
           <p className="text-[13px] text-ink-muted">
             Pick a date range. Existing entries will be pre-filled and can be updated.
           </p>
@@ -332,56 +350,37 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
         </div>
       ) : (
         <div>
-          <p className="mb-3 px-5 text-[13px] text-ink-muted sm:px-6">
+          <p className="mb-2 text-[13px] text-ink-muted">
             {from === to ? dayFormat.format(new Date(`${from}T00:00:00.000Z`)) : `${dayFormat.format(new Date(`${from}T00:00:00.000Z`))} – ${dayFormat.format(new Date(`${to}T00:00:00.000Z`))}`}
             {" · "}{rows.length} day{rows.length !== 1 ? "s" : ""}
             {" · "}<button type="button" className="text-ink hover:underline" onClick={() => { setStep("range"); setRows([]); }}>Change range</button>
           </p>
 
-          {/* Single scroll container — both axes. Sticky header + sticky date column both rely on this being the nearest scrolling ancestor. */}
-          <div className="max-h-[45vh] overflow-x-auto overflow-y-auto">
-            <Table className="min-w-[480px]">
+          <div className="max-h-[45vh] overflow-y-auto">
+            <Table>
               <THead>
                 <TR>
-                  <TH className="sticky left-0 top-0 z-30 bg-white pl-0 after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-zinc-200 after:content-['']">Date</TH>
-                  <TH className="sticky top-0 z-10 bg-white text-right">Impressions</TH>
-                  <TH className="sticky top-0 z-10 bg-white text-right">Clicks</TH>
-                  <TH className="sticky top-0 z-10 bg-white text-right">Orders</TH>
+                  <TH className="sticky top-0 z-10 bg-white">Date</TH>
+                  <TH className="sticky top-0 z-10 bg-white py-1.5 text-right">Impr.</TH>
+                  <TH className="sticky top-0 z-10 bg-white py-1.5 text-right">Clicks</TH>
+                  <TH className="sticky top-0 z-10 bg-white py-1.5 text-right">Orders</TH>
                 </TR>
               </THead>
               <TBody>
                 {rows.map((row, index) => (
-                  <TR key={row.date} className={row.existingId ? "bg-surface/50" : undefined}>
-                    <TD className="sticky left-0 z-10 whitespace-nowrap bg-white pl-0 text-ink-muted after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-zinc-100 after:content-['']">
+                  <TR key={row.date} className={row.existingId ? "bg-zinc-50/80" : undefined}>
+                    <TD className="whitespace-nowrap py-1.5 text-ink-muted">
                       {dayFormat.format(new Date(`${row.date}T00:00:00.000Z`))}
                       {row.existingId ? <span className="ml-1.5 text-[10px] text-ink-faint">existing</span> : null}
                     </TD>
-                    <TD>
-                      <Input
-                        inputMode="numeric"
-                        value={row.impressions}
-                        onChange={(e) => updateRow(index, "impressions", e.target.value)}
-                        className="h-7 w-24 text-right"
-                        placeholder="0"
-                      />
+                    <TD className="py-1.5 text-right">
+                      <Input inputMode="numeric" value={row.impressions} onChange={(e) => updateRow(index, "impressions", e.target.value)} className="h-6 w-16 text-right text-[13px]" placeholder="0" />
                     </TD>
-                    <TD>
-                      <Input
-                        inputMode="numeric"
-                        value={row.clicks}
-                        onChange={(e) => updateRow(index, "clicks", e.target.value)}
-                        className="h-7 w-24 text-right"
-                        placeholder="0"
-                      />
+                    <TD className="py-1.5 text-right">
+                      <Input inputMode="numeric" value={row.clicks} onChange={(e) => updateRow(index, "clicks", e.target.value)} className="h-6 w-16 text-right text-[13px]" placeholder="0" />
                     </TD>
-                    <TD>
-                      <Input
-                        inputMode="numeric"
-                        value={row.orders}
-                        onChange={(e) => updateRow(index, "orders", e.target.value)}
-                        className="h-7 w-20 text-right"
-                        placeholder="0"
-                      />
+                    <TD className="py-1.5 text-right">
+                      <Input inputMode="numeric" value={row.orders} onChange={(e) => updateRow(index, "orders", e.target.value)} className="h-6 w-12 text-right text-[13px]" placeholder="0" />
                     </TD>
                   </TR>
                 ))}
@@ -389,9 +388,9 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
             </Table>
           </div>
 
-          {error ? <p role="alert" className="mt-3 px-5 text-[13px] text-red-600 sm:px-6">{error}</p> : null}
+          {error ? <p role="alert" className="mt-2 text-[13px] text-red-600">{error}</p> : null}
 
-          <div className="mt-4 flex justify-end gap-2 px-5 pb-5 sm:px-6 sm:pb-6">
+          <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button>
             <Button variant="primary" onClick={save} disabled={pending}>
               {pending ? "Saving…" : "Save"}
@@ -408,12 +407,12 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
 // ---------------------------------------------------------------------------
 
 function DetailsModal({
-  gigName,
+  gig,
   stats,
   canManage,
   onClose,
 }: {
-  gigName: string;
+  gig: GigWithAccount;
   stats: readonly GigStatRow[];
   canManage: boolean;
   onClose: () => void;
@@ -458,11 +457,12 @@ function DetailsModal({
 
   return (
     <Modal open onClose={onClose} labelledBy="gig-log-details-title">
-      <h2 id="gig-log-details-title" className="text-[15px] font-medium text-ink-strong">
-        {gigName} — daily log
+      <h2 id="gig-log-details-title" className="mb-4 text-[15px] font-medium text-ink-strong">
+        Daily log
       </h2>
+      <GigHeader gig={gig} />
 
-      <div className="mt-5">
+      <div>
         {rows.length === 0 ? (
           <p className="text-[13px] text-ink-faint">No entries yet.</p>
         ) : (
