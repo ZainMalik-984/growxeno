@@ -101,7 +101,7 @@ export function GigStatsPanel({
       {/* Header row: thumbnail + account/name + action menu */}
       <div className="mb-4 flex items-start gap-3">
         {/* Square thumbnail */}
-        <div className="w-14 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
+        <div className="w-24 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
           {gig.thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={gig.thumbnailUrl} alt={gig.name} className="h-auto w-full" />
