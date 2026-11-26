@@ -302,13 +302,15 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
   };
 
   return (
-    <Modal open onClose={onClose} labelledBy="bulk-modal-title">
-      <h2 id="bulk-modal-title" className="text-[15px] font-medium text-ink-strong">
-        {gigName} — bulk add / update
-      </h2>
+    <Modal open onClose={onClose} labelledBy="bulk-modal-title" className="mx-0 mb-0 mt-auto max-h-[92dvh] w-full max-w-none overflow-hidden rounded-t-[20px] border border-zinc-200 bg-white p-0 text-ink shadow-xl shadow-zinc-900/10 backdrop:bg-zinc-950/30 sm:m-auto sm:max-h-[85dvh] sm:max-w-3xl sm:rounded-[16px]">
+      <div className="p-5 sm:p-6">
+        <h2 id="bulk-modal-title" className="text-[15px] font-medium text-ink-strong">
+          {gigName} — bulk add / update
+        </h2>
+      </div>
 
       {step === "range" ? (
-        <div className="mt-5 space-y-4">
+        <div className="space-y-4 px-5 pb-5 sm:px-6 sm:pb-6">
           <p className="text-[13px] text-ink-muted">
             Pick a date range. Existing entries will be pre-filled and can be updated.
           </p>
@@ -329,68 +331,67 @@ function BulkModal({ gigId, gigName, onClose }: { gigId: string; gigName: string
           </div>
         </div>
       ) : (
-        <div className="mt-5">
-          <p className="mb-3 text-[13px] text-ink-muted">
+        <div>
+          <p className="mb-3 px-5 text-[13px] text-ink-muted sm:px-6">
             {from === to ? dayFormat.format(new Date(`${from}T00:00:00.000Z`)) : `${dayFormat.format(new Date(`${from}T00:00:00.000Z`))} – ${dayFormat.format(new Date(`${to}T00:00:00.000Z`))}`}
             {" · "}{rows.length} day{rows.length !== 1 ? "s" : ""}
             {" · "}<button type="button" className="text-ink hover:underline" onClick={() => { setStep("range"); setRows([]); }}>Change range</button>
           </p>
 
-          <div className="max-h-[50vh] overflow-y-auto">
-            <TableWrap>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Date</TH>
-                    <TH className="text-right">Impressions</TH>
-                    <TH className="text-right">Clicks</TH>
-                    <TH className="text-right">Orders</TH>
+          {/* Single scroll container — both axes. Sticky header + sticky date column both rely on this being the nearest scrolling ancestor. */}
+          <div className="max-h-[45vh] overflow-x-auto overflow-y-auto">
+            <Table className="min-w-[480px]">
+              <THead>
+                <TR>
+                  <TH className="sticky left-0 top-0 z-30 bg-white pl-0 after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-zinc-200 after:content-['']">Date</TH>
+                  <TH className="sticky top-0 z-10 bg-white text-right">Impressions</TH>
+                  <TH className="sticky top-0 z-10 bg-white text-right">Clicks</TH>
+                  <TH className="sticky top-0 z-10 bg-white text-right">Orders</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {rows.map((row, index) => (
+                  <TR key={row.date} className={row.existingId ? "bg-surface/50" : undefined}>
+                    <TD className="sticky left-0 z-10 whitespace-nowrap bg-white pl-0 text-ink-muted after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-zinc-100 after:content-['']">
+                      {dayFormat.format(new Date(`${row.date}T00:00:00.000Z`))}
+                      {row.existingId ? <span className="ml-1.5 text-[10px] text-ink-faint">existing</span> : null}
+                    </TD>
+                    <TD>
+                      <Input
+                        inputMode="numeric"
+                        value={row.impressions}
+                        onChange={(e) => updateRow(index, "impressions", e.target.value)}
+                        className="h-7 w-24 text-right"
+                        placeholder="0"
+                      />
+                    </TD>
+                    <TD>
+                      <Input
+                        inputMode="numeric"
+                        value={row.clicks}
+                        onChange={(e) => updateRow(index, "clicks", e.target.value)}
+                        className="h-7 w-24 text-right"
+                        placeholder="0"
+                      />
+                    </TD>
+                    <TD>
+                      <Input
+                        inputMode="numeric"
+                        value={row.orders}
+                        onChange={(e) => updateRow(index, "orders", e.target.value)}
+                        className="h-7 w-20 text-right"
+                        placeholder="0"
+                      />
+                    </TD>
                   </TR>
-                </THead>
-                <TBody>
-                  {rows.map((row, index) => (
-                    <TR key={row.date} className={row.existingId ? "bg-surface/50" : undefined}>
-                      <TD className="whitespace-nowrap text-ink-muted">
-                        {dayFormat.format(new Date(`${row.date}T00:00:00.000Z`))}
-                        {row.existingId ? <span className="ml-1.5 text-[10px] text-ink-faint">existing</span> : null}
-                      </TD>
-                      <TD>
-                        <Input
-                          inputMode="numeric"
-                          value={row.impressions}
-                          onChange={(e) => updateRow(index, "impressions", e.target.value)}
-                          className="h-7 w-24 text-right"
-                          placeholder="0"
-                        />
-                      </TD>
-                      <TD>
-                        <Input
-                          inputMode="numeric"
-                          value={row.clicks}
-                          onChange={(e) => updateRow(index, "clicks", e.target.value)}
-                          className="h-7 w-24 text-right"
-                          placeholder="0"
-                        />
-                      </TD>
-                      <TD>
-                        <Input
-                          inputMode="numeric"
-                          value={row.orders}
-                          onChange={(e) => updateRow(index, "orders", e.target.value)}
-                          className="h-7 w-20 text-right"
-                          placeholder="0"
-                        />
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
+                ))}
+              </TBody>
+            </Table>
           </div>
 
-          {error ? <p role="alert" className="mt-3 text-[13px] text-red-600">{error}</p> : null}
+          {error ? <p role="alert" className="mt-3 px-5 text-[13px] text-red-600 sm:px-6">{error}</p> : null}
 
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2 px-5 pb-5 sm:px-6 sm:pb-6">
             <Button variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button>
             <Button variant="primary" onClick={save} disabled={pending}>
               {pending ? "Saving…" : "Save"}
