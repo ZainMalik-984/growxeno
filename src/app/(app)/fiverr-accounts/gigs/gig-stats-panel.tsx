@@ -6,8 +6,9 @@ import { useState, useTransition } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
+import { DayPicker, type DateRange } from "react-day-picker";
+
 import { ActionMenu } from "@/components/ui/action-menu";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -252,6 +253,10 @@ function AddLogModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => voi
 
 type BulkRow = { date: string; impressions: string; clicks: string; orders: string; existingId?: string };
 
+const bulkFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+function isoFromDate(d: Date) { return d.toISOString().slice(0, 10); }
+function fmtIso(iso: string) { return bulkFmt.format(new Date(`${iso}T00:00:00.000Z`)); }
+
 function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -259,11 +264,13 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
 
   const defaultFrom = new Date();
   defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 6);
-  const [from, setFrom] = useState(defaultFrom.toISOString().slice(0, 10));
-  const [to, setTo] = useState(todayIso());
+  const [range, setRange] = useState<DateRange>({ from: defaultFrom, to: new Date() });
   const [rows, setRows] = useState<BulkRow[]>([]);
   const [error, setError] = useState<string | undefined>();
   const [loadingRange, setLoadingRange] = useState(false);
+
+  const from = range.from ? isoFromDate(range.from) : "";
+  const to = range.to ? isoFromDate(range.to) : "";
 
   const loadRange = () => {
     if (!from || !to || from > to) {
@@ -340,20 +347,23 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
       <GigHeader gig={gig} />
 
       {step === "range" ? (
-        <div className="space-y-4">
-          <p className="text-[13px] text-ink-muted">Pick a date range. Existing entries will be pre-filled.</p>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Date range</label>
-            <DateRangePicker
-              from={from}
-              to={to}
-              onChange={(f, t) => { setFrom(f); setTo(t); }}
+        <div>
+          <p className="mb-3 text-[13px] text-ink-muted">Pick a date range. Existing entries will be pre-filled.</p>
+          <div className="flex justify-center rounded-lg border border-zinc-100 bg-zinc-50 py-1">
+            <DayPicker
+              mode="range"
+              selected={range}
+              onSelect={(r) => { setRange(r ?? {}); setError(undefined); }}
+              numberOfMonths={1}
             />
           </div>
-          {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
-          <div className="flex justify-end gap-2">
+          <p className="mt-2 text-center text-[12px] text-zinc-500">
+            {from && to ? `${fmtIso(from)} – ${fmtIso(to)}` : from ? `${fmtIso(from)} – pick end date` : "Select start date"}
+          </p>
+          {error ? <p role="alert" className="mt-2 text-[13px] text-red-600">{error}</p> : null}
+          <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button>
-            <Button variant="primary" onClick={loadRange} disabled={pending || loadingRange}>
+            <Button variant="primary" onClick={loadRange} disabled={pending || loadingRange || !from || !to}>
               {loadingRange ? "Loading…" : "Continue"}
             </Button>
           </div>
@@ -479,7 +489,7 @@ function DetailsModal({
           <>
             <TableWrap>
               <Table>
-                <caption className="sr-only">{gigName} daily stats</caption>
+                <caption className="sr-only">{gig.name} daily stats</caption>
                 <THead>
                   <TR>
                     <TH>Date</TH>
