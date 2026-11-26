@@ -9,6 +9,7 @@ import { PERMISSION_CATALOG } from "@/lib/permissions/catalog";
 import { AccessMatrix } from "./access-matrix";
 import { ActivationControl } from "./activation-control";
 import { RoleEditor } from "./role-editor";
+import { SetPasswordButton } from "@/components/admin/set-password-dialog";
 import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "User access" };
@@ -57,7 +58,12 @@ export default async function UserDetailPage({ params }: PageProps<"/settings/us
         description={user.jobTitle ?? undefined}
         actions={
           canEdit ? (
-            <ActivationControl userId={user.id} isActive={user.isActive} disabled={isSelf} />
+            <div className="flex items-center gap-2">
+              {user.hasSignIn ? (
+                <SetPasswordButton userId={user.id} name={user.fullName} />
+              ) : null}
+              <ActivationControl userId={user.id} isActive={user.isActive} disabled={isSelf} />
+            </div>
           ) : undefined
         }
       />
