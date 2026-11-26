@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 3000
+    },
+    {
+      "name": "dev-split",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set NEXT_PUBLIC_SITE_URL=http://localhost:3000&& set NEXT_PUBLIC_APP_URL=http://app.localhost:3000&& pnpm dev"],
+      "port": 3000
+    }
+  ]
+}
