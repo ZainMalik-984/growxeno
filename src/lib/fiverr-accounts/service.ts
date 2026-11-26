@@ -458,3 +458,26 @@ export async function bulkUpsertGigStats(actor: Actor, gigId: string, entries: B
     return { created, updated };
   });
 }
+
+export async function deleteGigStatsForRange(actor: Actor, gigId: string, from: Date, to: Date): Promise<ServiceResult<{ deleted: number }>> {
+  return runTransaction(async (tx) => {
+    const gig = await tx.fiverrGig.findUnique({ where: { id: gigId }, select: { name: true } });
+    if (!gig) throw new ServiceRejection("That gig no longer exists.");
+
+    const result = await tx.fiverrGigStat.deleteMany({
+      where: { gigId, statDate: { gte: from, lte: to } },
+    });
+
+    await recordAudit(tx, {
+      actorUserId: actor.user.id,
+      actorEmail: actor.user.email,
+      action: "fiverr_gig_stat.range_deleted",
+      entityType: "FiverrGig",
+      entityId: gigId,
+      summary: `Deleted ${result.count} stat(s) for ${gig.name}`,
+      newValue: { deleted: result.count, from: from.toISOString(), to: to.toISOString() },
+    });
+
+    return { deleted: result.count };
+  });
+}

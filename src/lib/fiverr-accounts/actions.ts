@@ -10,6 +10,7 @@ import {
   createFiverrAccount,
   createGig,
   createGigStat,
+  deleteGigStatsForRange,
   removeGigThumbnail,
   revealFiverrPaypalPassword,
   setFiverrAccountActive,
@@ -266,6 +267,29 @@ const bulkStatEntrySchema = z.object({
   clicks: z.coerce.number().int().min(0, "Cannot be negative.").max(1_000_000_000),
   orders: z.coerce.number().int().min(0, "Cannot be negative.").max(1_000_000_000),
 });
+
+export type DeleteGigStatsRangeResult = { ok: true; message: string; deleted: number } | { ok: false; error: string };
+
+export async function deleteGigStatsForRangeAction(input: unknown): Promise<DeleteGigStatsRangeResult> {
+  const parsed = z.object({ gigId: uuid, from: dateOnly, to: dateOnly }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+
+  const auth = await authorizeAction("fiverr_accounts.view");
+  if (!auth.ok) return { ok: false, error: auth.message };
+  if (!auth.actor.permissions.has("fiverr_accounts.manage"))
+    return { ok: false, error: "Only admins can delete stats." };
+
+  const result = await deleteGigStatsForRange(
+    auth.actor,
+    parsed.data.gigId,
+    new Date(`${parsed.data.from}T00:00:00.000Z`),
+    new Date(`${parsed.data.to}T00:00:00.000Z`),
+  );
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/fiverr-accounts/gigs");
+  return { ok: true, message: `${result.data.deleted} stat${result.data.deleted !== 1 ? "s" : ""} deleted.`, deleted: result.data.deleted };
+}
 
 export type BulkUpsertGigStatsResult = { ok: true; message: string; created: number; updated: number } | { ok: false; error: string };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, BarChart2, ListPlus, Table2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BarChart2, ListPlus, Table2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -17,6 +17,7 @@ import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/tabl
 import {
   bulkUpsertGigStatsAction,
   createGigStatAction,
+  deleteGigStatsForRangeAction,
   getGigStatsForRangeAction,
   updateGigStatAction,
 } from "@/lib/fiverr-accounts/actions";
@@ -74,6 +75,7 @@ export function GigStatsPanel({
   const [showDetails, setShowDetails] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [showAddLog, setShowAddLog] = useState(false);
+  const [showDeleteRange, setShowDeleteRange] = useState(false);
 
   const chartData = initialStats.map((row) => ({
     label: dayFormat.format(new Date(`${row.date}T00:00:00.000Z`)),
@@ -97,6 +99,9 @@ export function GigStatsPanel({
         ]
       : []),
     { label: `View details (${initialStats.length})`, icon: BarChart2, onSelect: () => setShowDetails(true) },
+    ...(canManage
+      ? ["separator" as const, { label: "Delete logs…", icon: Trash2, onSelect: () => setShowDeleteRange(true) }]
+      : []),
   ];
 
   return (
@@ -162,20 +167,24 @@ export function GigStatsPanel({
       {showBulk ? (
         <BulkModal gig={gig} onClose={() => setShowBulk(false)} />
       ) : null}
+
+      {showDeleteRange ? (
+        <DeleteRangeModal gig={gig} onClose={() => setShowDeleteRange(false)} />
+      ) : null}
     </Section>
   );
 }
 
 function GigHeader({ gig }: { gig: GigWithAccount }) {
   return (
-    <div className="mb-5 flex items-start gap-3 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
+    <div className="mb-5 flex items-center gap-3 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
       {gig.thumbnailUrl ? (
-        <div className="size-14 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
+        <div className="shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={gig.thumbnailUrl} alt="" className="h-auto w-full" />
+          <img src={gig.thumbnailUrl} alt="" className="h-20 w-auto" />
         </div>
       ) : (
-        <div className="size-14 shrink-0 rounded-lg border border-zinc-200 bg-zinc-100" />
+        <div className="h-20 w-16 shrink-0 rounded-lg border border-zinc-200 bg-zinc-100" />
       )}
       <div className="min-w-0">
         <p className="text-[12px] font-medium text-zinc-500">{gig.fiverrAccountName}</p>
@@ -418,6 +427,94 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
           </div>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Delete range modal
+// ---------------------------------------------------------------------------
+
+function DeleteRangeModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [range, setRange] = useState<DateRange>({});
+  const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  const from = range.from ? isoFromDate(range.from) : "";
+  const to = range.to ? isoFromDate(range.to) : "";
+
+  const handleDelete = () => {
+    if (!from || !to) { setError("Pick a date range first."); return; }
+    setError(undefined);
+    startTransition(async () => {
+      const result = await deleteGigStatsForRangeAction({ gigId: gig.id, from, to });
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+        onClose();
+      } else {
+        setError(result.error);
+      }
+    });
+  };
+
+  return (
+    <Modal open onClose={onClose} labelledBy="delete-range-title">
+      <h2 id="delete-range-title" className="mb-4 text-[15px] font-semibold text-ink-strong">Delete logs</h2>
+      <GigHeader gig={gig} />
+
+      <p className="mb-3 text-[13px] text-ink-muted">Pick a date range. All stats in that range will be permanently deleted.</p>
+
+      <div className="flex justify-center rounded-lg border border-zinc-100 bg-zinc-50 py-1">
+        <DayPicker
+          mode="range"
+          selected={range}
+          onSelect={(r) => { setRange(r ?? {}); setConfirmed(false); setError(undefined); }}
+          numberOfMonths={1}
+        />
+      </div>
+
+      <p className="mt-2 text-center text-[12px] text-zinc-500">
+        {from && to ? `${fmtIso(from)} – ${fmtIso(to)}` : from ? `${fmtIso(from)} – pick end date` : "Select start date"}
+      </p>
+
+      {from && to && !confirmed ? (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2.5">
+          <input
+            id="delete-confirm"
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+            className="mt-0.5 shrink-0 accent-red-600"
+          />
+          <label htmlFor="delete-confirm" className="text-[12px] text-red-700">
+            I understand this will permanently delete all stats in this range and cannot be undone.
+          </label>
+        </div>
+      ) : from && to && confirmed ? (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2.5">
+          <input id="delete-confirm" type="checkbox" checked onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5 shrink-0 accent-red-600" />
+          <label htmlFor="delete-confirm" className="text-[12px] text-red-700">
+            I understand this will permanently delete all stats in this range and cannot be undone.
+          </label>
+        </div>
+      ) : null}
+
+      {error ? <p role="alert" className="mt-2 text-[13px] text-red-600">{error}</p> : null}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button>
+        <Button
+          variant="primary"
+          onClick={handleDelete}
+          disabled={pending || !from || !to || !confirmed}
+          className="bg-red-600 hover:bg-red-700 focus-visible:ring-red-500"
+        >
+          {pending ? "Deleting…" : "Delete"}
+        </Button>
+      </div>
     </Modal>
   );
 }
