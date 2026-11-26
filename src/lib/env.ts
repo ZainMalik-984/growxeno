@@ -141,3 +141,13 @@ export function getEmailEnv(): { apiKey: string; from: string } | null {
   const from = process.env.EMAIL_FROM?.trim();
   return apiKey && from ? { apiKey, from } : null;
 }
+
+/**
+ * Resend inbound webhook signing secret (2026-11-27): used to verify that
+ * inbound email webhook POSTs to /api/webhooks/fiverr-orders actually come
+ * from Resend and not an arbitrary caller. Null when unset — webhook returns
+ * 401 rather than accepting unauthenticated payloads.
+ */
+export function getResendInboundSecret(): string | null {
+  return process.env.RESEND_INBOUND_SECRET?.trim() || null;
+}

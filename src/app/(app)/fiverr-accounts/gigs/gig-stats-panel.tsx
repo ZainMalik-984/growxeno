@@ -362,7 +362,7 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
             <DayPicker
               mode="range"
               selected={range}
-              onSelect={(r) => { setRange(r ?? {}); setError(undefined); }}
+              onSelect={(r) => { setRange(r ?? { from: undefined, to: undefined }); setError(undefined); }}
               numberOfMonths={1}
             />
           </div>
@@ -438,7 +438,7 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
 function DeleteRangeModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [range, setRange] = useState<DateRange>({});
+  const [range, setRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -471,7 +471,7 @@ function DeleteRangeModal({ gig, onClose }: { gig: GigWithAccount; onClose: () =
         <DayPicker
           mode="range"
           selected={range}
-          onSelect={(r) => { setRange(r ?? {}); setConfirmed(false); setError(undefined); }}
+          onSelect={(r) => { setRange(r ?? { from: undefined, to: undefined }); setConfirmed(false); setError(undefined); }}
           numberOfMonths={1}
         />
       </div>
