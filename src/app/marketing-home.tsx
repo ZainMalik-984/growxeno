@@ -2256,9 +2256,10 @@ function Footer() {
       </Container>
       <Container className="mt-16 flex flex-col justify-between gap-2 border-t border-[var(--gx-line)] py-6 text-xs text-[var(--gx-dim)] sm:flex-row">
         <span>© {new Date().getFullYear()} Grow Xeno. All rights reserved.</span>
-        <a href="#top" className="transition-colors hover:text-[var(--gx-text)]">
-          Back to top ↑
-        </a>
+        <div className="flex items-center gap-5">
+          <a href="/privacy" className="transition-colors hover:text-[var(--gx-text)]">Privacy Policy</a>
+          <a href="#top" className="transition-colors hover:text-[var(--gx-text)]">Back to top ↑</a>
+        </div>
       </Container>
       <svg data-wordmark aria-hidden viewBox="0 0 1000 118" className="relative -mb-[1.2vw] block w-full select-none">
         <defs>
