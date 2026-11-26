@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Section } from "@/components/ui/page";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 const dayFormat = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const yesterdayIso = () => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const DETAILS_PAGE_SIZE = 10;
 
 function dateRange(from: string, to: string): string[] {
@@ -165,18 +166,18 @@ export function GigStatsPanel({
 
 function GigHeader({ gig }: { gig: GigWithAccount }) {
   return (
-    <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+    <div className="mb-5 flex items-start gap-3 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
       {gig.thumbnailUrl ? (
-        <div className="size-9 shrink-0 overflow-hidden rounded border border-zinc-200 bg-zinc-100">
+        <div className="size-14 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={gig.thumbnailUrl} alt="" className="h-auto w-full" />
         </div>
       ) : (
-        <div className="size-9 shrink-0 rounded border border-zinc-200 bg-zinc-100" />
+        <div className="size-14 shrink-0 rounded-lg border border-zinc-200 bg-zinc-100" />
       )}
       <div className="min-w-0">
-        <p className="text-[11px] text-zinc-500">{gig.fiverrAccountName}</p>
-        <p className="truncate text-[12px] font-medium leading-snug text-zinc-900">{gig.name}</p>
+        <p className="text-[12px] font-medium text-zinc-500">{gig.fiverrAccountName}</p>
+        <p className="mt-0.5 text-[13px] font-semibold leading-snug text-zinc-900">{gig.name}</p>
       </div>
     </div>
   );
@@ -185,7 +186,7 @@ function GigHeader({ gig }: { gig: GigWithAccount }) {
 function AddLogModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(yesterdayIso());
   const [impressions, setImpressions] = useState("");
   const [clicks, setClicks] = useState("");
   const [orders, setOrders] = useState("");
@@ -207,24 +208,34 @@ function AddLogModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => voi
 
   return (
     <Modal open onClose={onClose} labelledBy="add-log-title">
-      <h2 id="add-log-title" className="mb-4 text-[15px] font-medium text-ink-strong">Add log</h2>
+      <h2 id="add-log-title" className="mb-4 text-[15px] font-semibold text-ink-strong">Add log</h2>
       <GigHeader gig={gig} />
-      <div className="space-y-3">
-        <Field label="Date" htmlFor={`gig-log-date-${gig.id}`}>
-          <Input id={`gig-log-date-${gig.id}`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </Field>
-        <Field label="Impressions" htmlFor={`gig-log-impressions-${gig.id}`}>
-          <Input id={`gig-log-impressions-${gig.id}`} inputMode="numeric" value={impressions} onChange={(e) => setImpressions(e.target.value)} />
-        </Field>
-        <Field label="Clicks" htmlFor={`gig-log-clicks-${gig.id}`}>
-          <Input id={`gig-log-clicks-${gig.id}`} inputMode="numeric" value={clicks} onChange={(e) => setClicks(e.target.value)} />
-        </Field>
-        <Field label="Orders" htmlFor={`gig-log-orders-${gig.id}`}>
-          <Input id={`gig-log-orders-${gig.id}`} inputMode="numeric" value={orders} onChange={(e) => setOrders(e.target.value)} placeholder="0" />
-        </Field>
-        {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
+
+      {/* Date full-width */}
+      <div className="mb-3">
+        <label htmlFor={`gig-log-date-${gig.id}`} className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Date</label>
+        <Input id={`gig-log-date-${gig.id}`} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full" />
       </div>
-      <div className="mt-5 flex justify-end gap-2">
+
+      {/* Stats in one row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label htmlFor={`gig-log-impr-${gig.id}`} className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Impressions</label>
+          <Input id={`gig-log-impr-${gig.id}`} inputMode="numeric" value={impressions} onChange={(e) => setImpressions(e.target.value)} className="w-full text-right" placeholder="0" />
+        </div>
+        <div>
+          <label htmlFor={`gig-log-clicks-${gig.id}`} className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Clicks</label>
+          <Input id={`gig-log-clicks-${gig.id}`} inputMode="numeric" value={clicks} onChange={(e) => setClicks(e.target.value)} className="w-full text-right" placeholder="0" />
+        </div>
+        <div>
+          <label htmlFor={`gig-log-orders-${gig.id}`} className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Orders</label>
+          <Input id={`gig-log-orders-${gig.id}`} inputMode="numeric" value={orders} onChange={(e) => setOrders(e.target.value)} className="w-full text-right" placeholder="0" />
+        </div>
+      </div>
+
+      {error ? <p role="alert" className="mt-3 text-[13px] text-red-600">{error}</p> : null}
+
+      <div className="mt-4 flex justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={onClose} disabled={pending}>Cancel</Button>
         <Button variant="primary" size="sm" onClick={submit} disabled={pending || !impressions || !clicks}>
           {pending ? "Saving…" : "Add"}
@@ -329,16 +340,26 @@ function BulkModal({ gig, onClose }: { gig: GigWithAccount; onClose: () => void 
 
       {step === "range" ? (
         <div className="space-y-4">
-          <p className="text-[13px] text-ink-muted">
-            Pick a date range. Existing entries will be pre-filled and can be updated.
-          </p>
-          <div className="flex items-end gap-3">
-            <Field label="From" htmlFor="bulk-from">
-              <Input id="bulk-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </Field>
-            <Field label="To" htmlFor="bulk-to">
-              <Input id="bulk-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </Field>
+          <p className="text-[13px] text-ink-muted">Pick a date range. Existing entries will be pre-filled.</p>
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">Date range</label>
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500">
+              <input
+                type="date"
+                id="bulk-from"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="flex-1 bg-transparent text-[13px] text-zinc-900 outline-none"
+              />
+              <span className="text-zinc-400">–</span>
+              <input
+                type="date"
+                id="bulk-to"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="flex-1 bg-transparent text-[13px] text-zinc-900 outline-none"
+              />
+            </div>
           </div>
           {error ? <p role="alert" className="text-[13px] text-red-600">{error}</p> : null}
           <div className="flex justify-end gap-2">
