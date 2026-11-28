@@ -30,11 +30,24 @@ model FiverrAccount {
 
   isActive Boolean @default(true) @map("is_active")
 
+  /// AES-256-GCM ciphertext for the Gmail App Password used to monitor this
+  /// account's inbox for Fiverr order notifications (2026-11-28). Same
+  /// encryption scheme as paypalPasswordEncrypted. Null = monitoring not set up.
+  gmailAppPasswordEncrypted String? @map("gmail_app_password_encrypted") @db.Text
+
+  /// Whether the automatic email-to-order import cron is active for this account.
+  emailMonitoringEnabled Boolean @default(false) @map("email_monitoring_enabled")
+
+  /// The timestamp from which to start processing emails — set when monitoring
+  /// is first enabled so historical emails are not imported as duplicate orders.
+  emailMonitoringSince DateTime? @map("email_monitoring_since") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  gigs   FiverrGig[]
-  orders Order[]
+  gigs      FiverrGig[]
+  orders    Order[]
+  emailLogs FiverrEmailLog[]
 
   @@index([isActive])
   @@index([name])
@@ -92,4 +105,29 @@ model FiverrGigStat {
   @@unique([gigId, statDate])
   @@index([gigId, statDate])
   @@map("fiverr_gig_stats")
+}
+
+/// Tracks every Gmail message ID that the email-import cron has processed for
+/// a Fiverr account. Used for deduplication: an email is processed exactly
+/// once regardless of whether it was read in Gmail before the cron ran.
+model FiverrEmailLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  fiverrAccountId String        @map("fiverr_account_id") @db.Uuid
+  fiverrAccount   FiverrAccount @relation(fields: [fiverrAccountId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// Gmail's immutable message ID (not the Fiverr order ID).
+  gmailMessageId String @map("gmail_message_id") @db.VarChar(255)
+
+  /// "created" | "duplicate" | "skipped" | "error"
+  result String @db.VarChar(50)
+
+  /// Set when result = "created".
+  orderId String? @map("order_id") @db.Uuid
+
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+
+  @@unique([fiverrAccountId, gmailMessageId])
+  @@index([fiverrAccountId, processedAt])
+  @@map("fiverr_email_logs")
 }

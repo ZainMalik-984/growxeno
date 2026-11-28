@@ -50,6 +50,9 @@ export type FiverrAccountDetail = {
   paypalEmail: string | null;
   /** Whether a PayPal password has been saved — never the value itself. */
   hasPaypalPassword: boolean;
+  hasGmailAppPassword: boolean;
+  emailMonitoringEnabled: boolean;
+  emailMonitoringSince: Date | null;
   isActive: boolean;
   createdAt: Date;
   gigs: Array<{ id: string; name: string; thumbnailUrl: string | null; isActive: boolean }>;
@@ -64,6 +67,9 @@ export async function getFiverrAccountDetail(id: string): Promise<FiverrAccountD
       email: true,
       paypalEmail: true,
       paypalPasswordEncrypted: true,
+      gmailAppPasswordEncrypted: true,
+      emailMonitoringEnabled: true,
+      emailMonitoringSince: true,
       isActive: true,
       createdAt: true,
       gigs: { select: { id: true, name: true, thumbnailUrl: true, isActive: true }, orderBy: { name: "asc" } },
@@ -76,6 +82,9 @@ export async function getFiverrAccountDetail(id: string): Promise<FiverrAccountD
     email: account.email,
     paypalEmail: account.paypalEmail,
     hasPaypalPassword: account.paypalPasswordEncrypted !== null,
+    hasGmailAppPassword: account.gmailAppPasswordEncrypted !== null,
+    emailMonitoringEnabled: account.emailMonitoringEnabled,
+    emailMonitoringSince: account.emailMonitoringSince,
     isActive: account.isActive,
     createdAt: account.createdAt,
     gigs: account.gigs,

@@ -7,15 +7,19 @@ import { authorizeAction } from "@/lib/auth/authorize";
 import { listGigStatsForRange } from "./queries";
 import {
   bulkUpsertGigStats,
+  clearGmailAppPassword,
   createFiverrAccount,
   createGig,
   createGigStat,
   deleteGigStatsForRange,
   removeGigThumbnail,
   revealFiverrPaypalPassword,
+  revealGmailAppPassword,
+  setEmailMonitoring,
   setFiverrAccountActive,
   setGigActive,
   setGigThumbnail,
+  setGmailAppPassword,
   updateFiverrAccount,
   updateGig,
   updateGigStat,
@@ -318,4 +322,139 @@ export async function bulkUpsertGigStatsAction(input: unknown): Promise<BulkUpse
   if (created > 0) parts.push(`${created} added`);
   if (updated > 0) parts.push(`${updated} updated`);
   return { ok: true, message: parts.join(", ") + ".", created, updated };
+}
+
+// ---------------------------------------------------------------------------
+// Gmail App Password + email monitoring
+// ---------------------------------------------------------------------------
+
+export async function setGmailAppPasswordAction(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ accountId: uuid, appPassword: z.string().min(1, "Enter the App Password.") }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+
+  const auth = await authorizeAction("fiverr_accounts.manage");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await setGmailAppPassword(auth.actor, parsed.data.accountId, parsed.data.appPassword);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/fiverr-accounts/${parsed.data.accountId}`);
+  return { ok: true, message: "Gmail App Password saved." };
+}
+
+export type RevealGmailPasswordResult = { ok: true; password: string } | { ok: false; error: string };
+
+export async function revealGmailAppPasswordAction(input: unknown): Promise<RevealGmailPasswordResult> {
+  const parsed = z.object({ accountId: uuid }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("fiverr_accounts.credentials.view");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await revealGmailAppPassword(auth.actor, parsed.data.accountId);
+  return result.ok ? { ok: true, password: result.data.password } : { ok: false, error: result.error };
+}
+
+export async function clearGmailAppPasswordAction(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ accountId: uuid }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("fiverr_accounts.manage");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await clearGmailAppPassword(auth.actor, parsed.data.accountId);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/fiverr-accounts/${parsed.data.accountId}`);
+  return { ok: true, message: "Gmail App Password removed." };
+}
+
+export async function setEmailMonitoringAction(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ accountId: uuid, enabled: z.boolean() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const auth = await authorizeAction("fiverr_accounts.manage");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const result = await setEmailMonitoring(auth.actor, parsed.data.accountId, parsed.data.enabled);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/fiverr-accounts/${parsed.data.accountId}`);
+  return { ok: true, message: parsed.data.enabled ? "Email monitoring enabled." : "Email monitoring disabled." };
+}
+
+export type TestFetchResult =
+  | {
+      ok: true;
+      emails: Array<{
+        messageId: string;
+        subject: string;
+        date: string;
+        textSnippet: string;
+        parsed: {
+          orderId: string;
+          gigTitle: string;
+          buyerName: string;
+          amount: number;
+          deliveryDays: number;
+        } | null;
+      }>;
+    }
+  | { ok: false; error: string };
+
+export async function testFetchEmailsAction(input: unknown): Promise<TestFetchResult> {
+  const parsed = z
+    .object({ accountId: uuid, from: dateOnly, to: dateOnly })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+
+  const auth = await authorizeAction("fiverr_accounts.manage");
+  if (!auth.ok) return { ok: false, error: auth.message };
+
+  const { prisma: db } = await import("@/lib/db/prisma");
+  const account = await db.fiverrAccount.findUnique({
+    where: { id: parsed.data.accountId },
+    select: { email: true, gmailAppPasswordEncrypted: true },
+  });
+  if (!account) return { ok: false, error: "Account not found." };
+  if (!account.gmailAppPasswordEncrypted) return { ok: false, error: "No Gmail App Password is saved. Set one first." };
+  if (!account.email) return { ok: false, error: "No email address is saved on this account." };
+
+  const { decryptSecret } = await import("@/lib/crypto/secret-box");
+  let appPassword: string;
+  try {
+    appPassword = decryptSecret(account.gmailAppPasswordEncrypted);
+  } catch {
+    return { ok: false, error: "Could not decrypt the saved password." };
+  }
+
+  const { fetchFiverrEmailsFromGmail } = await import("@/lib/fiverr-email/imap");
+  const { parseFiverrOrderEmail } = await import("@/lib/fiverr-email/parser");
+
+  const since = new Date(`${parsed.data.from}T00:00:00.000Z`);
+  const before = new Date(`${parsed.data.to}T23:59:59.999Z`);
+
+  let emails: Awaited<ReturnType<typeof fetchFiverrEmailsFromGmail>>;
+  try {
+    emails = await fetchFiverrEmailsFromGmail(account.email, appPassword, since, before);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `IMAP connection failed: ${msg}` };
+  }
+
+  return {
+    ok: true,
+    emails: emails.map((e) => {
+      const p = parseFiverrOrderEmail(e.subject, e.html, e.text, e.date);
+      return {
+        messageId: e.messageId,
+        subject: e.subject,
+        date: e.date.toISOString(),
+        textSnippet: e.text.slice(0, 300).replace(/\s+/g, " ").trim(),
+        parsed: p
+          ? { orderId: p.orderId, gigTitle: p.gigTitle, buyerName: p.buyerName, amount: p.amount, deliveryDays: p.deliveryDays }
+          : null,
+      };
+    }),
+  };
 }

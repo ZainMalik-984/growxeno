@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/youtube-stats?dayEnd=1",
       "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/fiverr-email-orders",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

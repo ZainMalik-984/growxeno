@@ -176,6 +176,117 @@ export async function revealFiverrPaypalPassword(actor: Actor, accountId: string
 }
 
 // ---------------------------------------------------------------------------
+// Gmail App Password + email monitoring
+// ---------------------------------------------------------------------------
+
+export async function setGmailAppPassword(
+  actor: Actor,
+  accountId: string,
+  appPassword: string,
+): Promise<ServiceResult> {
+  const account = await prisma.fiverrAccount.findUnique({ where: { id: accountId }, select: { name: true } });
+  if (!account) return failure("That account no longer exists.");
+
+  let encrypted: string;
+  try {
+    encrypted = encryptSecret(appPassword.trim());
+  } catch (err) {
+    return failure(err instanceof Error ? err.message : "Encryption failed.");
+  }
+
+  await prisma.fiverrAccount.update({ where: { id: accountId }, data: { gmailAppPasswordEncrypted: encrypted } });
+  await recordAudit(prisma, {
+    actorUserId: actor.user.id,
+    actorEmail: actor.user.email,
+    action: "fiverr_account.gmail_password_set",
+    entityType: "FiverrAccount",
+    entityId: accountId,
+    summary: `${actor.user.fullName} set the Gmail App Password for ${account.name}`,
+  });
+  return { ok: true, data: undefined };
+}
+
+export async function revealGmailAppPassword(
+  actor: Actor,
+  accountId: string,
+): Promise<ServiceResult<{ password: string }>> {
+  const account = await prisma.fiverrAccount.findUnique({
+    where: { id: accountId },
+    select: { name: true, gmailAppPasswordEncrypted: true },
+  });
+  if (!account) return failure("That account no longer exists.");
+  if (!account.gmailAppPasswordEncrypted) return failure("No Gmail App Password is saved for this account.");
+
+  let password: string;
+  try {
+    password = decryptSecret(account.gmailAppPasswordEncrypted);
+  } catch {
+    return failure("Could not decrypt the saved password.");
+  }
+
+  await recordAudit(prisma, {
+    actorUserId: actor.user.id,
+    actorEmail: actor.user.email,
+    action: "fiverr_account.gmail_password_revealed",
+    entityType: "FiverrAccount",
+    entityId: accountId,
+    summary: `${actor.user.fullName} revealed the Gmail App Password for ${account.name}`,
+  });
+  return { ok: true, data: { password } };
+}
+
+export async function clearGmailAppPassword(actor: Actor, accountId: string): Promise<ServiceResult> {
+  const account = await prisma.fiverrAccount.findUnique({ where: { id: accountId }, select: { name: true } });
+  if (!account) return failure("That account no longer exists.");
+
+  await prisma.fiverrAccount.update({
+    where: { id: accountId },
+    data: { gmailAppPasswordEncrypted: null, emailMonitoringEnabled: false },
+  });
+  await recordAudit(prisma, {
+    actorUserId: actor.user.id,
+    actorEmail: actor.user.email,
+    action: "fiverr_account.gmail_password_cleared",
+    entityType: "FiverrAccount",
+    entityId: accountId,
+    summary: `${actor.user.fullName} cleared the Gmail App Password for ${account.name}`,
+  });
+  return { ok: true, data: undefined };
+}
+
+export async function setEmailMonitoring(
+  actor: Actor,
+  accountId: string,
+  enabled: boolean,
+): Promise<ServiceResult> {
+  const account = await prisma.fiverrAccount.findUnique({
+    where: { id: accountId },
+    select: { name: true, gmailAppPasswordEncrypted: true, emailMonitoringSince: true },
+  });
+  if (!account) return failure("That account no longer exists.");
+  if (enabled && !account.gmailAppPasswordEncrypted) {
+    return failure("Set a Gmail App Password before enabling monitoring.");
+  }
+
+  // Set emailMonitoringSince only the first time it is enabled.
+  const emailMonitoringSince = enabled && !account.emailMonitoringSince ? new Date() : undefined;
+
+  await prisma.fiverrAccount.update({
+    where: { id: accountId },
+    data: { emailMonitoringEnabled: enabled, ...(emailMonitoringSince ? { emailMonitoringSince } : {}) },
+  });
+  await recordAudit(prisma, {
+    actorUserId: actor.user.id,
+    actorEmail: actor.user.email,
+    action: enabled ? "fiverr_account.monitoring_enabled" : "fiverr_account.monitoring_disabled",
+    entityType: "FiverrAccount",
+    entityId: accountId,
+    summary: `${actor.user.fullName} ${enabled ? "enabled" : "disabled"} email monitoring for ${account.name}`,
+  });
+  return { ok: true, data: undefined };
+}
+
+// ---------------------------------------------------------------------------
 // Gigs
 // ---------------------------------------------------------------------------
 

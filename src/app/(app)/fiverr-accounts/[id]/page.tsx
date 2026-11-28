@@ -7,6 +7,7 @@ import { getFiverrAccountDetail } from "@/lib/fiverr-accounts/queries";
 import { FiverrAccountForm } from "../fiverr-account-form";
 import { FiverrAccountActivationControl } from "./fiverr-account-activation-control";
 import { GigManager } from "./gig-manager";
+import { GmailMonitoringSection } from "./gmail-monitoring-section";
 import { isUuid } from "@/lib/validation/url-params";
 
 export const metadata: Metadata = { title: "Fiverr account" };
@@ -52,6 +53,18 @@ export default async function FiverrAccountDetailPage({ params }: PageProps<"/fi
           </dl>
         )}
       </Section>
+
+      {canManage && (
+        <Section title="Gmail monitoring">
+          <GmailMonitoringSection
+            accountId={account.id}
+            hasGmailAppPassword={account.hasGmailAppPassword}
+            emailMonitoringEnabled={account.emailMonitoringEnabled}
+            emailMonitoringSince={account.emailMonitoringSince}
+            canRevealCredentials={canRevealCredentials}
+          />
+        </Section>
+      )}
 
       <GigManager
         accountId={account.id}
